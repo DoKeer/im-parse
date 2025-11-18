@@ -1,0 +1,165 @@
+# Rust
+/target/
+target/
+**/target/
+**/*.rs.bk
+Cargo.lock
+# Rust 编译产物
+**/*.rlib
+**/*.rmeta
+**/*.d
+**/*.a
+**/*.dylib
+**/*.so
+**/*.dll
+**/*.exe
+**/*.pdb
+
+# iOS
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+# Xcode 用户特定文件
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad/
+*.xcbkptlist
+*.xcscheme
+*.xcschememanagement.plist
+# Xcode 项目备份文件
+*.pbxproj.backup
+*.pbxproj.backup*
+# Xcode 构建产物
+*.app
+*.framework
+*.bundle
+*.xcarchive
+*.xcuserdata
+# Swift Package Manager
+.swiftpm/
+.build/
+
+# Android
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+# Android 构建产物
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+out/
+proguard/
+*.keystore
+!debug.keystore
+
+# Web
+node_modules/
+dist/
+build/
+*.log
+.npm
+.eslintcache
+# Web 构建产物
+.next/
+.nuxt/
+.vuepress/dist/
+.serverless/
+.fusebox/
+.dynamodb/
+.tern-port
+.cache/
+.parcel-cache/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+# JetBrains
+*.iml
+.idea/
+*.iws
+*.ipr
+out/
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.history/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# 临时文件
+*.tmp
+*.temp
+*.bak
+*.backup
+*.backup*
+*.orig
+*.rej
+*.swp
+*.swo
+*~
+# 日志文件
+*.log
+logs/
+*.log.*
+
+# 测试和覆盖率
+coverage/
+.nyc_output/
+*.lcov
+test-results/
+playwright-report/
+playwright/.cache/
+
+# 环境变量文件
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 其他
+*.pid
+*.seed
+*.pid.lock
+.npmrc
+.yarn-integrity
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
