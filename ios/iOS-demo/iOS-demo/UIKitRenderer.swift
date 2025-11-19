@@ -909,24 +909,89 @@ class UIKitRenderer {
         containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
         containerView.clipsToBounds = true
         
-        let label = UILabel()
-        label.text = "Mermaid: \(node.content)"
-        label.font = context.theme.codeFont
-        label.textColor = context.theme.codeTextColor
-        label.numberOfLines = 0
-        label.textAlignment = .center
-        label.translatesAutoresizingMaskIntoConstraints = false
+        // 创建图片视图
+        let imageView = UIImageView()
+        imageView.contentMode = .scaleAspectFit
+        imageView.translatesAutoresizingMaskIntoConstraints = false
         
-        containerView.addSubview(label)
+        // 添加加载指示器
+        let activityIndicator = UIActivityIndicatorView(style: .medium)
+        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+        activityIndicator.startAnimating()
+        
+        containerView.addSubview(imageView)
+        containerView.addSubview(activityIndicator)
+        
         let padding = context.theme.codeBlockPadding
         NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: containerView.topAnchor, constant: padding),
-            label.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: padding),
-            label.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -padding),
-            label.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -padding)
+            imageView.topAnchor.constraint(equalTo: containerView.topAnchor, constant: padding),
+            imageView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: padding),
+            imageView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -padding),
+            imageView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -padding),
+            imageView.heightAnchor.constraint(greaterThanOrEqualToConstant: 300),
+            activityIndicator.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
+            activityIndicator.centerYAnchor.constraint(equalTo: containerView.centerYAnchor)
         ])
         
+        // 获取文本颜色和背景颜色
+        let textColor = context.theme.textColor
+        let backgroundColor = context.theme.codeBackgroundColor
+        
+        let textComponents = textColor.cgColor.components ?? [0, 0, 0, 1]
+        let textColorHex = String(format: "#%02X%02X%02X",
+            Int(textComponents[0] * 255),
+            Int(textComponents[1] * 255),
+            Int(textComponents[2] * 255)
+        )
+        
+        let bgComponents = backgroundColor.cgColor.components ?? [1, 1, 1, 1]
+        let backgroundColorHex = String(format: "#%02X%02X%02X",
+            Int(bgComponents[0] * 255),
+            Int(bgComponents[1] * 255),
+            Int(bgComponents[2] * 255)
+        )
+        
+        // 使用 MermaidHTMLRenderer 渲染为图片
+        MermaidHTMLRenderer.shared.render(
+            mermaidCode: node.content,
+            textColor: textColorHex,
+            backgroundColor: backgroundColorHex
+        ) { image in
+            DispatchQueue.main.async {
+                activityIndicator.stopAnimating()
+                activityIndicator.removeFromSuperview()
+                
+                if let image = image {
+                    imageView.image = image
+                } else {
+                    // 渲染失败，显示错误
+                    self.showMermaidError(in: containerView, message: "Mermaid 图表渲染失败")
+                    imageView.removeFromSuperview()
+                }
+            }
+        }
+        
         return containerView
+    }
+    
+    /// 显示 Mermaid 图表错误
+    private func showMermaidError(in containerView: UIView, message: String) {
+        let errorLabel = UILabel()
+        errorLabel.text = message
+        errorLabel.font = .systemFont(ofSize: 12)
+        errorLabel.textColor = .secondaryLabel
+        errorLabel.textAlignment = .center
+        errorLabel.numberOfLines = 0
+        errorLabel.translatesAutoresizingMaskIntoConstraints = false
+        
+        containerView.addSubview(errorLabel)
+        NSLayoutConstraint.activate([
+            errorLabel.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
+            errorLabel.centerYAnchor.constraint(equalTo: containerView.centerYAnchor),
+            errorLabel.leadingAnchor.constraint(greaterThanOrEqualTo: containerView.leadingAnchor, constant: 8),
+            errorLabel.trailingAnchor.constraint(lessThanOrEqualTo: containerView.trailingAnchor, constant: -8),
+            containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 100)
+        ])
     }
     
     /// 渲染提及

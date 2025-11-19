@@ -378,10 +378,8 @@ struct SwiftUIRenderer {
     
     @ViewBuilder
     private func renderMermaid(_ node: MermaidNode, context: RenderContext) -> some View {
-        // 使用 WebView 或 SVG 渲染 Mermaid
-        Text("Mermaid: \(node.content)")
-            .font(context.theme.codeFont)
-            .foregroundColor(context.theme.codeTextColor)
+        // 使用 HTML 渲染 Mermaid 图表（使用 MermaidHTMLRenderer 渲染为图片）
+        MermaidSVGView(mermaidContent: node.content, context: context)
             .padding(context.theme.codeBlockPadding)
             .background(context.theme.codeBackgroundColor)
             .cornerRadius(context.theme.codeBlockBorderRadius)
@@ -649,6 +647,70 @@ struct MathSVGView: View {
             display: display,
             textColor: colorHex,
             fontSize: fontSize
+        ) { image in
+            DispatchQueue.main.async {
+                self.renderedImage = image
+                self.isLoading = false
+            }
+        }
+    }
+}
+
+/// Mermaid 图表 HTML 渲染视图（使用 WebView 渲染为图片）
+/// 使用 MermaidHTMLRenderer 将 Mermaid 代码渲染为图片
+struct MermaidSVGView: View {
+    let mermaidContent: String
+    let context: RenderContext
+    @State private var renderedImage: UIImage?
+    @State private var isLoading = true
+    
+    var body: some View {
+        Group {
+            if let image = renderedImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: context.width, alignment: .center)
+            } else if isLoading {
+                ProgressView()
+                    .frame(height: 300)
+            } else {
+                // 回退：显示原始 Mermaid 代码
+                Text(mermaidContent)
+                    .font(.system(size: 14, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: context.width, alignment: .center)
+            }
+        }
+        .onAppear {
+            loadMermaidHTML()
+        }
+    }
+    
+    private func loadMermaidHTML() {
+        // 获取文本颜色和背景颜色
+        let textColor = UIColor(context.theme.textColor)
+        let backgroundColor = UIColor(context.theme.codeBackgroundColor)
+        
+        let textComponents = textColor.cgColor.components ?? [0, 0, 0, 1]
+        let textColorHex = String(format: "#%02X%02X%02X",
+            Int(textComponents[0] * 255),
+            Int(textComponents[1] * 255),
+            Int(textComponents[2] * 255)
+        )
+        
+        let bgComponents = backgroundColor.cgColor.components ?? [1, 1, 1, 1]
+        let backgroundColorHex = String(format: "#%02X%02X%02X",
+            Int(bgComponents[0] * 255),
+            Int(bgComponents[1] * 255),
+            Int(bgComponents[2] * 255)
+        )
+        
+        // 使用 MermaidHTMLRenderer 渲染为图片
+        MermaidHTMLRenderer.shared.render(
+            mermaidCode: mermaidContent,
+            textColor: textColorHex,
+            backgroundColor: backgroundColorHex
         ) { image in
             DispatchQueue.main.async {
                 self.renderedImage = image

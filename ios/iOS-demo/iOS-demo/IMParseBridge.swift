@@ -302,12 +302,12 @@ class IMParseCore {
             }
             
             if result.pointee.success {
-                let svg = result.pointee.ast_json != nil
+                let html = result.pointee.ast_json != nil
                     ? String(cString: result.pointee.ast_json!)
                     : nil
                 return ParseResult(
                     success: true,
-                    astJSON: svg,
+                    astJSON: html,
                     error: nil
                 )
             } else {
@@ -322,6 +322,50 @@ class IMParseCore {
                         message: errorMsg
                     )
                 )
+            }
+        }
+    }
+    
+    /// 将 Mermaid 图表转换为 HTML
+    static func mermaidToHTML(_ mermaidCode: String, textColor: String, backgroundColor: String) -> ParseResult {
+        return mermaidCode.withCString { mermaidCodeCString in
+            return textColor.withCString { textColorCString in
+                return backgroundColor.withCString { backgroundColorCString in
+                    guard let result = mermaid_to_html(mermaidCodeCString, textColorCString, backgroundColorCString) else {
+                        return ParseResult(
+                            success: false,
+                            astJSON: nil,
+                            error: ParseResult.ParseError(code: -1, message: "Failed to convert")
+                        )
+                    }
+                    
+                    defer {
+                        free_parse_result(result)
+                    }
+                    
+                    if result.pointee.success {
+                        let html = result.pointee.ast_json != nil
+                            ? String(cString: result.pointee.ast_json!)
+                            : nil
+                        return ParseResult(
+                            success: true,
+                            astJSON: html,
+                            error: nil
+                        )
+                    } else {
+                        let errorMsg = result.pointee.error_message != nil
+                            ? String(cString: result.pointee.error_message!)
+                            : "Unknown error"
+                        return ParseResult(
+                            success: false,
+                            astJSON: nil,
+                            error: ParseResult.ParseError(
+                                code: result.pointee.error_code,
+                                message: errorMsg
+                            )
+                        )
+                    }
+                }
             }
         }
     }
@@ -354,6 +398,9 @@ func delta_to_html_with_config(_ input: UnsafePointer<CChar>, _ config_json: Uns
 
 @_silgen_name("math_to_html")
 func math_to_html(_ formula: UnsafePointer<CChar>, _ display: Bool) -> UnsafeMutablePointer<IMParseResult>?
+
+@_silgen_name("mermaid_to_html")
+func mermaid_to_html(_ mermaid_code: UnsafePointer<CChar>, _ text_color: UnsafePointer<CChar>, _ background_color: UnsafePointer<CChar>) -> UnsafeMutablePointer<IMParseResult>?
 
 // C 结构体定义
 struct IMParseResult {

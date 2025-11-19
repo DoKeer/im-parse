@@ -315,7 +315,67 @@ pub extern "C" fn math_to_html(formula: *const c_char, display: bool) -> *mut Pa
                 },
             }))
         }
-        Err(e) => create_error_result(format!("Math to SVG error: {}", e)),
+        Err(e) => create_error_result(format!("Math to HTML error: {}", e)),
+    }
+}
+
+/// 将 Mermaid 图表转换为 HTML
+/// @param mermaid_code Mermaid 语法代码
+/// @param text_color 文本颜色（十六进制，如 "#000000"）
+/// @param background_color 背景颜色（十六进制，如 "#ffffff"）
+#[no_mangle]
+pub extern "C" fn mermaid_to_html(
+    mermaid_code: *const c_char,
+    text_color: *const c_char,
+    background_color: *const c_char,
+) -> *mut ParseResult {
+    let mermaid_code_str = unsafe {
+        if mermaid_code.is_null() {
+            return create_error_result("Mermaid code is null".to_string());
+        }
+        match CStr::from_ptr(mermaid_code).to_str() {
+            Ok(s) => s,
+            Err(_) => return create_error_result("Invalid UTF-8 string for mermaid code".to_string()),
+        }
+    };
+
+    let text_color_str = unsafe {
+        if text_color.is_null() {
+            return create_error_result("Text color is null".to_string());
+        }
+        match CStr::from_ptr(text_color).to_str() {
+            Ok(s) => s,
+            Err(_) => return create_error_result("Invalid UTF-8 string for text color".to_string()),
+        }
+    };
+
+    let background_color_str = unsafe {
+        if background_color.is_null() {
+            return create_error_result("Background color is null".to_string());
+        }
+        match CStr::from_ptr(background_color).to_str() {
+            Ok(s) => s,
+            Err(_) => return create_error_result("Invalid UTF-8 string for background color".to_string()),
+        }
+    };
+
+    match crate::mermaid_to_html(mermaid_code_str, text_color_str, background_color_str) {
+        Ok(html) => {
+            let c_string = match CString::new(html) {
+                Ok(s) => s,
+                Err(_) => return create_error_result("Failed to create CString".to_string()),
+            };
+            let ptr = c_string.into_raw();
+            Box::into_raw(Box::new(ParseResult {
+                success: true,
+                ast_json: ptr,
+                error: FFIError {
+                    code: 0,
+                    message: ptr::null(),
+                },
+            }))
+        }
+        Err(e) => create_error_result(format!("Mermaid to HTML error: {}", e)),
     }
 }
 
