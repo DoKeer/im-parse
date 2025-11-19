@@ -103,8 +103,8 @@ class MathHTMLRenderer {
         // 构建完整的 HTML（包含 KaTeX CSS）
         let fullHTML = buildFullHTML(html: html, display: display, textColor: textColor, fontSize: fontSize)
         
-        // 设置 WebView 配置
-        webView.frame = CGRect(x: 0, y: 0, width: 800, height: display ? 200 : 100)
+        // 设置 WebView 配置（使用较大的初始尺寸，确保内容能完全渲染）
+        webView.frame = CGRect(x: 0, y: 0, width: 1000, height: display ? 300 : 150)
         webView.isOpaque = false
         webView.backgroundColor = .clear
         
@@ -139,14 +139,33 @@ class MathHTMLRenderer {
                 
                 // 等待 KaTeX CSS 加载和渲染完成
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                // 获取内容尺寸
+                // 获取数学公式容器的精确边界（相对于视口）
                 webView.evaluateJavaScript("""
                     (function() {
+                        // 先查找 .katex 元素（KaTeX 生成的元素）
+                        const katexElement = document.querySelector('.katex');
+                        if (katexElement) {
+                            const rect = katexElement.getBoundingClientRect();
+                            return {
+                                width: Math.ceil(rect.width),
+                                height: Math.ceil(rect.height)
+                            };
+                        }
+                        // 如果没有找到 .katex，查找 .math-container
+                        const container = document.querySelector('.math-container');
+                        if (container) {
+                            const rect = container.getBoundingClientRect();
+                            return {
+                                width: Math.ceil(rect.width),
+                                height: Math.ceil(rect.height)
+                            };
+                        }
+                        // 回退到 body
                         const body = document.body;
                         const rect = body.getBoundingClientRect();
                         return {
-                            width: Math.max(rect.width, 100),
-                            height: Math.max(rect.height, 30)
+                            width: Math.max(Math.ceil(rect.width), 100),
+                            height: Math.max(Math.ceil(rect.height), 30)
                         };
                     })();
                 """) { result, error in
@@ -154,30 +173,69 @@ class MathHTMLRenderer {
                         print("MathHTMLRenderer: JavaScript error: \(error)")
                         // 使用默认尺寸
                         webView.frame = CGRect(x: 0, y: 0, width: 400, height: display ? 100 : 50)
-                    } else if let sizeDict = result as? [String: CGFloat],
-                              let width = sizeDict["width"],
-                              let height = sizeDict["height"] {
-                        // 调整 WebView 尺寸以匹配内容
-                        webView.frame = CGRect(x: 0, y: 0, width: width + 20, height: height + 20)
-                    } else {
-                        // 使用默认尺寸
-                        webView.frame = CGRect(x: 0, y: 0, width: 400, height: display ? 100 : 50)
-                    }
-                    
-                    // 等待布局更新
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        // 使用 takeSnapshot 截图（异步方法，不会触发重新渲染）
-                        self.captureWebView(webView) { image in
-                            // 缓存图片
+                        self.captureWebView(webView, contentRect: nil) { image in
                             if let image = image {
                                 self.cacheQueue.async(flags: .barrier) {
                                     self.imageCache[cacheKey] = image
                                 }
                             }
-                            
-                            // 将 WebView 返回池中
                             self.returnWebViewToPool(webView)
+                            completion(image)
+                        }
+                    } else if let sizeDict = result as? [String: CGFloat],
+                              let width = sizeDict["width"],
+                              let height = sizeDict["height"] {
+                        // 获取内容在 WebView 中的精确位置和尺寸
+                        webView.evaluateJavaScript("""
+                            (function() {
+                                const katexElement = document.querySelector('.katex') || document.querySelector('.math-container');
+                                if (katexElement) {
+                                    const rect = katexElement.getBoundingClientRect();
+                                    return {
+                                        x: Math.max(0, Math.floor(rect.left)),
+                                        y: Math.max(0, Math.floor(rect.top)),
+                                        width: Math.ceil(rect.width),
+                                        height: Math.ceil(rect.height)
+                                    };
+                                }
+                                return { x: 0, y: 0, width: \(width), height: \(height) };
+                            })();
+                        """) { positionResult, _ in
+                            var contentRect = CGRect(x: 0, y: 0, width: width, height: height)
                             
+                            if let positionDict = positionResult as? [String: CGFloat],
+                               let x = positionDict["x"],
+                               let y = positionDict["y"],
+                               let w = positionDict["width"],
+                               let h = positionDict["height"] {
+                                contentRect = CGRect(x: x, y: y, width: w, height: h)
+                            }
+                            
+                            // 使用精确的内容区域直接截图（不调整 WebView 尺寸）
+                            self.captureWebView(webView, contentRect: contentRect) { image in
+                                // 缓存图片
+                                if let image = image {
+                                    self.cacheQueue.async(flags: .barrier) {
+                                        self.imageCache[cacheKey] = image
+                                    }
+                                }
+                                
+                                // 将 WebView 返回池中
+                                self.returnWebViewToPool(webView)
+                                
+                                completion(image)
+                            }
+                        }
+                    } else {
+                        // 使用默认尺寸
+                        webView.frame = CGRect(x: 0, y: 0, width: 400, height: display ? 100 : 50)
+                        self.captureWebView(webView, contentRect: nil) { image in
+                            if let image = image {
+                                self.cacheQueue.async(flags: .barrier) {
+                                    self.imageCache[cacheKey] = image
+                                }
+                            }
+                            self.returnWebViewToPool(webView)
                             completion(image)
                         }
                     }
@@ -214,7 +272,8 @@ class MathHTMLRenderer {
                     font-size: \(Int(fontSize))px;
                     color: \(textColor);
                     background: transparent;
-                    padding: 10px;
+                    margin: 0;
+                    padding: 0;
                     display: flex;
                     align-items: center;
                     justify-content: \(textAlign);
@@ -223,6 +282,8 @@ class MathHTMLRenderer {
                 .math-container {
                     display: \(displayStyle);
                     text-align: \(textAlign);
+                    margin: 0;
+                    padding: 0;
                 }
                 .katex {
                     font-size: 1em !important;
@@ -239,9 +300,19 @@ class MathHTMLRenderer {
     }
     
     /// 截图 WebView（使用 WKWebView 的 takeSnapshot 方法，避免触发重新渲染）
-    private func captureWebView(_ webView: WKWebView, completion: @escaping (UIImage?) -> Void) {
+    /// - Parameters:
+    ///   - webView: 要截图的 WebView
+    ///   - contentRect: 要截取的内容区域（相对于 WebView bounds），如果为 nil 则截取整个 WebView
+    ///   - completion: 完成回调，返回裁剪后的图片
+    private func captureWebView(_ webView: WKWebView, contentRect: CGRect?, completion: @escaping (UIImage?) -> Void) {
         let config = WKSnapshotConfiguration()
-        config.rect = webView.bounds
+        
+        // 如果指定了内容区域，只截取该区域；否则截取整个 WebView
+        if let rect = contentRect {
+            config.rect = rect
+        } else {
+            config.rect = webView.bounds
+        }
         
         webView.takeSnapshot(with: config) { image, error in
             if let error = error {
@@ -249,8 +320,32 @@ class MathHTMLRenderer {
                 completion(nil)
                 return
             }
+            
+            // 如果指定了内容区域，图片已经是裁剪后的；否则直接返回
             completion(image)
         }
+    }
+    
+    /// 裁剪图片到指定区域
+    private func cropImage(_ image: UIImage, to rect: CGRect) -> UIImage? {
+        guard let cgImage = image.cgImage else {
+            return nil
+        }
+        
+        // 转换为图片坐标系（UIImage 的坐标系原点在左上角）
+        let scale = image.scale
+        let cropRect = CGRect(
+            x: rect.origin.x * scale,
+            y: rect.origin.y * scale,
+            width: rect.size.width * scale,
+            height: rect.size.height * scale
+        )
+        
+        guard let croppedCGImage = cgImage.cropping(to: cropRect) else {
+            return nil
+        }
+        
+        return UIImage(cgImage: croppedCGImage, scale: scale, orientation: image.imageOrientation)
     }
     
     /// 从池中获取或创建 WebView（必须在主线程调用）
