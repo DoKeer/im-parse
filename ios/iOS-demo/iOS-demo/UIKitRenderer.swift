@@ -215,22 +215,194 @@ class UIKitRenderer {
     
     /// 渲染段落
     private func renderParagraph(_ node: ParagraphNode, context: UIKitRenderContext) -> UIView {
-        let stackView = UIStackView()
-        stackView.axis = .horizontal
-        stackView.alignment = .top
-        stackView.spacing = 0
-        stackView.distribution = .fill
-        
-        for child in node.children {
-            let childView = renderInlineNodeWrapper(child, context: context)
-            stackView.addArrangedSubview(childView)
+        // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
+        // 行内代码现在可以嵌入到 NSAttributedString 中，不需要单独处理
+        let hasSpecialNodes = node.children.contains { wrapper in
+            switch wrapper {
+            case .image, .math, .mermaid, .mention:
+                return true
+            default:
+                return false
+            }
         }
         
-        let spacer = UIView()
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        stackView.addArrangedSubview(spacer)
+        if hasSpecialNodes {
+            // 如果包含特殊节点，使用混合布局
+            return renderParagraphWithSpecialNodes(node, context: context)
+        } else {
+            // 否则使用 NSAttributedString 渲染，支持正确换行
+            return renderParagraphAsAttributedString(node, context: context)
+        }
+    }
+    
+    /// 使用 NSAttributedString 渲染段落（纯文本格式）
+    private func renderParagraphAsAttributedString(_ node: ParagraphNode, context: UIKitRenderContext) -> UIView {
+        let attributedString = buildAttributedString(from: node.children, context: context)
         
-        return stackView
+        let label = UILabel()
+        label.attributedText = attributedString
+        label.numberOfLines = 0
+        label.lineBreakMode = .byWordWrapping
+        
+        return label
+    }
+    
+    /// 渲染包含特殊节点的段落（混合布局）
+    private func renderParagraphWithSpecialNodes(_ node: ParagraphNode, context: UIKitRenderContext) -> UIView {
+        let containerView = UIView()
+        let stackView = UIStackView()
+        stackView.axis = .vertical
+        stackView.alignment = .leading
+        stackView.spacing = 0
+        stackView.distribution = .fill
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        
+        containerView.addSubview(stackView)
+        NSLayoutConstraint.activate([
+            stackView.topAnchor.constraint(equalTo: containerView.topAnchor),
+            stackView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            stackView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            stackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
+        ])
+        
+        // 将行内节点分组：连续的文本节点合并，特殊节点单独处理
+        var currentTextNodes: [ASTNodeWrapper] = []
+        
+        func flushTextNodes() {
+            if !currentTextNodes.isEmpty {
+                let attributedString = buildAttributedString(from: currentTextNodes, context: context)
+                let label = UILabel()
+                label.attributedText = attributedString
+                label.numberOfLines = 0
+                label.lineBreakMode = .byWordWrapping
+                stackView.addArrangedSubview(label)
+                currentTextNodes.removeAll()
+            }
+        }
+        
+        for child in node.children {
+            switch child {
+            case .image, .math, .mermaid, .mention:
+                flushTextNodes()
+                let childView = renderInlineNodeWrapper(child, context: context)
+                stackView.addArrangedSubview(childView)
+            default:
+                // 包括 .code，因为行内代码现在可以嵌入到 NSAttributedString 中
+                currentTextNodes.append(child)
+            }
+        }
+        flushTextNodes()
+        
+        return containerView
+    }
+    
+    /// 从行内节点构建 NSAttributedString
+    private func buildAttributedString(from nodes: [ASTNodeWrapper], context: UIKitRenderContext) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        
+        for node in nodes {
+            let attributedString = buildAttributedString(from: node, context: context)
+            result.append(attributedString)
+        }
+        
+        return result
+    }
+    
+    /// 从单个行内节点构建 NSAttributedString
+    private func buildAttributedString(from node: ASTNodeWrapper, context: UIKitRenderContext) -> NSAttributedString {
+        switch node {
+        case .text(let textNode):
+            let font = context.currentFont ?? context.theme.font
+            let color = context.currentTextColor ?? context.theme.textColor
+            return NSAttributedString(
+                string: textNode.content,
+                attributes: [
+                    .font: font,
+                    .foregroundColor: color
+                ]
+            )
+            
+        case .strong(let strongNode):
+            let font = context.currentFont ?? context.theme.font
+            let color = context.currentTextColor ?? context.theme.textColor
+            let boldFont = UIFont.boldSystemFont(ofSize: font.pointSize)
+            let result = NSMutableAttributedString()
+            for child in strongNode.children {
+                let childString = buildAttributedString(from: child, context: context)
+                // 应用粗体
+                let mutableString = NSMutableAttributedString(attributedString: childString)
+                mutableString.addAttribute(.font, value: boldFont, range: NSRange(location: 0, length: mutableString.length))
+                result.append(mutableString)
+            }
+            return result
+            
+        case .em(let emNode):
+            let font = context.currentFont ?? context.theme.font
+            let color = context.currentTextColor ?? context.theme.textColor
+            let result = NSMutableAttributedString()
+            for child in emNode.children {
+                let childString = buildAttributedString(from: child, context: context)
+                let mutableString = NSMutableAttributedString(attributedString: childString)
+                // 应用斜体（倾斜）
+                mutableString.addAttribute(.obliqueness, value: 0.2, range: NSRange(location: 0, length: mutableString.length))
+                result.append(mutableString)
+            }
+            return result
+            
+        case .underline(let underlineNode):
+            let result = NSMutableAttributedString()
+            for child in underlineNode.children {
+                let childString = buildAttributedString(from: child, context: context)
+                let mutableString = NSMutableAttributedString(attributedString: childString)
+                mutableString.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: 0, length: mutableString.length))
+                result.append(mutableString)
+            }
+            return result
+            
+        case .strike(let strikeNode):
+            let result = NSMutableAttributedString()
+            for child in strikeNode.children {
+                let childString = buildAttributedString(from: child, context: context)
+                let mutableString = NSMutableAttributedString(attributedString: childString)
+                mutableString.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: 0, length: mutableString.length))
+                result.append(mutableString)
+            }
+            return result
+            
+        case .link(let linkNode):
+            let result = NSMutableAttributedString()
+            for child in linkNode.children {
+                let childString = buildAttributedString(from: child, context: context)
+                let mutableString = NSMutableAttributedString(attributedString: childString)
+                mutableString.addAttribute(.foregroundColor, value: context.theme.linkColor, range: NSRange(location: 0, length: mutableString.length))
+                if let url = URL(string: linkNode.url) {
+                    mutableString.addAttribute(.link, value: url, range: NSRange(location: 0, length: mutableString.length))
+                }
+                result.append(mutableString)
+            }
+            return result
+            
+        case .code(let codeNode):
+            // 行内代码：使用等宽字体和背景色
+            let font = context.theme.codeFont
+            let color = context.theme.codeTextColor
+            let bgColor = context.theme.codeBackgroundColor
+            
+            let attributedString = NSMutableAttributedString(
+                string: codeNode.content,
+                attributes: [
+                    .font: font,
+                    .foregroundColor: color,
+                    .backgroundColor: bgColor
+                ]
+            )
+            return attributedString
+            
+        default:
+            // 对于其他类型（图片、数学公式、Mermaid、提及），返回空字符串
+            // 这些节点会在 renderParagraphWithSpecialNodes 中单独处理
+            return NSAttributedString()
+        }
     }
     
     /// 渲染标题
@@ -245,29 +417,83 @@ class UIKitRenderer {
         let font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
         let color = context.theme.headingColors[min(Int(node.level) - 1, context.theme.headingColors.count - 1)]
         
-        // 创建带标题样式的上下文，让子节点使用标题的字体和颜色
+        // 创建带标题样式的上下文
         var headingContext = context
         headingContext.currentFont = font
         headingContext.currentTextColor = color
         
-        let stackView = UIStackView()
-        stackView.axis = .horizontal
-        stackView.alignment = .top
-        stackView.spacing = 0
-        stackView.distribution = .fill
-        
-        for child in node.children {
-            let childView = renderInlineNodeWrapper(child, context: headingContext)
-            // 递归设置所有子视图的字体和颜色
-            applyFontAndColor(to: childView, font: font, color: color)
-            stackView.addArrangedSubview(childView)
+        // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
+        // 行内代码现在可以嵌入到 NSAttributedString 中，不需要单独处理
+        let hasSpecialNodes = node.children.contains { wrapper in
+            switch wrapper {
+            case .image, .math, .mermaid, .mention:
+                return true
+            default:
+                return false
+            }
         }
         
-        let spacer = UIView()
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        stackView.addArrangedSubview(spacer)
+        if hasSpecialNodes {
+            // 如果包含特殊节点，使用混合布局
+            return renderHeadingWithSpecialNodes(node, context: headingContext, font: font, color: color)
+        } else {
+            // 否则使用 NSAttributedString 渲染
+            let attributedString = buildAttributedString(from: node.children, context: headingContext)
+            let label = UILabel()
+            label.attributedText = attributedString
+            label.numberOfLines = 0
+            label.lineBreakMode = .byWordWrapping
+            return label
+        }
+    }
+    
+    /// 渲染包含特殊节点的标题（混合布局）
+    private func renderHeadingWithSpecialNodes(_ node: HeadingNode, context: UIKitRenderContext, font: UIFont, color: UIColor) -> UIView {
+        let containerView = UIView()
+        let stackView = UIStackView()
+        stackView.axis = .vertical
+        stackView.alignment = .leading
+        stackView.spacing = 0
+        stackView.distribution = .fill
+        stackView.translatesAutoresizingMaskIntoConstraints = false
         
-        return stackView
+        containerView.addSubview(stackView)
+        NSLayoutConstraint.activate([
+            stackView.topAnchor.constraint(equalTo: containerView.topAnchor),
+            stackView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            stackView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            stackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
+        ])
+        
+        // 将行内节点分组：连续的文本节点合并，特殊节点单独处理
+        var currentTextNodes: [ASTNodeWrapper] = []
+        
+        func flushTextNodes() {
+            if !currentTextNodes.isEmpty {
+                let attributedString = buildAttributedString(from: currentTextNodes, context: context)
+                let label = UILabel()
+                label.attributedText = attributedString
+                label.numberOfLines = 0
+                label.lineBreakMode = .byWordWrapping
+                stackView.addArrangedSubview(label)
+                currentTextNodes.removeAll()
+            }
+        }
+        
+        for child in node.children {
+            switch child {
+            case .image, .math, .mermaid, .mention:
+                flushTextNodes()
+                let childView = renderInlineNodeWrapper(child, context: context)
+                stackView.addArrangedSubview(childView)
+            default:
+                // 包括 .code，因为行内代码现在可以嵌入到 NSAttributedString 中
+                currentTextNodes.append(child)
+            }
+        }
+        flushTextNodes()
+        
+        return containerView
     }
     
     /// 递归应用字体和颜色到视图及其子视图
@@ -707,19 +933,73 @@ class UIKitRenderer {
         
         stackView.addArrangedSubview(markerView)
         
-        // 列表项内容
-        let contentStackView = UIStackView()
-        contentStackView.axis = .vertical
-        contentStackView.alignment = .leading
-        contentStackView.spacing = 0
-        contentStackView.distribution = .fill
-        
-        for child in item.children {
-            let childView = renderInlineNodeWrapper(child, context: context)
-            contentStackView.addArrangedSubview(childView)
+        // 列表项内容：使用 NSAttributedString 组合所有行内节点
+        // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
+        let hasSpecialNodes = item.children.contains { wrapper in
+            switch wrapper {
+            case .image, .math, .mermaid, .mention:
+                return true
+            default:
+                return false
+            }
         }
         
-        stackView.addArrangedSubview(contentStackView)
+        if hasSpecialNodes {
+            // 如果包含特殊节点，使用混合布局
+            let containerView = UIView()
+            let contentStackView = UIStackView()
+            contentStackView.axis = .vertical
+            contentStackView.alignment = .leading
+            contentStackView.spacing = 0
+            contentStackView.distribution = .fill
+            contentStackView.translatesAutoresizingMaskIntoConstraints = false
+            
+            containerView.addSubview(contentStackView)
+            NSLayoutConstraint.activate([
+                contentStackView.topAnchor.constraint(equalTo: containerView.topAnchor),
+                contentStackView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+                contentStackView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+                contentStackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
+            ])
+            
+            // 将行内节点分组：连续的文本节点合并，特殊节点单独处理
+            var currentTextNodes: [ASTNodeWrapper] = []
+            
+            func flushTextNodes() {
+                if !currentTextNodes.isEmpty {
+                    let attributedString = buildAttributedString(from: currentTextNodes, context: context)
+                    let label = UILabel()
+                    label.attributedText = attributedString
+                    label.numberOfLines = 0
+                    label.lineBreakMode = .byWordWrapping
+                    contentStackView.addArrangedSubview(label)
+                    currentTextNodes.removeAll()
+                }
+            }
+            
+            for child in item.children {
+                switch child {
+                case .image, .math, .mermaid, .mention:
+                    flushTextNodes()
+                    let childView = renderInlineNodeWrapper(child, context: context)
+                    contentStackView.addArrangedSubview(childView)
+                default:
+                    // 包括 .code，因为行内代码现在可以嵌入到 NSAttributedString 中
+                    currentTextNodes.append(child)
+                }
+            }
+            flushTextNodes()
+            
+            stackView.addArrangedSubview(containerView)
+        } else {
+            // 否则使用 NSAttributedString 渲染，支持正确换行
+            let attributedString = buildAttributedString(from: item.children, context: context)
+            let label = UILabel()
+            label.attributedText = attributedString
+            label.numberOfLines = 0
+            label.lineBreakMode = .byWordWrapping
+            stackView.addArrangedSubview(label)
+        }
         
         return stackView
     }
@@ -785,27 +1065,82 @@ class UIKitRenderer {
         let containerView = UIView()
         containerView.backgroundColor = isHeader ? context.theme.tableHeaderBackground : .clear
         
-        let stackView = UIStackView()
-        stackView.axis = .vertical
-        stackView.alignment = cell.align?.uiAlignment ?? .leading
-        stackView.spacing = 0
-        stackView.distribution = .fill
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        
-        containerView.addSubview(stackView)
-        
-        for child in cell.children {
-            let childView = renderInlineNodeWrapper(child, context: context)
-            stackView.addArrangedSubview(childView)
+        // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
+        let hasSpecialNodes = cell.children.contains { wrapper in
+            switch wrapper {
+            case .image, .math, .mermaid, .mention:
+                return true
+            default:
+                return false
+            }
         }
         
         let padding = context.theme.tableCellPadding
-        NSLayoutConstraint.activate([
-            stackView.topAnchor.constraint(equalTo: containerView.topAnchor, constant: padding),
-            stackView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: padding),
-            stackView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -padding),
-            stackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -padding)
-        ])
+        
+        if hasSpecialNodes {
+            // 如果包含特殊节点，使用混合布局
+            let contentStackView = UIStackView()
+            contentStackView.axis = .vertical
+            contentStackView.alignment = cell.align?.uiAlignment ?? .leading
+            contentStackView.spacing = 0
+            contentStackView.distribution = .fill
+            contentStackView.translatesAutoresizingMaskIntoConstraints = false
+            
+            containerView.addSubview(contentStackView)
+            
+            // 将行内节点分组：连续的文本节点合并，特殊节点单独处理
+            var currentTextNodes: [ASTNodeWrapper] = []
+            
+            func flushTextNodes() {
+                if !currentTextNodes.isEmpty {
+                    let attributedString = buildAttributedString(from: currentTextNodes, context: context)
+                    let label = UILabel()
+                    label.attributedText = attributedString
+                    label.numberOfLines = 0
+                    label.lineBreakMode = .byWordWrapping
+                    label.textAlignment = cell.align?.textAlignment ?? .left
+                    contentStackView.addArrangedSubview(label)
+                    currentTextNodes.removeAll()
+                }
+            }
+            
+            for child in cell.children {
+                switch child {
+                case .image, .math, .mermaid, .mention:
+                    flushTextNodes()
+                    let childView = renderInlineNodeWrapper(child, context: context)
+                    contentStackView.addArrangedSubview(childView)
+                default:
+                    // 包括 .code，因为行内代码现在可以嵌入到 NSAttributedString 中
+                    currentTextNodes.append(child)
+                }
+            }
+            flushTextNodes()
+            
+            NSLayoutConstraint.activate([
+                contentStackView.topAnchor.constraint(equalTo: containerView.topAnchor, constant: padding),
+                contentStackView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: padding),
+                contentStackView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -padding),
+                contentStackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -padding)
+            ])
+        } else {
+            // 否则使用 NSAttributedString 渲染，支持正确换行
+            let attributedString = buildAttributedString(from: cell.children, context: context)
+            let label = UILabel()
+            label.attributedText = attributedString
+            label.numberOfLines = 0
+            label.lineBreakMode = .byWordWrapping
+            label.textAlignment = cell.align?.textAlignment ?? .left
+            label.translatesAutoresizingMaskIntoConstraints = false
+            
+            containerView.addSubview(label)
+            NSLayoutConstraint.activate([
+                label.topAnchor.constraint(equalTo: containerView.topAnchor, constant: padding),
+                label.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: padding),
+                label.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -padding),
+                label.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -padding)
+            ])
+        }
         
         return containerView
     }
@@ -1035,23 +1370,78 @@ class UIKitRenderer {
         ])
         stackView.addArrangedSubview(lineView)
         
-        // 内容
-        let contentStackView = UIStackView()
-        contentStackView.axis = .vertical
-        contentStackView.alignment = .leading
-        contentStackView.spacing = 0
-        contentStackView.distribution = .fill
-        
-        for child in node.children {
-            let childView = renderInlineNodeWrapper(child, context: context)
-            // 设置引用块文本颜色
-            if let label = childView as? UILabel {
-                label.textColor = context.theme.blockquoteTextColor
+        // 内容：使用 NSAttributedString 组合所有行内节点
+        // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
+        let hasSpecialNodes = node.children.contains { wrapper in
+            switch wrapper {
+            case .image, .math, .mermaid, .mention:
+                return true
+            default:
+                return false
             }
-            contentStackView.addArrangedSubview(childView)
         }
         
-        stackView.addArrangedSubview(contentStackView)
+        // 创建带引用块文本颜色的上下文
+        var blockquoteContext = context
+        blockquoteContext.currentTextColor = context.theme.blockquoteTextColor
+        
+        if hasSpecialNodes {
+            // 如果包含特殊节点，使用混合布局
+            let containerView = UIView()
+            let contentStackView = UIStackView()
+            contentStackView.axis = .vertical
+            contentStackView.alignment = .leading
+            contentStackView.spacing = 0
+            contentStackView.distribution = .fill
+            contentStackView.translatesAutoresizingMaskIntoConstraints = false
+            
+            containerView.addSubview(contentStackView)
+            NSLayoutConstraint.activate([
+                contentStackView.topAnchor.constraint(equalTo: containerView.topAnchor),
+                contentStackView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+                contentStackView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+                contentStackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
+            ])
+            
+            // 将行内节点分组：连续的文本节点合并，特殊节点单独处理
+            var currentTextNodes: [ASTNodeWrapper] = []
+            
+            func flushTextNodes() {
+                if !currentTextNodes.isEmpty {
+                    let attributedString = buildAttributedString(from: currentTextNodes, context: blockquoteContext)
+                    let label = UILabel()
+                    label.attributedText = attributedString
+                    label.numberOfLines = 0
+                    label.lineBreakMode = .byWordWrapping
+                    contentStackView.addArrangedSubview(label)
+                    currentTextNodes.removeAll()
+                }
+            }
+            
+            for child in node.children {
+                switch child {
+                case .image, .math, .mermaid, .mention:
+                    flushTextNodes()
+                    let childView = renderInlineNodeWrapper(child, context: blockquoteContext)
+                    contentStackView.addArrangedSubview(childView)
+                default:
+                    // 包括 .code，因为行内代码现在可以嵌入到 NSAttributedString 中
+                    currentTextNodes.append(child)
+                }
+            }
+            flushTextNodes()
+            
+            stackView.addArrangedSubview(containerView)
+        } else {
+            // 否则使用 NSAttributedString 渲染，支持正确换行
+            let attributedString = buildAttributedString(from: node.children, context: blockquoteContext)
+            let label = UILabel()
+            label.attributedText = attributedString
+            label.numberOfLines = 0
+            label.lineBreakMode = .byWordWrapping
+            stackView.addArrangedSubview(label)
+        }
+        
         stackView.layoutMargins = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 0)
         stackView.isLayoutMarginsRelativeArrangement = true
         
@@ -1116,6 +1506,17 @@ extension TextAlign {
             return .center
         case .right:
             return .trailing
+        }
+    }
+    
+    var textAlignment: NSTextAlignment {
+        switch self {
+        case .left:
+            return .left
+        case .center:
+            return .center
+        case .right:
+            return .right
         }
     }
 }

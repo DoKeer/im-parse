@@ -48,7 +48,7 @@ class UIKitMessageListViewController: UIViewController {
     private func loadMessages() {
         // 在后台线程生成消息
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let generatedMessages = MessageDataGenerator.generateMessages(count: 1000)
+            let generatedMessages = MessageDataGenerator.generateMessages(count: 1)
             
             // 解析消息
             var parsedMessages = generatedMessages

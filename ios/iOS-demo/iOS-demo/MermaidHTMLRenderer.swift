@@ -18,10 +18,8 @@ class MermaidHTMLRenderer {
     private var imageCache: [String: UIImage] = [:]
     private let cacheQueue = DispatchQueue(label: "mermaid.html.cache", attributes: .concurrent)
     
-    // WebView 池（复用 WebView 以减少创建开销）
-    // 注意：所有对 webViewPool 的访问都必须在主线程
-    private var webViewPool: [WKWebView] = []
-    private let maxPoolSize = 2 // 最多保留 2 个 WebView
+    // 使用共享的 WebView 池（与 MathHTMLRenderer 共享，减少资源占用）
+    private let webViewPool = SharedWebViewPool.shared
     
     private init() {
         // 监听内存警告，清理缓存
@@ -287,52 +285,14 @@ class MermaidHTMLRenderer {
     
     /// 从池中获取或创建 WebView（必须在主线程调用）
     private func getOrCreateWebView() -> WKWebView {
-        // 确保在主线程
-        assert(Thread.isMainThread, "getOrCreateWebView must be called on main thread")
-        
-        // 使用主队列同步访问池（因为已经在主线程，这里直接访问即可）
-        if let webView = webViewPool.popLast() {
-            // 清理之前的加载和状态
-            webView.stopLoading()
-            webView.navigationDelegate = nil
-            // 清除所有关联对象
-            objc_setAssociatedObject(webView, &AssociatedKeys.delegate, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-            objc_setAssociatedObject(webView, &AssociatedKeys.processing, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-            return webView
-        } else {
-            // 创建新的 WebView（必须在主线程）
-            let config = WKWebViewConfiguration()
-            config.suppressesIncrementalRendering = true
-            config.allowsInlineMediaPlayback = true
-            
-            let webView = WKWebView(frame: .zero, configuration: config)
-            webView.isOpaque = false
-            webView.backgroundColor = .clear
-            webView.scrollView.backgroundColor = .clear
-            webView.scrollView.isScrollEnabled = false
-            
-            return webView
-        }
+        // 使用共享的 WebView 池
+        return webViewPool.getOrCreateWebView()
     }
     
     /// 将 WebView 返回池中（必须在主线程调用）
     private func returnWebViewToPool(_ webView: WKWebView) {
-        // 确保在主线程
-        assert(Thread.isMainThread, "returnWebViewToPool must be called on main thread")
-        
-        // 清理 WebView 和所有状态
-        webView.stopLoading()
-        webView.loadHTMLString("", baseURL: nil)
-        webView.navigationDelegate = nil
-        
-        // 清除所有关联对象
-        objc_setAssociatedObject(webView, &AssociatedKeys.delegate, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-        objc_setAssociatedObject(webView, &AssociatedKeys.processing, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-        
-        // 如果池未满，保留 WebView
-        if webViewPool.count < maxPoolSize {
-            webViewPool.append(webView)
-        }
+        // 使用共享的 WebView 池
+        webViewPool.returnWebView(webView)
     }
     
     /// 生成缓存键
