@@ -476,10 +476,11 @@ struct SwiftUIRenderer {
                 renderInlineNodeWrapper(child, context: context)
             }
         }
-        .italic()
-        // 如果当前有自定义字体，保持字体大小但应用斜体
         .font(context.currentFont != nil ? context.currentFont : nil)
         .foregroundColor(context.currentTextColor)
+        // 使用仿射变换实现斜体效果，对中英文都有效
+        // 倾斜角度约为 -12 度（约 -0.21 弧度），这是标准的斜体倾斜角度
+        .transformEffect(CGAffineTransform(a: 1, b: 0, c: -0.21, d: 1, tx: 0, ty: 0))
     }
     
     @ViewBuilder

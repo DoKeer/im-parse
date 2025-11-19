@@ -329,13 +329,61 @@ class UIKitRenderer {
         
         for child in node.children {
             let childView = renderInlineNodeWrapper(child, context: context)
-            if let label = childView as? UILabel {
-                let descriptor = context.theme.font.fontDescriptor.withSymbolicTraits(.traitItalic)
-                label.font = UIFont(descriptor: descriptor ?? context.theme.font.fontDescriptor, size: context.theme.font.pointSize)
-            }
+            // 应用斜体效果：对 UILabel 使用 NSAttributedString 的倾斜属性
+            // 对中英文都有效
+            applyItalicToView(childView, context: context)
             stackView.addArrangedSubview(childView)
         }
         return stackView
+    }
+    
+    /// 对视图应用斜体效果
+    private func applyItalicToView(_ view: UIView, context: UIKitRenderContext) {
+        // 递归处理视图树中的所有 UILabel
+        applyItalicToLabels(in: view, context: context)
+    }
+    
+    /// 递归处理视图树中的所有 UILabel，应用斜体效果
+    private func applyItalicToLabels(in view: UIView, context: UIKitRenderContext) {
+        // 如果是 UILabel，直接应用倾斜属性
+        if let label = view as? UILabel {
+            let text = label.text ?? ""
+            let font = context.currentFont ?? label.font ?? context.theme.font
+            let color = context.currentTextColor ?? label.textColor ?? context.theme.textColor
+            
+            // 如果 label 已经有 attributedText，需要合并属性
+            var attributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: color,
+                .obliqueness: 0.2  // 倾斜属性，对中英文都有效
+            ]
+            
+            if let attributedText = label.attributedText, attributedText.length > 0 {
+                // 合并现有属性（保留下划线、删除线等样式）
+                let existingAttrs = attributedText.attributes(at: 0, effectiveRange: nil)
+                for (key, value) in existingAttrs {
+                    // 保留除字体、颜色、倾斜之外的其他属性
+                    if key != .font && key != .foregroundColor && key != .obliqueness {
+                        attributes[key] = value
+                    }
+                }
+            }
+            
+            label.attributedText = NSAttributedString(string: text, attributes: attributes)
+            return
+        }
+        
+        // 递归处理 UIStackView 的 arrangedSubviews
+        if let stackView = view as? UIStackView {
+            for arrangedSubview in stackView.arrangedSubviews {
+                applyItalicToLabels(in: arrangedSubview, context: context)
+            }
+        }
+        
+        // 递归处理普通 subviews
+        for subview in view.subviews {
+            applyItalicToLabels(in: subview, context: context)
+        }
     }
     
     /// 渲染下划线
