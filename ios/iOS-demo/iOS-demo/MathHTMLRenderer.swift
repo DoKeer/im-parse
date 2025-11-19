@@ -357,7 +357,7 @@ class MathHTMLRenderer {
         if let webView = webViewPool.popLast() {
             // 清理之前的加载和状态
             webView.stopLoading()
-            webView.loadHTMLString("", baseURL: nil)
+//            webView.loadHTMLString("", baseURL: nil)
             webView.navigationDelegate = nil
             // 清除所有关联对象
             objc_setAssociatedObject(webView, &AssociatedKeys.delegate, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)

@@ -180,64 +180,64 @@ class MessageDataGenerator {
     private static func generateDeltaTemplates() -> [String] {
         return [
             """
-            {"ops":[{"insert":"Delta这是一条简单的 Delta 消息。\\n"}]}
+            {"ops":[{"insert":"Delta 这是一条简单的 Delta 消息。\\n"}]}
             """,
             """
-            {"ops":[{"insert":"DeltaHello "},{"insert":"DeltaWorld","attributes":{"bold":true}},{"insert":"Delta\\n"}]}
+            {"ops":[{"insert":"Delta Hello "},{"insert":"Delta World","attributes":{"bold":true}},{"insert":"Delta \\n"}]}
             """,
             """
-            {"ops":[{"insert":"Delta这是"},{"insert":"Delta斜体","attributes":{"italic":true}},{"insert":"Delta文本。\\n"}]}
+            {"ops":[{"insert":"Delta 这是"},{"insert":"Delta 斜体","attributes":{"italic":true}},{"insert":"Delta 文本。\\n"}]}
             """,
             """
-            {"ops":[{"insert":"Delta这是"},{"insert":"Delta下划线","attributes":{"underline":true}},{"insert":"Delta文本。\\n"}]}
+            {"ops":[{"insert":"Delta 这是"},{"insert":"Delta 下划线","attributes":{"underline":true}},{"insert":"Delta 文本。\\n"}]}
             """,
             """
-            {"ops":[{"insert":"Delta这是"},{"insert":"Delta删除线","attributes":{"strike":true}},{"insert":"Delta文本。\\n"}]}
+            {"ops":[{"insert":"Delta 这是"},{"insert":"Delta 删除线","attributes":{"strike":true}},{"insert":"Delta 文本。\\n"}]}
             """,
             """
-            {"ops":[{"insert":"Delta这是"},{"insert":"Delta链接","attributes":{"link":"https://fastly.picsum.photos/id/994/200/200.jpg?hmac=a0dwH_eftBXVmeonrMy5xNmGDPwiXgXrzUjjUQLEtR8"}},{"insert":"Delta。\\n"}]}
+            {"ops":[{"insert":"Delta 这是"},{"insert":"Delta 链接","attributes":{"link":"https://fastly.picsum.photos/id/994/200/200.jpg?hmac=a0dwH_eftBXVmeonrMy5xNmGDPwiXgXrzUjjUQLEtR8"}},{"insert":"Delta 。\\n"}]}
             """,
             """
-            {"ops":[{"insert":"Delta这是"},{"insert":"Delta代码","attributes":{"code":true}},{"insert":"Delta文本。\\n"}]}
+            {"ops":[{"insert":"Delta 这是"},{"insert":"Delta 代码","attributes":{"code":true}},{"insert":"Delta 文本。\\n"}]}
             """,
             """
-            {"ops":[{"insert":"Delta代码块：\\n"},{"insert":"Deltafunction hello() {\\n    console.log('Hello');\\n}","attributes":{"code-block":"javascript"}},{"insert":"Delta\\n"}]}
+            {"ops":[{"insert":"Delta 代码块：\\n"},{"insert":"Delta function hello() {\\n    console.log('Hello');\\n}","attributes":{"code-block":"javascript"}},{"insert":"Delta \\n"}]}
             """,
             """
-            {"ops":[{"insert":"Delta列表项 1","attributes":{"list":"bullet"}},{"insert":"Delta\\n"},{"insert":"Delta列表项 2","attributes":{"list":"bullet"}},{"insert":"Delta\\n"}]}
+            {"ops":[{"insert":"Delta 列表项 1","attributes":{"list":"bullet"}},{"insert":"Delta \\n"},{"insert":"Delta 列表项 2","attributes":{"list":"bullet"}},{"insert":"Delta \\n"}]}
             """,
             """
-            {"ops":[{"insert":"Delta第一项","attributes":{"list":"ordered"}},{"insert":"Delta\\n"},{"insert":"Delta第二项","attributes":{"list":"ordered"}},{"insert":"Delta\\n"}]}
+            {"ops":[{"insert":"Delta 第一项","attributes":{"list":"ordered"}},{"insert":"Delta \\n"},{"insert":"Delta 第二项","attributes":{"list":"ordered"}},{"insert":"Delta \\n"}]}
             """,
             """
-            {"ops":[{"insert":{"image":"https://fastly.picsum.photos/id/994/200/200.jpg?hmac=a0dwH_eftBXVmeonrMy5xNmGDPwiXgXrzUjjUQLEtR8"}},{"insert":"Delta\\n"}]}
+            {"ops":[{"insert":{"image":"https://fastly.picsum.photos/id/994/200/200.jpg?hmac=a0dwH_eftBXVmeonrMy5xNmGDPwiXgXrzUjjUQLEtR8"}},{"insert":"Delta \\n"}]}
             """,
             """
-            {"ops":[{"insert":"Delta这是"},{"insert":"Delta粗体","attributes":{"bold":true}},{"insert":"Delta和"},{"insert":"Delta斜体","attributes":{"italic":true}},{"insert":"Delta的组合。\\n"}]}
+            {"ops":[{"insert":"Delta 这是"},{"insert":"Delta 粗体","attributes":{"bold":true}},{"insert":"Delta 和"},{"insert":"Delta 斜体","attributes":{"italic":true}},{"insert":"Delta 的组合。\\n"}]}
             """,
             """
-            {"ops":[{"insert":"Delta数学公式：","attributes":{"bold":true}},{"insert":{"formula":"E = mc^2"}},{"insert":"Delta\\n"}]}
+            {"ops":[{"insert":"Delta 数学公式：","attributes":{"bold":true}},{"insert":{"formula":"E = mc^2"}},{"insert":"Delta \\n"}]}
             """,
             """
-            {"ops":[{"insert":"Delta这是一条"},{"insert":"Delta非常长","attributes":{"bold":true}},{"insert":"Delta的消息，用来测试文本换行和高度计算。它包含了很多内容，应该能够正确地换行显示。\\n"}]}
+            {"ops":[{"insert":"Delta 这是一条"},{"insert":"Delta 非常长","attributes":{"bold":true}},{"insert":"Delta 的消息，用来测试文本换行和高度计算。它包含了很多内容，应该能够正确地换行显示。\\n"}]}
             """,
             """
-            {"ops":[{"insert":"Delta@Alice","attributes":{"mention":true}},{"insert":"Delta 提到了你。\\n"}]}
+            {"ops":[{"insert":"Delta @Alice","attributes":{"mention":true}},{"insert":"Delta  提到了你。\\n"}]}
             """,
             """
-            {"ops":[{"insert":"Delta标题","attributes":{"header":1}},{"insert":"Delta\\n"},{"insert":"Delta这是内容。\\n"}]}
+            {"ops":[{"insert":"Delta 标题","attributes":{"header":1}},{"insert":"Delta \\n"},{"insert":"Delta 这是内容。\\n"}]}
             """,
             """
-            {"ops":[{"insert":"Delta这是"},{"insert":"Delta红色","attributes":{"color":"#ff0000"}},{"insert":"Delta文本。\\n"}]}
+            {"ops":[{"insert":"Delta 这是"},{"insert":"Delta 红色","attributes":{"color":"#ff0000"}},{"insert":"Delta 文本。\\n"}]}
             """,
             """
-            {"ops":[{"insert":"Delta这是"},{"insert":"Delta背景色","attributes":{"background":"#ffff00"}},{"insert":"Delta文本。\\n"}]}
+            {"ops":[{"insert":"Delta 这是"},{"insert":"Delta 背景色","attributes":{"background":"#ffff00"}},{"insert":"Delta 文本。\\n"}]}
             """,
             """
-            {"ops":[{"insert":"Delta多行\\n文本\\n消息\\n"}]}
+            {"ops":[{"insert":"Delta 多行\\n文本\\n消息\\n"}]}
             """,
             """
-            {"ops":[{"insert":"Delta混合格式："},{"insert":"Delta粗体","attributes":{"bold":true}},{"insert":"Delta、"},{"insert":"Delta斜体","attributes":{"italic":true}},{"insert":"Delta、"},{"insert":"Delta代码","attributes":{"code":true}},{"insert":"Delta。\\n"}]}
+            {"ops":[{"insert":"Delta 混合格式："},{"insert":"Delta 粗体","attributes":{"bold":true}},{"insert":"Delta 、"},{"insert":"Delta 斜体","attributes":{"italic":true}},{"insert":"Delta 、"},{"insert":"Delta 代码","attributes":{"code":true}},{"insert":"Delta 。\\n"}]}
             """,
         ]
     }
