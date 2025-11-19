@@ -480,7 +480,8 @@ struct SwiftUIRenderer {
         .foregroundColor(context.currentTextColor)
         // 使用仿射变换实现斜体效果，对中英文都有效
         // 倾斜角度约为 -12 度（约 -0.21 弧度），这是标准的斜体倾斜角度
-        .transformEffect(CGAffineTransform(a: 1, b: 0, c: -0.21, d: 1, tx: 0, ty: 0))
+        // 在变换中添加水平偏移补偿，避免与后续文本重叠
+        .transformEffect(CGAffineTransform(a: 1, b: 0, c: -0.21, d: 1, tx: 2.5, ty: 0))
     }
     
     @ViewBuilder
