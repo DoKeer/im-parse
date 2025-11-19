@@ -286,10 +286,10 @@ class IMParseCore {
         }
     }
     
-    /// 将数学公式转换为 SVG
-    static func mathToSVG(_ formula: String, display: Bool) -> ParseResult {
+    /// 将数学公式转换为 HTML
+    static func mathToHTML(_ formula: String, display: Bool) -> ParseResult {
         return formula.withCString { formulaCString in
-            guard let result = math_to_svg(formulaCString, display) else {
+            guard let result = math_to_html(formulaCString, display) else {
                 return ParseResult(
                     success: false,
                     astJSON: nil,
@@ -352,8 +352,8 @@ func markdown_to_html_with_config(_ input: UnsafePointer<CChar>, _ config_json: 
 @_silgen_name("delta_to_html_with_config")
 func delta_to_html_with_config(_ input: UnsafePointer<CChar>, _ config_json: UnsafePointer<CChar>?) -> UnsafeMutablePointer<IMParseResult>?
 
-@_silgen_name("math_to_svg")
-func math_to_svg(_ formula: UnsafePointer<CChar>, _ display: Bool) -> UnsafeMutablePointer<IMParseResult>?
+@_silgen_name("math_to_html")
+func math_to_html(_ formula: UnsafePointer<CChar>, _ display: Bool) -> UnsafeMutablePointer<IMParseResult>?
 
 // C 结构体定义
 struct IMParseResult {

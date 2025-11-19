@@ -47,7 +47,9 @@ class MessageHTMLViewController: UIViewController {
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         
-        webView.loadHTMLString(html, baseURL: nil)
+        // 使用 MathHTMLRenderer 包装 HTML，自动添加 KaTeX CSS 支持
+        let wrappedHTML = MathHTMLRenderer.wrapHTMLWithKaTeX(html)
+        webView.loadHTMLString(wrappedHTML, baseURL: nil)
     }
     
     private func setupNavigationBar() {

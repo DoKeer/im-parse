@@ -121,22 +121,31 @@ impl MarkdownParser {
                     match tag {
                         Tag::Paragraph => {
                             // 检查当前段落是否只包含块级公式
+                            // 需要收集所有文本节点的内容，因为 pulldown-cmark 可能会将公式拆分成多个节点
                             let should_convert_to_block_math = if let Some(para) = &builder.current_paragraph {
-                                // 检查段落内容是否只包含一个文本节点，且该文本节点是块级公式
-                                if para.children.len() == 1 {
-                                    if let ASTNode::Text(text_node) = &para.children[0] {
-                                        let trimmed = text_node.content.trim();
-                                        if trimmed.starts_with("$$") && trimmed.ends_with("$$") && trimmed.len() > 4 {
-                                            let inner = trimmed[2..trimmed.len()-2].trim();
-                                            if !inner.contains("$$") {
-                                                // 整个段落只有块级公式
-                                                true
-                                            } else {
-                                                false
-                                            }
-                                        } else {
-                                            false
+                                // 收集所有文本内容
+                                let mut full_text = String::new();
+                                let mut only_text_nodes = true;
+                                
+                                for child in &para.children {
+                                    match child {
+                                        ASTNode::Text(text_node) => {
+                                            full_text.push_str(&text_node.content);
                                         }
+                                        _ => {
+                                            only_text_nodes = false;
+                                            break;
+                                        }
+                                    }
+                                }
+                                
+                                // 如果只包含文本节点，检查是否是块级公式
+                                if only_text_nodes {
+                                    let trimmed = full_text.trim();
+                                    if trimmed.starts_with("$$") && trimmed.ends_with("$$") && trimmed.len() > 4 {
+                                        let inner = trimmed[2..trimmed.len()-2].trim();
+                                        // 确保内部没有嵌套的 $$
+                                        !inner.contains("$$")
                                     } else {
                                         false
                                     }
@@ -150,15 +159,20 @@ impl MarkdownParser {
                             if should_convert_to_block_math {
                                 // 获取块级公式内容
                                 if let Some(para) = builder.current_paragraph.take() {
-                                    if let ASTNode::Text(text_node) = &para.children[0] {
-                                        let trimmed = text_node.content.trim();
-                                        let inner = trimmed[2..trimmed.len()-2].trim();
-                                        builder.add_math(inner.to_string(), true);
+                                    // 收集所有文本内容
+                                    let mut full_text = String::new();
+                                    for child in &para.children {
+                                        if let ASTNode::Text(text_node) = child {
+                                            full_text.push_str(&text_node.content);
+                                        }
                                     }
+                                    let trimmed = full_text.trim();
+                                    let inner = trimmed[2..trimmed.len()-2].trim();
+                                    builder.add_math(inner.to_string(), true);
                                 }
                                 in_paragraph = false;
                             } else {
-                            builder.end_paragraph();
+                                builder.end_paragraph();
                                 in_paragraph = false;
                             }
                         }

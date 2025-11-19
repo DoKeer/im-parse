@@ -284,11 +284,11 @@ pub extern "C" fn get_dark_style_config() -> *mut c_char {
     }
 }
 
-/// 将数学公式转换为 SVG
+/// 将数学公式转换为 HTML
 /// @param formula 数学公式字符串（LaTeX 格式）
 /// @param display 是否为块级公式（true 为块级，false 为行内）
 #[no_mangle]
-pub extern "C" fn math_to_svg(formula: *const c_char, display: bool) -> *mut ParseResult {
+pub extern "C" fn math_to_html(formula: *const c_char, display: bool) -> *mut ParseResult {
     let formula_str = unsafe {
         if formula.is_null() {
             return create_error_result("Formula is null".to_string());
@@ -299,9 +299,9 @@ pub extern "C" fn math_to_svg(formula: *const c_char, display: bool) -> *mut Par
         }
     };
 
-    match crate::math_to_svg(formula_str, display) {
-        Ok(svg) => {
-            let c_string = match CString::new(svg) {
+    match crate::math_to_html(formula_str, display) {
+        Ok(html) => {
+            let c_string = match CString::new(html) {
                 Ok(s) => s,
                 Err(_) => return create_error_result("Failed to create CString".to_string()),
             };

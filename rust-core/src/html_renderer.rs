@@ -367,17 +367,17 @@ hr {{
                 format!("<td{}>{}</td>", align_attr, content)
             }
             ASTNode::Math(math) => {
-                // 将数学公式转换为 SVG
-                match crate::math_to_svg(&math.content, math.display) {
-                    Ok(svg) => {
+                // 将数学公式转换为 HTML
+                match crate::math_to_html(&math.content, math.display) {
+                    Ok(html) => {
                         if math.display {
-                            format!("<div class=\"math-display\">{}</div>\n", svg)
+                            format!("<div class=\"math-display\">{}</div>\n", html)
                         } else {
-                            format!("<span class=\"math-inline\">{}</span>", svg)
+                            format!("<span class=\"math-inline\">{}</span>", html)
                         }
                     }
                     Err(_) => {
-                        // 如果 SVG 转换失败，回退到原始格式
+                        // 如果 HTML 转换失败，回退到原始格式
                         if math.display {
                             format!("<div class=\"math-display\">\\( {}\\)</div>\n", escape_html(&math.content))
                         } else {

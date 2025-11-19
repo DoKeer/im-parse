@@ -67,11 +67,11 @@ const char * _Nullable get_default_style_config(void);
 /// @return JSON 字符串，需要调用 free_string 释放
 const char * _Nullable get_dark_style_config(void);
 
-/// 将数学公式转换为 SVG
+/// 将数学公式转换为 HTML
 /// @param formula 数学公式字符串（LaTeX 格式）
 /// @param display 是否为块级公式（true 为块级，false 为行内）
 /// @return 解析结果，需要调用 free_parse_result 释放
-IMParseResult * _Nullable math_to_svg(const char * _Nonnull formula, bool display);
+IMParseResult * _Nullable math_to_html(const char * _Nonnull formula, bool display);
 
 NS_ASSUME_NONNULL_END
 

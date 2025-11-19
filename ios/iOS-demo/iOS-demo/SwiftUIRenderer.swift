@@ -370,7 +370,7 @@ struct SwiftUIRenderer {
     
     @ViewBuilder
     private func renderMath(_ node: MathNode, context: RenderContext) -> some View {
-        // 使用 SVG 渲染数学公式（从 Rust Core 获取 SVG）
+        // 使用 HTML 渲染数学公式（从 Rust Core 获取 HTML，然后渲染为图片）
         MathSVGView(mathContent: node.content, display: node.display, context: context)
             .padding(context.theme.codeBlockPadding)
             .background(context.theme.codeBackgroundColor)
@@ -589,49 +589,71 @@ extension TextAlign {
     }
 }
 
-// MARK: - Math SVG View
+// MARK: - Math HTML View
 
-/// 使用 SVG 渲染数学公式（从 Rust Core 获取 SVG）
+/// 数学公式 HTML 渲染视图（使用 WebView 渲染为图片）
+/// 从 Rust Core 获取 KaTeX HTML，然后使用 MathHTMLRenderer 渲染为图片
 struct MathSVGView: View {
     let mathContent: String
     let display: Bool
     let context: RenderContext
-    @State private var svgString: String?
-    @State private var image: UIImage?
+    @State private var renderedImage: UIImage?
     @State private var isLoading = true
     
     var body: some View {
         Group {
-            if let img = image {
-                Image(uiImage: img)
+            if let image = renderedImage {
+                Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity, alignment: display ? .center : .leading)
+                    .frame(maxWidth: context.width, alignment: display ? .center : .leading)
             } else if isLoading {
                 ProgressView()
                     .frame(height: display ? 60 : 30)
             } else {
-                Text("数学公式渲染失败")
-                    .font(.caption)
+                // 回退：显示原始 LaTeX
+                Text(mathContent)
+                    .font(.system(size: display ? 16 : 14, design: .monospaced))
                     .foregroundColor(.secondary)
-                    .frame(height: display ? 60 : 30)
+                    .frame(maxWidth: context.width, alignment: display ? .center : .leading)
             }
         }
         .onAppear {
-            print("数学公式："+mathContent)
-            loadSVG()
+            loadMathHTML()
         }
     }
     
-    private func loadSVG() {
-        // 从 Rust Core 获取 SVG
-        let result = IMParseCore.mathToSVG(mathContent, display: display)
-        if result.success, let svg = result.astJSON {
-            self.svgString = svg
-            // 将 SVG 转换为 UIImage（带缓存）
-            self.image = MathSVGCache.shared.image(for: svg, size: CGSize(width: context.width, height: display ? 60 : 30))
+    private func loadMathHTML() {
+        // 从 Rust Core 获取 KaTeX HTML
+        let result = IMParseCore.mathToHTML(mathContent, display: display)
+        
+        guard result.success, let html = result.astJSON else {
+            self.isLoading = false
+            return
         }
-        self.isLoading = false
+        
+        // 获取文本颜色
+        let textColor = UIColor(context.theme.textColor)
+        let components = textColor.cgColor.components ?? [0, 0, 0, 1]
+        let colorHex = String(format: "#%02X%02X%02X",
+            Int(components[0] * 255),
+            Int(components[1] * 255),
+            Int(components[2] * 255)
+        )
+        
+        // 使用 MathHTMLRenderer 渲染为图片
+        let fontSize = display ? 16.0 : 14.0
+        MathHTMLRenderer.shared.render(
+            html: html,
+            display: display,
+            textColor: colorHex,
+            fontSize: fontSize
+        ) { image in
+            DispatchQueue.main.async {
+                self.renderedImage = image
+                self.isLoading = false
+            }
+        }
     }
 }
 
@@ -662,9 +684,66 @@ class MathSVGCache {
     }
     
     private func renderSVG(_ svg: String, size: CGSize) -> UIImage? {
-        // 使用 SwiftSVG 或 Core Graphics 渲染 SVG
-        // 这里先使用占位符实现，后续需要集成 SwiftSVG
+        // 临时实现：渲染纯文本占位符
+        // TODO: 需要实现真正的 SVG 渲染，或使用更好的数学公式渲染方案
+        // 
+        // 当前问题：
+        // 1. katex-rs 生成的 SVG 包含 foreignObject（HTML 内容）
+        // 2. iOS 的 Core Graphics 不支持 foreignObject
+        // 3. 用户不希望使用 WebView（性能原因）
+        // 
+        // 可能的解决方案：
+        // 1. 在 Rust 中直接输出纯 SVG 路径（需要实现 LaTeX 到 SVG 的完整转换）
+        // 2. 使用第三方 SVG 渲染库（如 SwiftSVG，但可能不支持 foreignObject）
+        // 3. 使用 NSAttributedString 渲染简化的数学公式
+        
+        // 提取数学公式内容（从 SVG 中）
+        guard let mathContent = extractMathFromSVG(svg) else {
+            return renderPlaceholderImage(text: "[Math]", size: size)
+        }
+        
+        // 渲染为纯文本图片
+        return renderPlaceholderImage(text: mathContent, size: size)
+    }
+    
+    private func extractMathFromSVG(_ svg: String) -> String? {
+        // 简单提取：查找 SVG 中的文本内容
+        // 这只是临时方案，无法正确渲染复杂公式
+        if let range = svg.range(of: "class=\"katex\"") {
+            // 这是一个非常简化的实现
+            return nil
+        }
         return nil
+    }
+    
+    private func renderPlaceholderImage(text: String, size: CGSize) -> UIImage? {
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { context in
+            // 绘制背景
+            UIColor.systemGray6.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            
+            // 绘制文本
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.alignment = .center
+            
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 14),
+                .foregroundColor: UIColor.label,
+                .paragraphStyle: paragraphStyle
+            ]
+            
+            let attributedText = NSAttributedString(string: text, attributes: attributes)
+            let textSize = attributedText.size()
+            let textRect = CGRect(
+                x: (size.width - textSize.width) / 2,
+                y: (size.height - textSize.height) / 2,
+                width: textSize.width,
+                height: textSize.height
+            )
+            
+            attributedText.draw(in: textRect)
+        }
     }
     
     func clearCache() {

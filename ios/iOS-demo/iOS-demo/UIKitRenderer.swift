@@ -770,32 +770,66 @@ class UIKitRenderer {
         containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
         containerView.clipsToBounds = true
         
-        // 从 Rust Core 获取 SVG
-        let result = IMParseCore.mathToSVG(node.content, display: node.display)
+        // 从 Rust Core 获取 KaTeX HTML
+        let result = IMParseCore.mathToHTML(node.content, display: node.display)
         
-        if result.success, let svg = result.astJSON {
-            // 使用缓存的 UIImage 渲染 SVG
-            let size = CGSize(width: context.width, height: node.display ? 60 : 30)
-            if let image = MathSVGCache.shared.image(for: svg, size: size) {
-                let imageView = UIImageView(image: image)
-                imageView.contentMode = .scaleAspectFit
-                imageView.translatesAutoresizingMaskIntoConstraints = false
+        guard result.success, let html = result.astJSON else {
+            showMathError(in: containerView, message: "无法获取数学公式 HTML")
+            return containerView
+        }
+        
+        // 获取文本颜色
+        let textColor = context.theme.textColor
+        let components = textColor.cgColor.components ?? [0, 0, 0, 1]
+        let colorHex = String(format: "#%02X%02X%02X",
+            Int(components[0] * 255),
+            Int(components[1] * 255),
+            Int(components[2] * 255)
+        )
+        
+        // 创建图片视图
+        let imageView = UIImageView()
+        imageView.contentMode = .scaleAspectFit
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        
+        // 添加加载指示器
+        let activityIndicator = UIActivityIndicatorView(style: .medium)
+        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+        activityIndicator.startAnimating()
+        
+        containerView.addSubview(imageView)
+        containerView.addSubview(activityIndicator)
+        
+        NSLayoutConstraint.activate([
+            imageView.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 4),
+            imageView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 4),
+            imageView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -4),
+            imageView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -4),
+            imageView.heightAnchor.constraint(greaterThanOrEqualToConstant: node.display ? 60 : 30),
+            activityIndicator.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
+            activityIndicator.centerYAnchor.constraint(equalTo: containerView.centerYAnchor)
+        ])
+        
+        // 使用 MathHTMLRenderer 渲染为图片
+        let fontSize = node.display ? 16.0 : 14.0
+        MathHTMLRenderer.shared.render(
+            html: html,
+            display: node.display,
+            textColor: colorHex,
+            fontSize: fontSize
+        ) { image in
+            DispatchQueue.main.async {
+                activityIndicator.stopAnimating()
+                activityIndicator.removeFromSuperview()
                 
-                containerView.addSubview(imageView)
-                NSLayoutConstraint.activate([
-                    imageView.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 4),
-                    imageView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 4),
-                    imageView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -4),
-                    imageView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -4),
-                    imageView.heightAnchor.constraint(greaterThanOrEqualToConstant: node.display ? 60 : 30)
-                ])
-            } else {
-                // SVG 渲染失败，显示错误
-                showMathError(in: containerView, message: "数学公式渲染失败")
+                if let image = image {
+                    imageView.image = image
+                } else {
+                    // 渲染失败，显示错误
+                    self.showMathError(in: containerView, message: "数学公式渲染失败")
+                    imageView.removeFromSuperview()
+                }
             }
-        } else {
-            // SVG 获取失败，显示错误
-            showMathError(in: containerView, message: "无法获取数学公式 SVG")
         }
         
         return containerView
@@ -951,9 +985,10 @@ class UIKitRenderer {
     }
 }
 
-// MARK: - Math SVG Cache
+// MARK: - Math HTML Cache
 
-/// SVG 缓存管理器（与 SwiftUIRenderer 共享）
+/// HTML 渲染图片缓存管理器（与 SwiftUIRenderer 共享）
+/// 注意：MathSVGCache 是旧名称，实际用于缓存 HTML 渲染的图片
 extension MathSVGCache {
     // 已在 SwiftUIRenderer.swift 中定义
 }
