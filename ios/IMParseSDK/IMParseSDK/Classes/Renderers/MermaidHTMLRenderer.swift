@@ -1,6 +1,6 @@
 //
 //  MermaidHTMLRenderer.swift
-//  IMParseDemo
+//  IMParseSDK
 //
 //  使用 WKWebView 将 Mermaid 图表渲染为图片的工具
 //  性能优化：缓存、WebView 复用、异步处理

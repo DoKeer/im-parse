@@ -1,12 +1,13 @@
 //
 //  MessageHTMLViewController.swift
-//  IMParseDemo
+//  IMParseSDK
 //
 //  WebView 控制器用于显示消息的 HTML 内容，支持文本选择
 //
 
 import UIKit
 import WebKit
+import IMParseSDK
 
 class MessageHTMLViewController: UIViewController {
     

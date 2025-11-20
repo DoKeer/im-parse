@@ -1,6 +1,6 @@
 //
 //  MathHTMLRenderer.swift
-//  IMParseDemo
+//  IMParseSDK
 //
 //  使用 WKWebView 将数学公式 HTML 渲染为图片的工具
 //  性能优化：缓存、WebView 复用、异步处理
@@ -11,8 +11,8 @@ import WebKit
 
 /// 数学公式 HTML 渲染器
 /// 使用独立的 WKWebView 将 HTML 渲染为图片，支持 KaTeX CSS
-class MathHTMLRenderer {
-    static let shared = MathHTMLRenderer()
+public class MathHTMLRenderer {
+    public static let shared = MathHTMLRenderer()
     
     // 图片缓存
     private var imageCache: [String: UIImage] = [:]
@@ -385,7 +385,7 @@ class MathHTMLRenderer {
     /// 用于在 WebView 中显示包含数学公式的 HTML
     /// - Parameter html: 原始 HTML 内容
     /// - Returns: 包含 KaTeX CSS 的完整 HTML
-    static func wrapHTMLWithKaTeX(_ html: String) -> String {
+    public static func wrapHTMLWithKaTeX(_ html: String) -> String {
         return """
         <!DOCTYPE html>
         <html>

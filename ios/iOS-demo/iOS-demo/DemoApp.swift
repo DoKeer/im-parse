@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import IMParseSDK
 
 @main
 struct IMParseDemoApp: App {

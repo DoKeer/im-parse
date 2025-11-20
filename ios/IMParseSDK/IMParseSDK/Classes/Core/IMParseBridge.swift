@@ -1,11 +1,14 @@
 //
 //  IMParseBridge.swift
-//  IMParseDemo
+//  IMParseSDK
 //
 //  Swift wrapper for Rust FFI
 //
 
 import Foundation
+
+// 通过 umbrella header 导入 C 函数和结构体
+// C 函数定义在 IMParseBridge.h 中，通过 IMParseSDK.h 导入
 
 /// 解析结果
 struct ParseResult {
@@ -363,39 +366,6 @@ class IMParseCore {
     }
 }
 
-// C 函数声明
-@_silgen_name("parse_markdown_to_json")
-func parse_markdown_to_json(_ input: UnsafePointer<CChar>) -> UnsafeMutablePointer<IMParseResult>?
-
-@_silgen_name("parse_delta_to_json")
-func parse_delta_to_json(_ input: UnsafePointer<CChar>) -> UnsafeMutablePointer<IMParseResult>?
-
-@_silgen_name("free_parse_result")
-func free_parse_result(_ result: UnsafeMutablePointer<IMParseResult>?)
-
-@_silgen_name("markdown_to_html")
-func markdown_to_html(_ input: UnsafePointer<CChar>) -> UnsafeMutablePointer<IMParseResult>?
-
-@_silgen_name("delta_to_html")
-func delta_to_html(_ input: UnsafePointer<CChar>) -> UnsafeMutablePointer<IMParseResult>?
-
-@_silgen_name("markdown_to_html_with_config")
-func markdown_to_html_with_config(_ input: UnsafePointer<CChar>, _ config_json: UnsafePointer<CChar>?) -> UnsafeMutablePointer<IMParseResult>?
-
-@_silgen_name("delta_to_html_with_config")
-func delta_to_html_with_config(_ input: UnsafePointer<CChar>, _ config_json: UnsafePointer<CChar>?) -> UnsafeMutablePointer<IMParseResult>?
-
-@_silgen_name("math_to_html")
-func math_to_html(_ formula: UnsafePointer<CChar>, _ display: Bool) -> UnsafeMutablePointer<IMParseResult>?
-
-@_silgen_name("mermaid_to_html")
-func mermaid_to_html(_ mermaid_code: UnsafePointer<CChar>, _ text_color: UnsafePointer<CChar>, _ background_color: UnsafePointer<CChar>) -> UnsafeMutablePointer<IMParseResult>?
-
-// C 结构体定义
-struct IMParseResult {
-    var success: Bool
-    var ast_json: UnsafePointer<CChar>?
-    var error_code: Int32
-    var error_message: UnsafePointer<CChar>?
-}
+// 注意：C 函数和结构体定义在 IMParseBridge.h 中
+// 通过 bridging header 导入，不需要在这里重复声明
 

@@ -1,12 +1,13 @@
 //
 //  MessageHTMLView.swift
-//  IMParseDemo
+//  IMParseSDK
 //
 //  WebView 用于显示消息的 HTML 内容，支持文本选择
 //
 
 import SwiftUI
 import WebKit
+import IMParseSDK
 
 struct MessageHTMLView: View {
     let html: String

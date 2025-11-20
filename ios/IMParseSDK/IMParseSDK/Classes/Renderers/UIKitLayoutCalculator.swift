@@ -1,6 +1,6 @@
 //
 //  UIKitLayoutCalculator.swift
-//  IMParseDemo
+//  IMParseSDK
 //
 //  UIKit 布局计算器 - 用于异步预计算布局
 //
@@ -8,21 +8,21 @@
 import UIKit
 
 /// 布局节点（保存异步计算的结果）
-class NodeLayout {
-    let frame: CGRect
-    let children: [NodeLayout]
-    let node: ASTNodeWrapper? // 关联的 AST 节点
+public class NodeLayout {
+    public let frame: CGRect
+    public let children: [NodeLayout]
+    public let node: ASTNodeWrapper? // 关联的 AST 节点
     
     // 预计算的内容（如 NSAttributedString）
-    let content: Any?
+    public let content: Any?
     
     // 额外的样式信息
-    let backgroundColor: UIColor?
-    let cornerRadius: CGFloat
-    let borderColor: UIColor?
-    let borderWidth: CGFloat
+    public let backgroundColor: UIColor?
+    public let cornerRadius: CGFloat
+    public let borderColor: UIColor?
+    public let borderWidth: CGFloat
     
-    init(frame: CGRect, 
+    public init(frame: CGRect, 
          children: [NodeLayout] = [], 
          node: ASTNodeWrapper? = nil, 
          content: Any? = nil,
@@ -42,7 +42,7 @@ class NodeLayout {
     
     /// 渲染为 UIView（在主线程调用）
     /// 使用精确的 frame 计算，不使用 Auto Layout
-    func render(context: UIKitRenderContext) -> UIView {
+    public func render(context: UIKitRenderContext) -> UIView {
         let view: UIView
         
         // 根据内容类型创建视图

@@ -1,6 +1,6 @@
 //
 //  SharedWebViewPool.swift
-//  IMParseDemo
+//  IMParseSDK
 //
 //  共享的 WebView 池管理器
 //  用于 MathHTMLRenderer 和 MermaidHTMLRenderer 共享 WebView，减少资源占用

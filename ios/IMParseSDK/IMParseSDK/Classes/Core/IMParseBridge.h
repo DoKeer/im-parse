@@ -1,6 +1,6 @@
 //
 //  IMParseBridge.h
-//  IMParseDemo
+//  IMParseSDK
 //
 //  FFI Bridge for Rust Core
 //
@@ -66,6 +66,17 @@ const char * _Nullable get_dark_style_config(void);
 /// @param display 是否为块级公式（true 为块级，false 为行内）
 /// @return 解析结果，需要调用 free_parse_result 释放
 IMParseResult * _Nullable math_to_html(const char * _Nonnull formula, bool display);
+
+/// 将 Mermaid 图表转换为 HTML
+/// @param mermaid_code Mermaid 代码字符串
+/// @param text_color 文本颜色（十六进制）
+/// @param background_color 背景颜色（十六进制）
+/// @return 解析结果，需要调用 free_parse_result 释放
+IMParseResult * _Nullable mermaid_to_html(const char * _Nonnull mermaid_code, const char * _Nonnull text_color, const char * _Nonnull background_color);
+
+/// 释放字符串
+/// @param ptr 字符串指针（const，因为只是释放内存，不修改内容）
+void free_string(const char * _Nullable ptr);
 
 NS_ASSUME_NONNULL_END
 

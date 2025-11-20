@@ -1,0 +1,43 @@
+# Uncomment the next line to define a global platform for your project
+# 注意：使用 IMParseSDK/Full 需要 iOS 15.0+（因为包含 SwiftUI）
+platform :ios, '15.0'
+
+target 'iOS-demo' do
+  # Comment the next line if you don't want to use dynamic frameworks
+  use_frameworks!
+
+  # 依赖本地 IMParseSDK
+  # 使用 Full 版本（包含 UIKit 和 SwiftUI），需要 iOS 15.0+
+  # 如果只需要 UIKit，可以使用: pod 'IMParseSDK/UIKit', :path => '../IMParseSDK' (支持 iOS 13.0+)
+  pod 'IMParseSDK/Full', :path => '../IMParseSDK'
+  
+  # 其他依赖（如果有）
+  # pod 'Kingfisher', '~> 7.0'
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      # 设置最低部署目标为 15.0（与平台要求一致）
+      # 如果某个 pod 需要更高的版本，CocoaPods 会自动处理
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+    end
+  end
+  
+  # 禁用用户脚本沙盒，解决 rsync 权限错误
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
+    end
+  end
+  
+  # 同时禁用主项目的用户脚本沙盒
+  installer.aggregate_targets.each do |aggregate_target|
+    aggregate_target.user_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
+      end
+    end
+  end
+end
+

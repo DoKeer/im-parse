@@ -1,6 +1,6 @@
 //
 //  UIKitRenderer.swift
-//  IMParseDemo
+//  IMParseSDK
 //
 //  UIKit 版本的 AST 渲染器
 //
@@ -8,7 +8,7 @@
 import UIKit
 
 /// 图片加载代理协议
-protocol UIKitImageLoaderDelegate: AnyObject {
+public protocol UIKitImageLoaderDelegate: AnyObject {
     /// 加载图片
     /// - Parameters:
     ///   - url: 图片 URL
@@ -18,58 +18,140 @@ protocol UIKitImageLoaderDelegate: AnyObject {
 }
 
 /// UIKit 渲染上下文
-struct UIKitRenderContext {
-    var theme: UIKitTheme
-    var width: CGFloat
-    var onLinkTap: ((URL) -> Void)?
-    var onImageTap: ((ImageNode) -> Void)?
-    var onMentionTap: ((MentionNode) -> Void)?
+public struct UIKitRenderContext {
+    public var theme: UIKitTheme
+    public var width: CGFloat
+    public var onLinkTap: ((URL) -> Void)?
+    public var onImageTap: ((ImageNode) -> Void)?
+    public var onMentionTap: ((MentionNode) -> Void)?
     // 当前文本样式（用于标题等需要特殊样式的场景）
-    var currentFont: UIFont?
-    var currentTextColor: UIColor?
+    public var currentFont: UIFont?
+    public var currentTextColor: UIColor?
     // 图片加载代理（可选）
-    weak var imageLoaderDelegate: UIKitImageLoaderDelegate?
+    public weak var imageLoaderDelegate: UIKitImageLoaderDelegate?
     // 布局高度变化回调（用于通知 cell 高度变化）
-    var onLayoutHeightChanged: ((CGFloat) -> Void)?
+    public var onLayoutHeightChanged: ((CGFloat) -> Void)?
+    
+    public init(theme: UIKitTheme,
+                width: CGFloat,
+                onLinkTap: ((URL) -> Void)? = nil,
+                onImageTap: ((ImageNode) -> Void)? = nil,
+                onMentionTap: ((MentionNode) -> Void)? = nil,
+                currentFont: UIFont? = nil,
+                currentTextColor: UIColor? = nil,
+                imageLoaderDelegate: UIKitImageLoaderDelegate? = nil,
+                onLayoutHeightChanged: ((CGFloat) -> Void)? = nil) {
+        self.theme = theme
+        self.width = width
+        self.onLinkTap = onLinkTap
+        self.onImageTap = onImageTap
+        self.onMentionTap = onMentionTap
+        self.currentFont = currentFont
+        self.currentTextColor = currentTextColor
+        self.imageLoaderDelegate = imageLoaderDelegate
+        self.onLayoutHeightChanged = onLayoutHeightChanged
+    }
 }
 
 /// UIKit 主题配置
-struct UIKitTheme {
-    var font: UIFont
-    var fontSize: CGFloat  // 基础字体大小（用于计算标题大小）
-    var codeFont: UIFont
-    var textColor: UIColor
-    var linkColor: UIColor
-    var codeBackgroundColor: UIColor
-    var codeTextColor: UIColor
-    var headingColors: [UIColor]
-    var paragraphSpacing: CGFloat
-    var listItemSpacing: CGFloat
-    var codeBlockPadding: CGFloat
-    var codeBlockBorderRadius: CGFloat
-    var tableCellPadding: CGFloat
-    var tableBorderColor: UIColor
-    var tableHeaderBackground: UIColor
-    var blockquoteBorderWidth: CGFloat
-    var blockquoteBorderColor: UIColor
-    var blockquoteTextColor: UIColor
-    var imageBorderRadius: CGFloat
-    var imageMargin: CGFloat
-    var mentionBackground: UIColor
-    var mentionTextColor: UIColor
-    var cardBackground: UIColor
-    var cardBorderColor: UIColor
-    var cardPadding: CGFloat
-    var cardBorderRadius: CGFloat
-    var hrColor: UIColor
-    var lineHeight: CGFloat
-    var maxContentWidth: CGFloat
-    var contentPadding: CGFloat
+public struct UIKitTheme {
+    public var font: UIFont
+    public var fontSize: CGFloat  // 基础字体大小（用于计算标题大小）
+    public var codeFont: UIFont
+    public var textColor: UIColor
+    public var linkColor: UIColor
+    public var codeBackgroundColor: UIColor
+    public var codeTextColor: UIColor
+    public var headingColors: [UIColor]
+    public var paragraphSpacing: CGFloat
+    public var listItemSpacing: CGFloat
+    public var codeBlockPadding: CGFloat
+    public var codeBlockBorderRadius: CGFloat
+    public var tableCellPadding: CGFloat
+    public var tableBorderColor: UIColor
+    public var tableHeaderBackground: UIColor
+    public var blockquoteBorderWidth: CGFloat
+    public var blockquoteBorderColor: UIColor
+    public var blockquoteTextColor: UIColor
+    public var imageBorderRadius: CGFloat
+    public var imageMargin: CGFloat
+    public var mentionBackground: UIColor
+    public var mentionTextColor: UIColor
+    public var cardBackground: UIColor
+    public var cardBorderColor: UIColor
+    public var cardPadding: CGFloat
+    public var cardBorderRadius: CGFloat
+    public var hrColor: UIColor
+    public var lineHeight: CGFloat
+    public var maxContentWidth: CGFloat
+    public var contentPadding: CGFloat
+    
+    public init(font: UIFont,
+                fontSize: CGFloat,
+                codeFont: UIFont,
+                textColor: UIColor,
+                linkColor: UIColor,
+                codeBackgroundColor: UIColor,
+                codeTextColor: UIColor,
+                headingColors: [UIColor],
+                paragraphSpacing: CGFloat,
+                listItemSpacing: CGFloat,
+                codeBlockPadding: CGFloat,
+                codeBlockBorderRadius: CGFloat,
+                tableCellPadding: CGFloat,
+                tableBorderColor: UIColor,
+                tableHeaderBackground: UIColor,
+                blockquoteBorderWidth: CGFloat,
+                blockquoteBorderColor: UIColor,
+                blockquoteTextColor: UIColor,
+                imageBorderRadius: CGFloat,
+                imageMargin: CGFloat,
+                mentionBackground: UIColor,
+                mentionTextColor: UIColor,
+                cardBackground: UIColor,
+                cardBorderColor: UIColor,
+                cardPadding: CGFloat,
+                cardBorderRadius: CGFloat,
+                hrColor: UIColor,
+                lineHeight: CGFloat,
+                maxContentWidth: CGFloat,
+                contentPadding: CGFloat) {
+        self.font = font
+        self.fontSize = fontSize
+        self.codeFont = codeFont
+        self.textColor = textColor
+        self.linkColor = linkColor
+        self.codeBackgroundColor = codeBackgroundColor
+        self.codeTextColor = codeTextColor
+        self.headingColors = headingColors
+        self.paragraphSpacing = paragraphSpacing
+        self.listItemSpacing = listItemSpacing
+        self.codeBlockPadding = codeBlockPadding
+        self.codeBlockBorderRadius = codeBlockBorderRadius
+        self.tableCellPadding = tableCellPadding
+        self.tableBorderColor = tableBorderColor
+        self.tableHeaderBackground = tableHeaderBackground
+        self.blockquoteBorderWidth = blockquoteBorderWidth
+        self.blockquoteBorderColor = blockquoteBorderColor
+        self.blockquoteTextColor = blockquoteTextColor
+        self.imageBorderRadius = imageBorderRadius
+        self.imageMargin = imageMargin
+        self.mentionBackground = mentionBackground
+        self.mentionTextColor = mentionTextColor
+        self.cardBackground = cardBackground
+        self.cardBorderColor = cardBorderColor
+        self.cardPadding = cardPadding
+        self.cardBorderRadius = cardBorderRadius
+        self.hrColor = hrColor
+        self.lineHeight = lineHeight
+        self.maxContentWidth = maxContentWidth
+        self.contentPadding = contentPadding
+    }
 }
 
 extension UIKitTheme {
     /// 从 StyleConfig 创建 UIKitTheme
-    init(from config: StyleConfig) {
+    public init(from config: StyleConfig) {
         self.fontSize = CGFloat(config.fontSize)
         self.font = .systemFont(ofSize: self.fontSize)
         self.codeFont = .monospacedSystemFont(ofSize: CGFloat(config.codeFontSize), weight: .regular)
@@ -103,7 +185,7 @@ extension UIKitTheme {
     }
     
     /// 默认主题（从 StyleConfig.default() 创建）
-    static var `default`: UIKitTheme {
+    public static var `default`: UIKitTheme {
         if let config = StyleConfig.default() {
             return UIKitTheme(from: config)
         }
@@ -144,7 +226,8 @@ extension UIKitTheme {
 }
 
 /// UIKit AST 渲染器
-class UIKitRenderer {
+public class UIKitRenderer {
+    public init() {}
     
     /// 渲染 AST 根节点（使用 UIStackView 和 Auto Layout）
     ///
@@ -155,7 +238,7 @@ class UIKitRenderer {
     ///   - ast: AST 根节点
     ///   - context: 渲染上下文
     /// - Returns: 使用 Auto Layout 的 UIView
-    func render(ast: RootNode, context: UIKitRenderContext) -> UIView {
+    public func render(ast: RootNode, context: UIKitRenderContext) -> UIView {
         let containerView = UIStackView()
         containerView.axis = .vertical
         containerView.alignment = .leading
@@ -183,7 +266,7 @@ class UIKitRenderer {
     ///   - ast: AST 根节点
     ///   - context: 渲染上下文
     /// - Returns: 使用 frame 布局的 UIView
-    func renderWithFrame(ast: RootNode, context: UIKitRenderContext) -> UIView {
+    public func renderWithFrame(ast: RootNode, context: UIKitRenderContext) -> UIView {
         // 使用 UIKitLayoutCalculator 计算布局（在后台线程完成）
         let layout = UIKitLayoutCalculator.calculateLayout(ast: ast, context: context)
         

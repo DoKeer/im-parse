@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import IMParseSDK
 
 struct SwiftUIMessageListView: View {
     @State private var messages: [Message] = []

@@ -1,122 +1,26 @@
 //
-//  Message.swift
+//  MessageDataGenerator.swift
 //  IMParseDemo
 //
-//  消息模型
+//  Demo 特定的消息数据生成器
 //
 
 import Foundation
-import UIKit
+import IMParseSDK
 
-/// 消息类型
-enum MessageType: String, Codable {
-    case markdown
-    case delta
-}
-
-/// 消息模型
-struct Message: Identifiable, Codable {
-    let id: String
-    let type: MessageType
-    let content: String
-    let sender: String
-    let timestamp: Date
-    var astJSON: String?
-    var estimatedHeight: CGFloat?
-    
-    // 异步计算的布局结果 (不参与 Codable)
-    var layout: NodeLayout?
-    
-    enum CodingKeys: String, CodingKey {
-        case id, type, content, sender, timestamp, astJSON, estimatedHeight
-    }
-    
-    init(id: String = UUID().uuidString,
-         type: MessageType,
-         content: String,
-         sender: String,
-         timestamp: Date = Date()) {
-        self.id = id
-        self.type = type
-        self.content = content
-        self.sender = sender
-        self.timestamp = timestamp
-    }
-    
-    /// 解析消息内容为 AST
-    mutating func parse() {
-        let result: ParseResult
-        switch type {
-        case .markdown:
-            result = IMParseCore.parseMarkdown(content)
-        case .delta:
-            result = IMParseCore.parseDelta(content)
-        }
-        
-        if result.success {
-            self.astJSON = result.astJSON
-        }
-    }
-    
-
-    /// 异步计算布局（使用 UIKitRenderer）
-    /// 这将在后台线程中执行完整的文本测量和布局计算
-    mutating func calculateLayout(width: CGFloat) {
-        // 确保 AST 已解析
-        if astJSON == nil {
-            parse()
-        }
-        
-        guard let astJSON = astJSON,
-              let jsonData = astJSON.data(using: .utf8),
-              let rootNode = try? JSONDecoder().decode(RootNode.self, from: jsonData) else {
-            return
-        }
-        
-        // 创建布局上下文
-        let context = UIKitRenderContext(
-            theme: .default, // 使用默认主题，实际项目中可能需要从配置获取
-            width: width,
-            onLinkTap: nil,
-            onImageTap: nil,
-            onMentionTap: nil
-        )
-        
-        // 计算布局
-        self.layout = UIKitLayoutCalculator.calculateLayout(ast: rootNode, context: context)
-        self.estimatedHeight = self.layout?.frame.height
-    }
-    
-    /// 转换为 HTML
-    func toHTML() -> String? {
-        return toHTML(config: nil)
-    }
-    
-    /// 转换为 HTML（使用样式配置）
-    func toHTML(config: StyleConfig?) -> String? {
-        let result: ParseResult
-        switch type {
-        case .markdown:
-            result = IMParseCore.markdownToHTML(content, config: config)
-        case .delta:
-            result = IMParseCore.deltaToHTML(content, config: config)
-        }
-        
-        return result.success ? result.astJSON : nil
-    }
-}
-
-/// 消息数据生成器
+/// 消息数据生成器（Demo 专用）
 class MessageDataGenerator {
     
-    /// 生成测试消息列表（1000 条）
+    /// 生成测试消息列表
     static func generateMessages(count: Int = 1000) -> [Message] {
         var messages: [Message] = []
         let senders = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Henry"]
         
         let markdownTemplates = generateMarkdownTemplates()
         let deltaTemplates = generateDeltaTemplates()
-        let count = markdownTemplates.count+deltaTemplates.count
+        let templateCount = markdownTemplates.count + deltaTemplates.count
+        
+        // 如果请求的数量大于模板数量，循环使用模板
         for i in 0..<count {
             let sender = senders[i % senders.count]
             let timestamp = Date().addingTimeInterval(-Double(count - i) * 60)
@@ -131,21 +35,37 @@ class MessageDataGenerator {
                     sender: sender,
                     timestamp: timestamp
                 )
-            } else {
-                let template = deltaTemplates[i-markdownTemplates.count]
+            } else if i < templateCount {
+                let template = deltaTemplates[i - markdownTemplates.count]
                 message = Message(
                     type: .delta,
                     content: template,
                     sender: sender,
                     timestamp: timestamp
                 )
+            } else {
+                // 循环使用模板
+                let templateIndex = i % templateCount
+                if templateIndex < markdownTemplates.count {
+                    let template = markdownTemplates[templateIndex]
+                    message = Message(
+                        type: .markdown,
+                        content: template,
+                        sender: sender,
+                        timestamp: timestamp
+                    )
+                } else {
+                    let template = deltaTemplates[templateIndex - markdownTemplates.count]
+                    message = Message(
+                        type: .delta,
+                        content: template,
+                        sender: sender,
+                        timestamp: timestamp
+                    )
+                }
             }
             
             messages.append(message)
-        }
-        
-        if markdownTemplates.count < count {
-            // TODO 复制多份messages内容
         }
         
         return messages

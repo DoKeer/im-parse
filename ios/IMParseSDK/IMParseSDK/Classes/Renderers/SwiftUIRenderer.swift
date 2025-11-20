@@ -1,54 +1,132 @@
 import SwiftUI
 
 /// 渲染上下文
-struct RenderContext {
-    var theme: Theme
-    var width: CGFloat
-    var onLinkTap: ((URL) -> Void)?
-    var onImageTap: ((ImageNode) -> Void)?
-    var onMentionTap: ((MentionNode) -> Void)?
+public struct RenderContext {
+    public var theme: Theme
+    public var width: CGFloat
+    public var onLinkTap: ((URL) -> Void)?
+    public var onImageTap: ((ImageNode) -> Void)?
+    public var onMentionTap: ((MentionNode) -> Void)?
     // 当前文本样式（用于标题等需要特殊样式的场景）
-    var currentFont: Font?
-    var currentTextColor: Color?
+    public var currentFont: Font?
+    public var currentTextColor: Color?
+    
+    public init(theme: Theme,
+                width: CGFloat,
+                onLinkTap: ((URL) -> Void)? = nil,
+                onImageTap: ((ImageNode) -> Void)? = nil,
+                onMentionTap: ((MentionNode) -> Void)? = nil,
+                currentFont: Font? = nil,
+                currentTextColor: Color? = nil) {
+        self.theme = theme
+        self.width = width
+        self.onLinkTap = onLinkTap
+        self.onImageTap = onImageTap
+        self.onMentionTap = onMentionTap
+        self.currentFont = currentFont
+        self.currentTextColor = currentTextColor
+    }
 }
 
 /// 主题配置
-struct Theme {
-    var font: Font
-    var fontSize: CGFloat  // 基础字体大小（用于计算标题大小）
-    var codeFont: Font
-    var textColor: Color
-    var linkColor: Color
-    var codeBackgroundColor: Color
-    var codeTextColor: Color
-    var headingColors: [Color]
-    var paragraphSpacing: CGFloat
-    var listItemSpacing: CGFloat
-    var codeBlockPadding: CGFloat
-    var codeBlockBorderRadius: CGFloat
-    var tableCellPadding: CGFloat
-    var tableBorderColor: Color
-    var tableHeaderBackground: Color
-    var blockquoteBorderWidth: CGFloat
-    var blockquoteBorderColor: Color
-    var blockquoteTextColor: Color
-    var imageBorderRadius: CGFloat
-    var imageMargin: CGFloat
-    var mentionBackground: Color
-    var mentionTextColor: Color
-    var cardBackground: Color
-    var cardBorderColor: Color
-    var cardPadding: CGFloat
-    var cardBorderRadius: CGFloat
-    var hrColor: Color
-    var lineHeight: CGFloat
-    var maxContentWidth: CGFloat
-    var contentPadding: CGFloat
+public struct Theme {
+    public var font: Font
+    public var fontSize: CGFloat  // 基础字体大小（用于计算标题大小）
+    public var codeFont: Font
+    public var textColor: Color
+    public var linkColor: Color
+    public var codeBackgroundColor: Color
+    public var codeTextColor: Color
+    public var headingColors: [Color]
+    public var paragraphSpacing: CGFloat
+    public var listItemSpacing: CGFloat
+    public var codeBlockPadding: CGFloat
+    public var codeBlockBorderRadius: CGFloat
+    public var tableCellPadding: CGFloat
+    public var tableBorderColor: Color
+    public var tableHeaderBackground: Color
+    public var blockquoteBorderWidth: CGFloat
+    public var blockquoteBorderColor: Color
+    public var blockquoteTextColor: Color
+    public var imageBorderRadius: CGFloat
+    public var imageMargin: CGFloat
+    public var mentionBackground: Color
+    public var mentionTextColor: Color
+    public var cardBackground: Color
+    public var cardBorderColor: Color
+    public var cardPadding: CGFloat
+    public var cardBorderRadius: CGFloat
+    public var hrColor: Color
+    public var lineHeight: CGFloat
+    public var maxContentWidth: CGFloat
+    public var contentPadding: CGFloat
+    
+    public init(font: Font,
+                fontSize: CGFloat,
+                codeFont: Font,
+                textColor: Color,
+                linkColor: Color,
+                codeBackgroundColor: Color,
+                codeTextColor: Color,
+                headingColors: [Color],
+                paragraphSpacing: CGFloat,
+                listItemSpacing: CGFloat,
+                codeBlockPadding: CGFloat,
+                codeBlockBorderRadius: CGFloat,
+                tableCellPadding: CGFloat,
+                tableBorderColor: Color,
+                tableHeaderBackground: Color,
+                blockquoteBorderWidth: CGFloat,
+                blockquoteBorderColor: Color,
+                blockquoteTextColor: Color,
+                imageBorderRadius: CGFloat,
+                imageMargin: CGFloat,
+                mentionBackground: Color,
+                mentionTextColor: Color,
+                cardBackground: Color,
+                cardBorderColor: Color,
+                cardPadding: CGFloat,
+                cardBorderRadius: CGFloat,
+                hrColor: Color,
+                lineHeight: CGFloat,
+                maxContentWidth: CGFloat,
+                contentPadding: CGFloat) {
+        self.font = font
+        self.fontSize = fontSize
+        self.codeFont = codeFont
+        self.textColor = textColor
+        self.linkColor = linkColor
+        self.codeBackgroundColor = codeBackgroundColor
+        self.codeTextColor = codeTextColor
+        self.headingColors = headingColors
+        self.paragraphSpacing = paragraphSpacing
+        self.listItemSpacing = listItemSpacing
+        self.codeBlockPadding = codeBlockPadding
+        self.codeBlockBorderRadius = codeBlockBorderRadius
+        self.tableCellPadding = tableCellPadding
+        self.tableBorderColor = tableBorderColor
+        self.tableHeaderBackground = tableHeaderBackground
+        self.blockquoteBorderWidth = blockquoteBorderWidth
+        self.blockquoteBorderColor = blockquoteBorderColor
+        self.blockquoteTextColor = blockquoteTextColor
+        self.imageBorderRadius = imageBorderRadius
+        self.imageMargin = imageMargin
+        self.mentionBackground = mentionBackground
+        self.mentionTextColor = mentionTextColor
+        self.cardBackground = cardBackground
+        self.cardBorderColor = cardBorderColor
+        self.cardPadding = cardPadding
+        self.cardBorderRadius = cardBorderRadius
+        self.hrColor = hrColor
+        self.lineHeight = lineHeight
+        self.maxContentWidth = maxContentWidth
+        self.contentPadding = contentPadding
+    }
 }
 
 extension Theme {
     /// 从 StyleConfig 创建 Theme
-    init(from config: StyleConfig) {
+    public init(from config: StyleConfig) {
         self.fontSize = CGFloat(config.fontSize)
         self.font = .system(size: self.fontSize)
         self.codeFont = .system(size: CGFloat(config.codeFontSize), design: .monospaced)
@@ -82,7 +160,7 @@ extension Theme {
     }
     
     /// 默认主题（从 StyleConfig.default() 创建）
-    static var `default`: Theme {
+    public static var `default`: Theme {
         if let config = StyleConfig.default() {
             return Theme(from: config)
         }
@@ -123,13 +201,15 @@ extension Theme {
 }
 
 /// AST 节点协议
-protocol ASTNode {
+public protocol ASTNode {
     func render(context: RenderContext) -> AnyView
 }
 
 /// SwiftUI 渲染器
-struct SwiftUIRenderer {
-    func render(ast: RootNode, context: RenderContext) -> some View {
+public struct SwiftUIRenderer {
+    public init() {}
+    
+    public func render(ast: RootNode, context: RenderContext) -> some View {
         VStack(alignment: .leading, spacing: context.theme.paragraphSpacing) {
             ForEach(Array(ast.children.enumerated()), id: \.offset) { index, child in
                 renderNodeWrapper(child, context: context)
@@ -962,15 +1042,19 @@ struct SwiftUIRenderer {
     
     @ViewBuilder
     private func renderStrong(_ node: StrongNode, context: RenderContext) -> some View {
-        HStack(spacing: 0) {
-            ForEach(Array(node.children.enumerated()), id: \.offset) { _, child in
-                renderInlineNodeWrapper(child, context: context)
+        if #available(iOS 16.0, *) {
+            HStack(spacing: 0) {
+                ForEach(Array(node.children.enumerated()), id: \.offset) { _, child in
+                    renderInlineNodeWrapper(child, context: context)
+                }
             }
+            .fontWeight(.bold)
+            // 如果当前有自定义字体，保持字体大小但应用粗体
+            .font(context.currentFont != nil ? context.currentFont : nil)
+            .foregroundColor(context.currentTextColor)
+        } else {
+            // Fallback on earlier versions
         }
-        .fontWeight(.bold)
-        // 如果当前有自定义字体，保持字体大小但应用粗体
-        .font(context.currentFont != nil ? context.currentFont : nil)
-        .foregroundColor(context.currentTextColor)
     }
     
     @ViewBuilder
@@ -990,26 +1074,34 @@ struct SwiftUIRenderer {
     
     @ViewBuilder
     private func renderUnderline(_ node: UnderlineNode, context: RenderContext) -> some View {
-        HStack(spacing: 0) {
-            ForEach(Array(node.children.enumerated()), id: \.offset) { _, child in
-                renderInlineNodeWrapper(child, context: context)
+        if #available(iOS 16.0, *) {
+            HStack(spacing: 0) {
+                ForEach(Array(node.children.enumerated()), id: \.offset) { _, child in
+                    renderInlineNodeWrapper(child, context: context)
+                }
             }
+            .underline()
+            .font(context.currentFont)
+            .foregroundColor(context.currentTextColor)
+        } else {
+            // Fallback on earlier versions
         }
-        .underline()
-        .font(context.currentFont)
-        .foregroundColor(context.currentTextColor)
     }
     
     @ViewBuilder
     private func renderStrike(_ node: StrikeNode, context: RenderContext) -> some View {
-        HStack(spacing: 0) {
-            ForEach(Array(node.children.enumerated()), id: \.offset) { _, child in
-                renderInlineNodeWrapper(child, context: context)
+        if #available(iOS 16.0, *) {
+            HStack(spacing: 0) {
+                ForEach(Array(node.children.enumerated()), id: \.offset) { _, child in
+                    renderInlineNodeWrapper(child, context: context)
+                }
             }
+            .strikethrough()
+            .font(context.currentFont)
+            .foregroundColor(context.currentTextColor)
+        } else {
+            // Fallback on earlier versions
         }
-        .strikethrough()
-        .font(context.currentFont)
-        .foregroundColor(context.currentTextColor)
     }
     
     @ViewBuilder
@@ -1312,10 +1404,10 @@ class MathSVGCache {
 
 // MARK: - AST 节点类型定义（简化版，实际应从 Rust 绑定生成）
 
-struct RootNode: ASTNode, Codable {
-    var children: [ASTNodeWrapper]
+public struct RootNode: ASTNode, Codable {
+    public var children: [ASTNodeWrapper]
     
-    func render(context: RenderContext) -> AnyView {
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView()) // 由渲染器处理
     }
     
@@ -1323,25 +1415,25 @@ struct RootNode: ASTNode, Codable {
         case children
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         // RootNode 直接包含 children，没有 type 字段
         children = try container.decode([ASTNodeWrapper].self, forKey: .children)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(children, forKey: .children)
     }
     
-    init(children: [ASTNodeWrapper]) {
+    public init(children: [ASTNodeWrapper]) {
         self.children = children
     }
 }
 
-struct ParagraphNode: ASTNode, Codable {
-    var children: [ASTNodeWrapper]
-    func render(context: RenderContext) -> AnyView {
+public struct ParagraphNode: ASTNode, Codable {
+    public var children: [ASTNodeWrapper]
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView()) // 由渲染器处理
     }
     
@@ -1350,7 +1442,7 @@ struct ParagraphNode: ASTNode, Codable {
         case children
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "paragraph" else {
@@ -1362,17 +1454,17 @@ struct ParagraphNode: ASTNode, Codable {
         children = try container.decode([ASTNodeWrapper].self, forKey: .children)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("paragraph", forKey: .type)
         try container.encode(children, forKey: .children)
     }
 }
 
-struct HeadingNode: ASTNode, Codable {
-    var level: UInt8
-    var children: [ASTNodeWrapper]
-    func render(context: RenderContext) -> AnyView {
+public struct HeadingNode: ASTNode, Codable {
+    public var level: UInt8
+    public var children: [ASTNodeWrapper]
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
     }
     
@@ -1382,7 +1474,7 @@ struct HeadingNode: ASTNode, Codable {
         case children
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "heading" else {
@@ -1395,7 +1487,7 @@ struct HeadingNode: ASTNode, Codable {
         children = try container.decode([ASTNodeWrapper].self, forKey: .children)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("heading", forKey: .type)
         try container.encode(level, forKey: .level)
@@ -1403,9 +1495,9 @@ struct HeadingNode: ASTNode, Codable {
     }
 }
 
-struct TextNode: ASTNode, Codable {
-    var content: String
-    func render(context: RenderContext) -> AnyView {
+public struct TextNode: ASTNode, Codable {
+    public var content: String
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
     }
     
@@ -1414,7 +1506,7 @@ struct TextNode: ASTNode, Codable {
         case content
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "text" else {
@@ -1426,16 +1518,16 @@ struct TextNode: ASTNode, Codable {
         content = try container.decode(String.self, forKey: .content)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("text", forKey: .type)
         try container.encode(content, forKey: .content)
     }
 }
 
-struct StrongNode: ASTNode, Codable {
-    var children: [ASTNodeWrapper]
-    func render(context: RenderContext) -> AnyView {
+public struct StrongNode: ASTNode, Codable {
+    public var children: [ASTNodeWrapper]
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
     }
     
@@ -1444,7 +1536,7 @@ struct StrongNode: ASTNode, Codable {
         case children
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "strong" else {
@@ -1456,16 +1548,16 @@ struct StrongNode: ASTNode, Codable {
         children = try container.decode([ASTNodeWrapper].self, forKey: .children)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("strong", forKey: .type)
         try container.encode(children, forKey: .children)
     }
 }
 
-struct EmNode: ASTNode, Codable {
-    var children: [ASTNodeWrapper]
-    func render(context: RenderContext) -> AnyView {
+public struct EmNode: ASTNode, Codable {
+    public var children: [ASTNodeWrapper]
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
     }
     
@@ -1474,7 +1566,7 @@ struct EmNode: ASTNode, Codable {
         case children
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "em" else {
@@ -1486,16 +1578,16 @@ struct EmNode: ASTNode, Codable {
         children = try container.decode([ASTNodeWrapper].self, forKey: .children)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("em", forKey: .type)
         try container.encode(children, forKey: .children)
     }
 }
 
-struct UnderlineNode: ASTNode, Codable {
-    var children: [ASTNodeWrapper]
-    func render(context: RenderContext) -> AnyView {
+public struct UnderlineNode: ASTNode, Codable {
+    public var children: [ASTNodeWrapper]
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
     }
     
@@ -1504,7 +1596,7 @@ struct UnderlineNode: ASTNode, Codable {
         case children
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "underline" else {
@@ -1516,16 +1608,16 @@ struct UnderlineNode: ASTNode, Codable {
         children = try container.decode([ASTNodeWrapper].self, forKey: .children)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("underline", forKey: .type)
         try container.encode(children, forKey: .children)
     }
 }
 
-struct StrikeNode: ASTNode, Codable {
-    var children: [ASTNodeWrapper]
-    func render(context: RenderContext) -> AnyView {
+public struct StrikeNode: ASTNode, Codable {
+    public var children: [ASTNodeWrapper]
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
     }
     
@@ -1534,7 +1626,7 @@ struct StrikeNode: ASTNode, Codable {
         case children
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "strike" else {
@@ -1546,16 +1638,16 @@ struct StrikeNode: ASTNode, Codable {
         children = try container.decode([ASTNodeWrapper].self, forKey: .children)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("strike", forKey: .type)
         try container.encode(children, forKey: .children)
     }
 }
 
-struct CodeNode: ASTNode, Codable {
-    var content: String
-    func render(context: RenderContext) -> AnyView {
+public struct CodeNode: ASTNode, Codable {
+    public var content: String
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
     }
     
@@ -1564,7 +1656,7 @@ struct CodeNode: ASTNode, Codable {
         case content
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "code" else {
@@ -1576,17 +1668,17 @@ struct CodeNode: ASTNode, Codable {
         content = try container.decode(String.self, forKey: .content)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("code", forKey: .type)
         try container.encode(content, forKey: .content)
     }
 }
 
-struct CodeBlockNode: ASTNode, Codable {
-    var language: String?
-    var content: String
-    func render(context: RenderContext) -> AnyView {
+public struct CodeBlockNode: ASTNode, Codable {
+    public var language: String?
+    public var content: String
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
     }
     
@@ -1596,7 +1688,7 @@ struct CodeBlockNode: ASTNode, Codable {
         case content
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "codeBlock" else {
@@ -1609,7 +1701,7 @@ struct CodeBlockNode: ASTNode, Codable {
         content = try container.decode(String.self, forKey: .content)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("codeBlock", forKey: .type)
         try container.encodeIfPresent(language, forKey: .language)
@@ -1617,10 +1709,10 @@ struct CodeBlockNode: ASTNode, Codable {
     }
 }
 
-struct LinkNode: ASTNode, Codable {
-    var url: String
-    var children: [ASTNodeWrapper]
-    func render(context: RenderContext) -> AnyView {
+public struct LinkNode: ASTNode, Codable {
+    public var url: String
+    public var children: [ASTNodeWrapper]
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
     }
     
@@ -1630,7 +1722,7 @@ struct LinkNode: ASTNode, Codable {
         case children
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "link" else {
@@ -1643,7 +1735,7 @@ struct LinkNode: ASTNode, Codable {
         children = try container.decode([ASTNodeWrapper].self, forKey: .children)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("link", forKey: .type)
         try container.encode(url, forKey: .url)
@@ -1651,12 +1743,12 @@ struct LinkNode: ASTNode, Codable {
     }
 }
 
-struct ImageNode: ASTNode, Codable {
-    var url: String
-    var width: Float?
-    var height: Float?
-    var alt: String?
-    func render(context: RenderContext) -> AnyView {
+public struct ImageNode: ASTNode, Codable {
+    public var url: String
+    public var width: Float?
+    public var height: Float?
+    public var alt: String?
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
     }
     
@@ -1668,7 +1760,7 @@ struct ImageNode: ASTNode, Codable {
         case alt
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "image" else {
@@ -1683,7 +1775,7 @@ struct ImageNode: ASTNode, Codable {
         alt = try container.decodeIfPresent(String.self, forKey: .alt)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("image", forKey: .type)
         try container.encode(url, forKey: .url)
@@ -1693,21 +1785,21 @@ struct ImageNode: ASTNode, Codable {
     }
 }
 
-enum ListType: String, Codable {
+public enum ListType: String, Codable {
     case bullet = "bullet"
     case ordered = "ordered"
 }
 
-struct ListItemNode: Codable {
-    var children: [ASTNodeWrapper]
-    var checked: Bool?
+public struct ListItemNode: Codable {
+    public var children: [ASTNodeWrapper]
+    public var checked: Bool?
     
     enum CodingKeys: String, CodingKey {
         case children
         case checked
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         // ListItemNode 在 items 数组中时没有 type 字段，直接解码
         // 如果作为 ASTNode 枚举的一部分，ASTNodeWrapper 会处理 type 字段
@@ -1715,17 +1807,17 @@ struct ListItemNode: Codable {
         checked = try container.decodeIfPresent(Bool.self, forKey: .checked)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(children, forKey: .children)
         try container.encodeIfPresent(checked, forKey: .checked)
     }
 }
 
-struct ListNode: ASTNode, Codable {
-    var listType: ListType
-    var items: [ListItemNode]
-    func render(context: RenderContext) -> AnyView {
+public struct ListNode: ASTNode, Codable {
+    public var listType: ListType
+    public var items: [ListItemNode]
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
     }
     
@@ -1735,7 +1827,7 @@ struct ListNode: ASTNode, Codable {
         case items
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "list" else {
@@ -1748,7 +1840,7 @@ struct ListNode: ASTNode, Codable {
         items = try container.decode([ListItemNode].self, forKey: .items)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("list", forKey: .type)
         try container.encode(listType, forKey: .listType)
@@ -1756,9 +1848,9 @@ struct ListNode: ASTNode, Codable {
     }
 }
 
-struct TableNode: ASTNode, Codable {
-    var rows: [TableRow]
-    func render(context: RenderContext) -> AnyView {
+public struct TableNode: ASTNode, Codable {
+    public var rows: [TableRow]
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
     }
     
@@ -1767,7 +1859,7 @@ struct TableNode: ASTNode, Codable {
         case rows
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "table" else {
@@ -1779,65 +1871,65 @@ struct TableNode: ASTNode, Codable {
         rows = try container.decode([TableRow].self, forKey: .rows)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("table", forKey: .type)
         try container.encode(rows, forKey: .rows)
     }
 }
 
-struct TableRow: Codable {
-    var cells: [TableCell]
+public struct TableRow: Codable {
+    public var cells: [TableCell]
     
     enum CodingKeys: String, CodingKey {
         case cells
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         // TableRow 直接包含 cells，没有 type 字段（因为它不是 ASTNode 枚举）
         cells = try container.decode([TableCell].self, forKey: .cells)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(cells, forKey: .cells)
     }
 }
 
-struct TableCell: Codable {
-    var children: [ASTNodeWrapper]
-    var align: TextAlign?
+public struct TableCell: Codable {
+    public var children: [ASTNodeWrapper]
+    public var align: TextAlign?
     
     enum CodingKeys: String, CodingKey {
         case children
         case align
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         // TableCell 直接包含 children 和 align，没有 type 字段（因为它不是 ASTNode 枚举）
         children = try container.decode([ASTNodeWrapper].self, forKey: .children)
         align = try container.decodeIfPresent(TextAlign.self, forKey: .align)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(children, forKey: .children)
         try container.encodeIfPresent(align, forKey: .align)
     }
 }
 
-enum TextAlign: String, Codable {
+public enum TextAlign: String, Codable {
     case left
     case center
     case right
 }
 
-struct MathNode: ASTNode, Codable {
-    var content: String
-    var display: Bool
-    func render(context: RenderContext) -> AnyView {
+public struct MathNode: ASTNode, Codable {
+    public var content: String
+    public var display: Bool
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
     }
     
@@ -1847,7 +1939,7 @@ struct MathNode: ASTNode, Codable {
         case display
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "math" else {
@@ -1860,7 +1952,7 @@ struct MathNode: ASTNode, Codable {
         display = try container.decode(Bool.self, forKey: .display)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("math", forKey: .type)
         try container.encode(content, forKey: .content)
@@ -1868,9 +1960,9 @@ struct MathNode: ASTNode, Codable {
     }
 }
 
-struct MermaidNode: ASTNode, Codable {
-    var content: String
-    func render(context: RenderContext) -> AnyView {
+public struct MermaidNode: ASTNode, Codable {
+    public var content: String
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
     }
     
@@ -1879,7 +1971,7 @@ struct MermaidNode: ASTNode, Codable {
         case content
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "mermaid" else {
@@ -1891,17 +1983,17 @@ struct MermaidNode: ASTNode, Codable {
         content = try container.decode(String.self, forKey: .content)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("mermaid", forKey: .type)
         try container.encode(content, forKey: .content)
     }
 }
 
-struct MentionNode: ASTNode, Codable {
-    var id: String
-    var name: String
-    func render(context: RenderContext) -> AnyView {
+public struct MentionNode: ASTNode, Codable {
+    public var id: String
+    public var name: String
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
     }
     
@@ -1911,7 +2003,7 @@ struct MentionNode: ASTNode, Codable {
         case name
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "mention" else {
@@ -1924,7 +2016,7 @@ struct MentionNode: ASTNode, Codable {
         name = try container.decode(String.self, forKey: .name)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("mention", forKey: .type)
         try container.encode(id, forKey: .id)
@@ -1932,9 +2024,9 @@ struct MentionNode: ASTNode, Codable {
     }
 }
 
-struct BlockquoteNode: ASTNode, Codable {
-    var children: [ASTNodeWrapper]
-    func render(context: RenderContext) -> AnyView {
+public struct BlockquoteNode: ASTNode, Codable {
+    public var children: [ASTNodeWrapper]
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
     }
     
@@ -1943,7 +2035,7 @@ struct BlockquoteNode: ASTNode, Codable {
         case children
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "blockquote" else {
@@ -1955,15 +2047,15 @@ struct BlockquoteNode: ASTNode, Codable {
         children = try container.decode([ASTNodeWrapper].self, forKey: .children)
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("blockquote", forKey: .type)
         try container.encode(children, forKey: .children)
     }
 }
 
-struct HorizontalRuleNode: ASTNode, Codable {
-    func render(context: RenderContext) -> AnyView {
+public struct HorizontalRuleNode: ASTNode, Codable {
+    public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
     }
     
@@ -1971,7 +2063,7 @@ struct HorizontalRuleNode: ASTNode, Codable {
         case type
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         guard typeString == "horizontalRule" else {
@@ -1982,7 +2074,7 @@ struct HorizontalRuleNode: ASTNode, Codable {
         }
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("horizontalRule", forKey: .type)
     }
@@ -1991,7 +2083,7 @@ struct HorizontalRuleNode: ASTNode, Codable {
 // MARK: - ASTNodeWrapper
 
 /// ASTNode 包装器，用于 JSON 序列化/反序列化
-enum ASTNodeWrapper: Codable {
+public enum ASTNodeWrapper: Codable {
     case root(RootNode)
     case paragraph(ParagraphNode)
     case heading(HeadingNode)
@@ -2019,7 +2111,7 @@ enum ASTNodeWrapper: Codable {
         case type
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let typeString = try container.decode(String.self, forKey: .type)
         
@@ -2076,7 +2168,7 @@ enum ASTNodeWrapper: Codable {
         }
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         switch self {
         case .root(let node):
             try node.encode(to: encoder)

@@ -1,0 +1,24 @@
+PODS:
+  - IMParseSDK/Core (0.1.0)
+  - IMParseSDK/Full (0.1.0):
+    - IMParseSDK/Core
+    - IMParseSDK/SwiftUI
+    - IMParseSDK/UIKit
+  - IMParseSDK/SwiftUI (0.1.0):
+    - IMParseSDK/Core
+  - IMParseSDK/UIKit (0.1.0):
+    - IMParseSDK/Core
+
+DEPENDENCIES:
+  - IMParseSDK/Full (from `../IMParseSDK`)
+
+EXTERNAL SOURCES:
+  IMParseSDK:
+    :path: "../IMParseSDK"
+
+SPEC CHECKSUMS:
+  IMParseSDK: ea11db0f63e21cd95c97906a6ac564febf453e11
+
+PODFILE CHECKSUM: c14d4cc3ff9b01d000a87e49182b9821f8cb3f30
+
+COCOAPODS: 1.16.2

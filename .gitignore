@@ -16,7 +16,7 @@ Cargo.lock
 **/*.pdb
 
 # iOS
-*.xcodeproj
+# 注意：不忽略 .xcodeproj 目录本身（因为包含 project.pbxproj），只忽略其中的用户特定文件
 *.xcworkspace
 DerivedData/
 *.hmap
@@ -39,9 +39,15 @@ xcuserdata/
 *.bundle
 *.xcarchive
 *.xcuserdata
+# CocoaPods
+Pods/
+# Podfile.lock 通常应该提交（锁定依赖版本），但如果你不想提交可以取消注释下面这行
+# Podfile.lock
 # Swift Package Manager
 .swiftpm/
 .build/
+# XCFramework（构建产物）
+*.xcframework
 
 # Android
 *.iml
