@@ -109,7 +109,27 @@ impl MarkdownParser {
                             current_inline_styles.push(InlineStyle::Link(url.to_string()));
                         }
                         Tag::Image(_link_type, url, title) => {
-                            builder.add_image(url.to_string(), None, None, Some(title.to_string()));
+                            // 收集图片的 Alt 文本
+                            let mut alt_text = String::new();
+                            while let Some(event) = events.peek() {
+                                match event {
+                                    Event::End(Tag::Image(_, _, _)) => {
+                                        events.next(); // 消费 End 事件
+                                        break;
+                                    }
+                                    Event::Text(text) => {
+                                        alt_text.push_str(&text);
+                                        events.next();
+                                    }
+                                    _ => {
+                                        events.next();
+                                    }
+                                }
+                            }
+                            let alt = if alt_text.is_empty() { None } else { Some(alt_text) };
+                            // add_image 的签名是 (url, width, height, alt)，这里用 title 作为 alt
+                            let alt_or_title = alt.or_else(|| if title.is_empty() { None } else { Some(title.to_string()) });
+                            builder.add_image(url.to_string(), None, None, alt_or_title);
                         }
                         Tag::Strikethrough => {
                             current_inline_styles.push(InlineStyle::Strike);
@@ -189,16 +209,25 @@ impl MarkdownParser {
                             builder.end_table_row();
                         }
                         Tag::Strong => {
-                            current_inline_styles.retain(|s| !matches!(s, InlineStyle::Strong));
+                            // 从栈顶弹出对应的样式
+                            if let Some(pos) = current_inline_styles.iter().rposition(|s| matches!(s, InlineStyle::Strong)) {
+                                current_inline_styles.remove(pos);
+                            }
                         }
                         Tag::Emphasis => {
-                            current_inline_styles.retain(|s| !matches!(s, InlineStyle::Em));
+                            if let Some(pos) = current_inline_styles.iter().rposition(|s| matches!(s, InlineStyle::Em)) {
+                                current_inline_styles.remove(pos);
+                            }
                         }
                         Tag::Link(_, _, _) => {
-                            current_inline_styles.retain(|s| !matches!(s, InlineStyle::Link(_)));
+                            if let Some(pos) = current_inline_styles.iter().rposition(|s| matches!(s, InlineStyle::Link(_))) {
+                                current_inline_styles.remove(pos);
+                            }
                         }
                         Tag::Strikethrough => {
-                            current_inline_styles.retain(|s| !matches!(s, InlineStyle::Strike));
+                            if let Some(pos) = current_inline_styles.iter().rposition(|s| matches!(s, InlineStyle::Strike)) {
+                                current_inline_styles.remove(pos);
+                            }
                         }
                         _ => {}
                     }
@@ -270,19 +299,33 @@ impl MarkdownParser {
                                 current_styles.push(InlineStyle::Strong);
                             }
                             Event::End(Tag::Strong) => {
-                                current_styles.retain(|s| !matches!(s, InlineStyle::Strong));
+                                if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, InlineStyle::Strong)) {
+                                    current_styles.remove(pos);
+                                }
                             }
                             Event::Start(Tag::Emphasis) => {
                                 current_styles.push(InlineStyle::Em);
                             }
                             Event::End(Tag::Emphasis) => {
-                                current_styles.retain(|s| !matches!(s, InlineStyle::Em));
+                                if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, InlineStyle::Em)) {
+                                    current_styles.remove(pos);
+                                }
                             }
                             Event::Start(Tag::Link(_, url, _)) => {
                                 current_styles.push(InlineStyle::Link(url.to_string()));
                             }
                             Event::End(Tag::Link(_, _, _)) => {
-                                current_styles.retain(|s| !matches!(s, InlineStyle::Link(_)));
+                                if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, InlineStyle::Link(_))) {
+                                    current_styles.remove(pos);
+                                }
+                            }
+                            Event::Start(Tag::Strikethrough) => {
+                                current_styles.push(InlineStyle::Strike);
+                            }
+                            Event::End(Tag::Strikethrough) => {
+                                if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, InlineStyle::Strike)) {
+                                    current_styles.remove(pos);
+                                }
                             }
                             _ => {}
                         }
@@ -297,9 +340,164 @@ impl MarkdownParser {
         events: &mut std::iter::Peekable<impl Iterator<Item = Event<'a>>>,
         children: &mut Vec<ASTNode>,
     ) {
-        // 简化实现：收集段落内容
         let mut current_styles = Vec::new();
-        self.collect_inline_content(events, children, &mut current_styles);
+        
+        while let Some(event) = events.peek() {
+            match event {
+                Event::End(Tag::BlockQuote) => {
+                    events.next(); // 消费 End 事件
+                    break;
+                }
+                Event::Start(Tag::Paragraph) => {
+                    events.next();
+                    let mut para_children = Vec::new();
+                    self.collect_inline_content(events, &mut para_children, &mut current_styles);
+                    
+                    // 检查是否是块级公式
+                    let should_convert_to_block_math = {
+                        let mut full_text = String::new();
+                        let mut only_text_nodes = true;
+                        
+                        for child in &para_children {
+                            match child {
+                                ASTNode::Text(text_node) => {
+                                    full_text.push_str(&text_node.content);
+                                }
+                                _ => {
+                                    only_text_nodes = false;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if only_text_nodes {
+                            let trimmed = full_text.trim();
+                            trimmed.starts_with("$$") && trimmed.ends_with("$$") && trimmed.len() > 4
+                                && !trimmed[2..trimmed.len()-2].trim().contains("$$")
+                        } else {
+                            false
+                        }
+                    };
+                    
+                    if should_convert_to_block_math {
+                        let mut full_text = String::new();
+                        for child in &para_children {
+                            if let ASTNode::Text(text_node) = child {
+                                full_text.push_str(&text_node.content);
+                            }
+                        }
+                        let trimmed = full_text.trim();
+                        let inner = trimmed[2..trimmed.len()-2].trim();
+                        children.push(ASTNode::Math(MathNode { content: inner.to_string(), display: true }));
+                    } else if !para_children.is_empty() {
+                        children.push(ASTNode::Paragraph(ParagraphNode { children: para_children }));
+                    }
+                }
+                Event::Start(Tag::List(Some(1))) => {
+                    events.next();
+                    let mut nested_items = Vec::new();
+                    
+                    while let Some(event) = events.peek() {
+                        match event {
+                            Event::End(Tag::List(_)) => {
+                                events.next();
+                                break;
+                            }
+                            Event::Start(Tag::Item) => {
+                                events.next();
+                                let mut item_children = Vec::new();
+                                let item_checked = self.collect_list_item_content(events, &mut item_children, &mut current_styles);
+                                nested_items.push(ListItemNode { children: item_children, checked: item_checked });
+                            }
+                            _ => {
+                                events.next();
+                            }
+                        }
+                    }
+                    
+                    children.push(ASTNode::List(ListNode {
+                        list_type: ListType::Ordered,
+                        items: nested_items,
+                    }));
+                }
+                Event::Start(Tag::List(None)) => {
+                    events.next();
+                    let mut nested_items = Vec::new();
+                    
+                    while let Some(event) = events.peek() {
+                        match event {
+                            Event::End(Tag::List(_)) => {
+                                events.next();
+                                break;
+                            }
+                            Event::Start(Tag::Item) => {
+                                events.next();
+                                let mut item_children = Vec::new();
+                                let item_checked = self.collect_list_item_content(events, &mut item_children, &mut current_styles);
+                                nested_items.push(ListItemNode { children: item_children, checked: item_checked });
+                            }
+                            _ => {
+                                events.next();
+                            }
+                        }
+                    }
+                    
+                    children.push(ASTNode::List(ListNode {
+                        list_type: ListType::Bullet,
+                        items: nested_items,
+                    }));
+                }
+                Event::Start(Tag::CodeBlock(kind)) => {
+                    let language = match kind {
+                        CodeBlockKind::Fenced(lang) => {
+                            if lang.is_empty() {
+                                None
+                            } else {
+                                Some(lang.to_string())
+                            }
+                        }
+                        CodeBlockKind::Indented => None,
+                    };
+                    events.next();
+                    let content = self.collect_code_block_content(events);
+                    
+                    if let Some(ref lang) = language {
+                        if lang.to_lowercase() == "mermaid" {
+                            children.push(ASTNode::Mermaid(MermaidNode { content }));
+                        } else {
+                            children.push(ASTNode::CodeBlock(CodeBlockNode { language, content }));
+                        }
+                    } else {
+                        children.push(ASTNode::CodeBlock(CodeBlockNode { language, content }));
+                    }
+                }
+                Event::Start(Tag::Heading(level, _, _)) => {
+                    let heading_level = *level as u8; // 先复制 level 的值
+                    events.next();
+                    let mut heading_children = Vec::new();
+                    self.collect_inline_content(events, &mut heading_children, &mut current_styles);
+                    children.push(ASTNode::Heading(HeadingNode {
+                        level: heading_level,
+                        children: heading_children,
+                    }));
+                }
+                Event::Start(Tag::BlockQuote) => {
+                    events.next();
+                    let mut nested_children = Vec::new();
+                    self.collect_block_content(events, &mut nested_children);
+                    children.push(ASTNode::Blockquote(BlockquoteNode { children: nested_children }));
+                }
+                Event::Rule => {
+                    events.next();
+                    children.push(ASTNode::HorizontalRule(HorizontalRuleNode {}));
+                }
+                _ => {
+                    // 其他内联内容
+                    self.collect_inline_content(events, children, &mut current_styles);
+                    break;
+                }
+            }
+        }
     }
 
     fn collect_list_item_content<'a>(
@@ -320,7 +518,154 @@ impl MarkdownParser {
                     checked = Some(*is_checked);
                     events.next();
                 }
+                Event::Start(Tag::Paragraph) => {
+                    events.next();
+                    // 创建一个段落节点来收集内容
+                    let mut para_children = Vec::new();
+                    let mut para_styles = Vec::new();
+                    // 收集段落内容直到段落结束
+                    while let Some(event) = events.peek() {
+                        match event {
+                            Event::End(Tag::Paragraph) => {
+                                events.next();
+                                break;
+                            }
+                            _ => {
+                                self.collect_inline_content(events, &mut para_children, &mut para_styles);
+                            }
+                        }
+                    }
+                    // 检查是否是块级公式
+                    let should_convert_to_block_math = {
+                        let mut full_text = String::new();
+                        let mut only_text_nodes = true;
+                        
+                        for child in &para_children {
+                            match child {
+                                ASTNode::Text(text_node) => {
+                                    full_text.push_str(&text_node.content);
+                                }
+                                _ => {
+                                    only_text_nodes = false;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if only_text_nodes {
+                            let trimmed = full_text.trim();
+                            trimmed.starts_with("$$") && trimmed.ends_with("$$") && trimmed.len() > 4
+                                && !trimmed[2..trimmed.len()-2].trim().contains("$$")
+                        } else {
+                            false
+                        }
+                    };
+                    
+                    if should_convert_to_block_math {
+                        let mut full_text = String::new();
+                        for child in &para_children {
+                            if let ASTNode::Text(text_node) = child {
+                                full_text.push_str(&text_node.content);
+                            }
+                        }
+                        let trimmed = full_text.trim();
+                        let inner = trimmed[2..trimmed.len()-2].trim();
+                        children.push(ASTNode::Math(MathNode { content: inner.to_string(), display: true }));
+                    } else if !para_children.is_empty() {
+                        children.push(ASTNode::Paragraph(ParagraphNode { children: para_children }));
+                    }
+                }
+                Event::Start(Tag::List(Some(1))) => {
+                    // 嵌套的有序列表
+                    events.next(); // 消费 Start(Tag::List)
+                    let mut nested_items = Vec::new();
+                    
+                    // 收集所有嵌套列表项，直到列表结束
+                    while let Some(event) = events.peek() {
+                        match event {
+                            Event::End(Tag::List(_)) => {
+                                events.next();
+                                break;
+                            }
+                            Event::Start(Tag::Item) => {
+                                events.next(); // 消费 Start(Tag::Item)
+                                let mut item_children = Vec::new();
+                                let item_checked = self.collect_list_item_content(events, &mut item_children, current_styles);
+                                nested_items.push(ListItemNode { children: item_children, checked: item_checked });
+                            }
+                            _ => {
+                                events.next();
+                            }
+                        }
+                    }
+                    
+                    children.push(ASTNode::List(ListNode {
+                        list_type: ListType::Ordered,
+                        items: nested_items,
+                    }));
+                }
+                Event::Start(Tag::List(None)) => {
+                    // 嵌套的无序列表
+                    events.next(); // 消费 Start(Tag::List)
+                    let mut nested_items = Vec::new();
+                    
+                    // 收集所有嵌套列表项，直到列表结束
+                    while let Some(event) = events.peek() {
+                        match event {
+                            Event::End(Tag::List(_)) => {
+                                events.next();
+                                break;
+                            }
+                            Event::Start(Tag::Item) => {
+                                events.next(); // 消费 Start(Tag::Item)
+                                let mut item_children = Vec::new();
+                                let item_checked = self.collect_list_item_content(events, &mut item_children, current_styles);
+                                nested_items.push(ListItemNode { children: item_children, checked: item_checked });
+                            }
+                            _ => {
+                                events.next();
+                            }
+                        }
+                    }
+                    
+                    children.push(ASTNode::List(ListNode {
+                        list_type: ListType::Bullet,
+                        items: nested_items,
+                    }));
+                }
+                Event::Start(Tag::CodeBlock(kind)) => {
+                    // 先保存 kind 的值，因为 events.next() 会消费事件
+                    let language = match kind {
+                        CodeBlockKind::Fenced(lang) => {
+                            if lang.is_empty() {
+                                None
+                            } else {
+                                Some(lang.to_string())
+                            }
+                        }
+                        CodeBlockKind::Indented => None,
+                    };
+                    events.next();
+                    let content = self.collect_code_block_content(events);
+                    
+                    if let Some(ref lang) = language {
+                        if lang.to_lowercase() == "mermaid" {
+                            children.push(ASTNode::Mermaid(MermaidNode { content }));
+                        } else {
+                            children.push(ASTNode::CodeBlock(CodeBlockNode { language, content }));
+                        }
+                    } else {
+                        children.push(ASTNode::CodeBlock(CodeBlockNode { language, content }));
+                    }
+                }
+                Event::Start(Tag::BlockQuote) => {
+                    events.next();
+                    let mut blockquote_children = Vec::new();
+                    self.collect_block_content(events, &mut blockquote_children);
+                    children.push(ASTNode::Blockquote(BlockquoteNode { children: blockquote_children }));
+                }
                 _ => {
+                    // 处理内联内容
                     self.collect_inline_content(events, children, current_styles);
                 }
             }
@@ -496,50 +841,70 @@ impl MarkdownParser {
         let mut i = 0;
 
         while i < chars.len() {
-            let (start, _) = chars[i];
+            let (start, ch) = chars[i];
             
             // 检查是否是单个 $（不是 $$）
-            if text[start..].starts_with('$') && !text[start..].starts_with("$$") {
-                let content_start = start + 1;
-                let mut found_end = false;
+            if ch == '$' {
+                // 检查后面是否还有一个 $（即 $$）
+                let is_double = if i + 1 < chars.len() {
+                    chars[i + 1].1 == '$'
+                } else {
+                    false
+                };
                 
-                // 查找结束的 $
-                for j in (i + 1)..chars.len() {
-                    let (pos, ch) = chars[j];
+                if !is_double {
+                    // 单个 $，开始查找结束的 $
+                    let content_start = start + 1;
+                    let mut found_end = false;
                     
-                    // 检查是否是结束标记：单个 $ 且前面不是 $
-                    if ch == '$' {
-                        // 检查前面是否是 $
-                        let prev_is_dollar = if pos > 0 {
-                            text.chars().nth(pos - 1) == Some('$')
-                        } else {
-                            false
-                        };
+                    // 查找结束的 $
+                    for j in (i + 1)..chars.len() {
+                        let (pos, ch2) = chars[j];
                         
-                        if !prev_is_dollar {
-                            // 找到结束标记
-                            let content = text[content_start..pos].trim().to_string();
-                            if !content.is_empty() {
-                                // 添加之前的文本
-                                if last_end < start {
-                                    let text_part = text[last_end..start].to_string();
-                                    if !text_part.is_empty() {
-                                        parts.push(TextPart::Text(text_part));
+                        // 检查是否是结束标记：单个 $ 且不是 $$
+                        if ch2 == '$' {
+                            // 检查前面是否是 $（使用 chars 数组而不是重新遍历）
+                            let prev_is_dollar = if j > 0 {
+                                chars[j - 1].1 == '$'
+                            } else {
+                                false
+                            };
+                            
+                            // 检查后面是否是 $
+                            let next_is_dollar = if j + 1 < chars.len() {
+                                chars[j + 1].1 == '$'
+                            } else {
+                                false
+                            };
+                            
+                            if !prev_is_dollar && !next_is_dollar {
+                                // 找到结束标记
+                                let content = text[content_start..pos].trim().to_string();
+                                if !content.is_empty() {
+                                    // 添加之前的文本
+                                    if last_end < start {
+                                        let text_part = text[last_end..start].to_string();
+                                        if !text_part.is_empty() {
+                                            parts.push(TextPart::Text(text_part));
+                                        }
                                     }
+                                    parts.push(TextPart::Math(content));
+                                    last_end = pos + 1;
+                                    i = j + 1;
+                                    found_end = true;
+                                    break;
                                 }
-                                parts.push(TextPart::Math(content));
-                                last_end = pos + 1;
-                                i = j + 1;
-                                found_end = true;
-                                break;
                             }
                         }
                     }
-                }
-                
-                if !found_end {
-                    // 没有找到结束标记，跳过这个 $
-                    i += 1;
+                    
+                    if !found_end {
+                        // 没有找到结束标记，跳过这个 $
+                        i += 1;
+                    }
+                } else {
+                    // 是 $$，跳过（块级公式标记，不在这里处理）
+                    i += 2;
                 }
             } else {
                 i += 1;

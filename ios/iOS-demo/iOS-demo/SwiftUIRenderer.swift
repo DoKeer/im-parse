@@ -172,15 +172,15 @@ struct SwiftUIRenderer {
             return AnyView(renderImage(node, context: context))
         case .list(let node):
             return AnyView(renderList(node, context: context))
-        case .listItem(let node):
+        case .listItem(_):
             // ListItem 在 renderList 中处理
             return AnyView(EmptyView())
         case .table(let node):
             return AnyView(renderTable(node, context: context))
-        case .tableRow(let node):
+        case .tableRow(_):
             // TableRow 在 renderTable 中处理
             return AnyView(EmptyView())
-        case .tableCell(let node):
+        case .tableCell(_):
             // TableCell 在 renderTable 中处理
             return AnyView(EmptyView())
         case .math(let node):
@@ -191,18 +191,18 @@ struct SwiftUIRenderer {
             return AnyView(renderMention(node, context: context))
         case .blockquote(let node):
             return AnyView(renderBlockquote(node, context: context))
-        case .horizontalRule(let node):
+        case .horizontalRule(_):
             return AnyView(renderHorizontalRule(context: context))
         }
     }
     
     @ViewBuilder
     private func renderParagraph(_ node: ParagraphNode, context: RenderContext) -> some View {
-        // 检查是否包含需要单独渲染的节点（代码、图片、数学公式、Mermaid、提及）
-        // 代码节点因为带有 padding 和 background，需要单独处理
+        // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
+        // 行内代码现在可以嵌入到 AttributedString 中，不需要单独处理
         let hasSpecialNodes = node.children.contains { wrapper in
             switch wrapper {
-            case .code, .image, .math, .mermaid, .mention:
+            case .image, .math, .mermaid:
                 return true
             default:
                 return false
@@ -249,13 +249,15 @@ struct SwiftUIRenderer {
         
         for node in nodes {
             switch node {
-            case .code, .image, .math, .mermaid, .mention:
+            case .image, .math, .mermaid:
+                // 行内代码现在可以嵌入到 AttributedString 中，不需要单独处理
                 if !currentTextNodes.isEmpty {
                     result.append(.textNodes(currentTextNodes))
                     currentTextNodes.removeAll()
                 }
                 result.append(.specialNode(node))
             default:
+                // 包括 .code，因为行内代码现在可以嵌入到 AttributedString 中
                 currentTextNodes.append(node)
             }
         }
@@ -315,8 +317,27 @@ struct SwiftUIRenderer {
             for child in strongNode.children {
                 var childString = buildAttributedString(from: child, context: context)
                 // 应用粗体：使用 fontWeight
+                // 注意：需要保留子节点中可能已经应用的斜体（obliqueness）属性
                 let fontSize = getFontSize(from: font, context: context)
+                
+                // 检查并保留已有的 obliqueness 属性（来自嵌套的 em 节点）
+                var existingObliqueness: Double? = nil
+                for run in childString.runs {
+                    if let obliqueness = run.obliqueness, obliqueness != 0 {
+                        existingObliqueness = obliqueness
+                        break
+                    }
+                }
+                
+                // 应用粗体字体
                 childString.font = .system(size: fontSize, weight: .bold)
+                
+                // 如果有斜体属性，需要重新应用（因为设置 font 可能会覆盖）
+                if let obliqueness = existingObliqueness {
+                    var attributes = AttributeContainer()
+                    attributes.obliqueness = obliqueness
+                    childString.mergeAttributes(attributes)
+                }
                 childString.foregroundColor = colorToSwiftUIColor(color)
                 result.append(childString)
             }
@@ -361,7 +382,14 @@ struct SwiftUIRenderer {
             var result = AttributedString()
             for child in strikeNode.children {
                 var childString = buildAttributedString(from: child, context: context)
-                childString.strikethroughStyle = .single
+                // 应用删除线：使用 strikethroughStyle 和 strikethroughColor
+                var attributes = AttributeContainer()
+                attributes.strikethroughStyle = .single
+                // strikethroughColor 需要 UIColor 类型
+                if let uiColor = colorToUIKitColor(color) {
+                    attributes.strikethroughColor = uiColor
+                }
+                childString.mergeAttributes(attributes)
                 let fontSize = getFontSize(from: font, context: context)
                 childString.font = .system(size: fontSize)
                 childString.foregroundColor = colorToSwiftUIColor(color)
@@ -415,6 +443,13 @@ struct SwiftUIRenderer {
         return color
     }
     
+    /// 将 Color 转换为 UIColor（用于 AttributedString 的 UIKit 属性）
+    @available(iOS 15.0, *)
+    private func colorToUIKitColor(_ color: Color?) -> UIColor? {
+        guard let color = color else { return nil }
+        return UIColor(color)
+    }
+    
     /// 旧版 Text 组合方式（iOS 14 及以下降级处理）
     @ViewBuilder
     private func buildTextLegacy(from nodes: [ASTNodeWrapper], context: RenderContext) -> some View {
@@ -447,11 +482,11 @@ struct SwiftUIRenderer {
         // 创建带标题样式的上下文（在视图构建之前完成）
         let headingContext = createHeadingContext(from: context, font: font, color: color)
         
-        // 检查是否包含需要单独渲染的节点（代码、图片、数学公式、Mermaid、提及）
-        // 代码节点因为带有 padding 和 background，需要单独处理
+        // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
+        // 行内代码现在可以嵌入到 AttributedString 中，不需要单独处理
         let hasSpecialNodes = node.children.contains { wrapper in
             switch wrapper {
-            case .code, .image, .math, .mermaid, .mention:
+            case .image, .math, .mermaid:
                 return true
             default:
                 return false
@@ -515,35 +550,128 @@ struct SwiftUIRenderer {
     }
     
     @ViewBuilder
-    private func renderList(_ node: ListNode, context: RenderContext) -> some View {
+    private func renderList(_ node: ListNode, context: RenderContext, nestingLevel: Int = 0) -> some View {
         VStack(alignment: .leading, spacing: context.theme.listItemSpacing) {
             ForEach(Array(node.items.enumerated()), id: \.offset) { index, item in
                 HStack(alignment: .top, spacing: 8) {
                     if case .bullet = node.listType {
-                        Circle()
-                            .fill(context.theme.textColor)
-                            .frame(width: 6, height: 6)
-                            .padding(.top, 6)
+                        // 嵌套无序列表使用空心圈，第一层使用实心圆
+                        if nestingLevel > 0 {
+                            Circle()
+                                .stroke(context.theme.textColor, lineWidth: 1.5)
+                                .frame(width: 6, height: 6)
+                                .padding(.top, 6)
+                        } else {
+                            Circle()
+                                .fill(context.theme.textColor)
+                                .frame(width: 6, height: 6)
+                                .padding(.top, 6)
+                        }
                     } else {
-                        Text("\(index + 1).")
-                            .font(context.theme.font)
-                            .foregroundColor(context.theme.textColor)
+                        // 嵌套有序列表使用小写罗马数字，第一层使用数字
+                        if nestingLevel > 0 {
+                            Text("\(toRomanNumeral(index + 1)).")
+                                .font(context.theme.font)
+                                .foregroundColor(context.theme.textColor)
+                        } else {
+                            Text("\(index + 1).")
+                                .font(context.theme.font)
+                                .foregroundColor(context.theme.textColor)
+                        }
                     }
                     
-                    // 列表项内容：使用 AttributedString 组合所有行内节点
-                    renderListItemContent(item: item, context: context)
+                    // 列表项内容：检查是否包含嵌套列表
+                    renderListItemContent(item: item, listType: node.listType, listIndex: index, context: context, nestingLevel: nestingLevel)
                 }
             }
         }
     }
     
+    /// 将数字转换为小写罗马数字
+    private func toRomanNumeral(_ number: Int) -> String {
+        // 超出范围直接返回数字
+        guard number > 0 && number < 4000 else {
+            return "\(number)"
+        }
+        
+        let values = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1]
+        let numerals = ["m", "cm", "d", "cd", "c", "xc", "l", "xl", "x", "ix", "v", "iv", "i"]
+        
+        var result = ""
+        var num = number
+        
+        for (index, value) in values.enumerated() {
+            let count = num / value
+            if count > 0 {
+                result += String(repeating: numerals[index], count: count)
+                num -= value * count
+            }
+        }
+        
+        return result
+    }
+    
     /// 渲染列表项内容
     @ViewBuilder
-    private func renderListItemContent(item: ListItemNode, context: RenderContext) -> some View {
-        // 检查是否包含需要单独渲染的节点（代码、图片、数学公式、Mermaid、提及）
-        let hasSpecialNodes = item.children.contains { wrapper in
+    private func renderListItemContent(item: ListItemNode, listType: ListType, listIndex: Int, context: RenderContext, nestingLevel: Int = 0) -> some View {
+        // 检查是否包含嵌套列表
+        let hasNestedList = item.children.contains { wrapper in
+            if case .list = wrapper {
+                return true
+            }
+            return false
+        }
+        
+        if hasNestedList {
+            // 如果包含嵌套列表，需要特殊处理：换行+缩进
+            renderListItemWithNestedList(item: item, context: context, nestingLevel: nestingLevel)
+        } else {
+            // 没有嵌套列表，正常渲染行内节点
+            renderListItemInlineContent(nodes: item.children, context: context)
+        }
+    }
+    
+    /// 渲染包含嵌套列表的列表项
+    @ViewBuilder
+    private func renderListItemWithNestedList(item: ListItemNode, context: RenderContext, nestingLevel: Int = 0) -> some View {
+        // 先渲染非列表节点
+        let nonListNodes = item.children.filter { wrapper in
+            if case .list = wrapper {
+                return false
+            }
+            return true
+        }
+        
+        // 提取所有列表节点
+        let listNodes: [ListNode] = item.children.compactMap { child in
+            if case .list(let nestedListNode) = child {
+                return nestedListNode
+            }
+            return nil
+        }
+        
+        VStack(alignment: .leading, spacing: 0) {
+            if !nonListNodes.isEmpty {
+                renderListItemInlineContent(nodes: nonListNodes, context: context)
+            }
+            
+            // 然后渲染嵌套列表（换行+缩进）
+            ForEach(Array(listNodes.enumerated()), id: \.offset) { _, listNode in
+                AnyView(renderList(listNode, context: context, nestingLevel: nestingLevel + 1))
+                    .padding(.leading, 20) // 缩进
+                    .padding(.top, context.theme.listItemSpacing) // 换行间距
+            }
+        }
+    }
+    
+    /// 渲染列表项的行内内容
+    @ViewBuilder
+    private func renderListItemInlineContent(nodes: [ASTNodeWrapper], context: RenderContext) -> some View {
+        // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
+        // 行内代码现在可以嵌入到 AttributedString 中，不需要单独处理
+        let hasSpecialNodes = nodes.contains { wrapper in
             switch wrapper {
-            case .code, .image, .math, .mermaid, .mention:
+            case .image, .math, .mermaid:
                 return true
             default:
                 return false
@@ -552,12 +680,12 @@ struct SwiftUIRenderer {
         
         if hasSpecialNodes {
             // 如果包含特殊节点，使用混合布局
-            let groupedNodes = groupInlineNodes(item.children)
+            let groupedNodes = groupInlineNodes(nodes)
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(groupedNodes.enumerated()), id: \.offset) { index, group in
                     switch group {
-                    case .textNodes(let nodes):
-                        buildText(from: nodes, context: context)
+                    case .textNodes(let textNodes):
+                        buildText(from: textNodes, context: context)
                             .fixedSize(horizontal: false, vertical: true)
                     case .specialNode(let node):
                         renderInlineNodeWrapper(node, context: context)
@@ -566,7 +694,7 @@ struct SwiftUIRenderer {
             }
         } else {
             // 否则使用 AttributedString 渲染，支持正确换行
-            buildText(from: item.children, context: context)
+            buildText(from: nodes, context: context)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -579,9 +707,9 @@ struct SwiftUIRenderer {
                     ForEach(Array(row.cells.enumerated()), id: \.offset) { cellIndex, cell in
                         // 表格单元格内容：使用 AttributedString 组合所有行内节点
                         renderTableCellContent(cell: cell, context: context)
-                            .frame(maxWidth: .infinity, alignment: cell.align?.alignment ?? .leading)
-                            .padding(context.theme.tableCellPadding)
-                            .background(rowIndex == 0 ? context.theme.tableHeaderBackground : Color.clear)
+                        .frame(maxWidth: .infinity, alignment: cell.align?.alignment ?? .leading)
+                        .padding(context.theme.tableCellPadding)
+                        .background(rowIndex == 0 ? context.theme.tableHeaderBackground : Color.clear)
                     }
                 }
                 Divider()
@@ -597,10 +725,11 @@ struct SwiftUIRenderer {
     /// 渲染表格单元格内容
     @ViewBuilder
     private func renderTableCellContent(cell: TableCell, context: RenderContext) -> some View {
-        // 检查是否包含需要单独渲染的节点（代码、图片、数学公式、Mermaid、提及）
+        // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
+        // 行内代码现在可以嵌入到 AttributedString 中，不需要单独处理
         let hasSpecialNodes = cell.children.contains { wrapper in
             switch wrapper {
-            case .code, .image, .math, .mermaid, .mention:
+            case .image, .math, .mermaid:
                 return true
             default:
                 return false
@@ -765,34 +894,55 @@ struct SwiftUIRenderer {
     private func renderBlockquoteContent(node: BlockquoteNode, context: RenderContext) -> some View {
         // 创建带引用块文本颜色的上下文（在 ViewBuilder 外部创建）
         let blockquoteContext = createBlockquoteContext(from: context)
-        // 检查是否包含需要单独渲染的节点（代码、图片、数学公式、Mermaid、提及）
-        let hasSpecialNodes = node.children.contains { wrapper in
+        
+        // 检查是否包含块级节点（段落、列表、代码块、标题等）
+        let hasBlockLevelNodes = node.children.contains { wrapper in
             switch wrapper {
-            case .code, .image, .math, .mermaid, .mention:
+            case .paragraph, .heading, .codeBlock, .list, .table, .blockquote, .horizontalRule:
                 return true
             default:
                 return false
             }
         }
         
-        if hasSpecialNodes {
-            // 如果包含特殊节点，使用混合布局
-            let groupedNodes = groupInlineNodes(node.children)
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(groupedNodes.enumerated()), id: \.offset) { index, group in
-                    switch group {
-                    case .textNodes(let nodes):
-                        buildText(from: nodes, context: blockquoteContext)
-                            .fixedSize(horizontal: false, vertical: true)
-                    case .specialNode(let node):
-                        renderInlineNodeWrapper(node, context: blockquoteContext)
-                    }
+        if hasBlockLevelNodes {
+            // 如果包含块级节点，使用块级渲染
+            VStack(alignment: .leading, spacing: blockquoteContext.theme.paragraphSpacing) {
+                ForEach(Array(node.children.enumerated()), id: \.offset) { index, child in
+                    renderNodeWrapper(child, context: blockquoteContext)
                 }
             }
         } else {
-            // 否则使用 AttributedString 渲染，支持正确换行
-            buildText(from: node.children, context: blockquoteContext)
-                .fixedSize(horizontal: false, vertical: true)
+            // 否则作为行内内容处理
+            // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
+            let hasSpecialNodes = node.children.contains { wrapper in
+                switch wrapper {
+                case .image, .math, .mermaid:
+                    return true
+                default:
+                    return false
+                }
+            }
+            
+            if hasSpecialNodes {
+                // 如果包含特殊节点，使用混合布局
+                let groupedNodes = groupInlineNodes(node.children)
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(groupedNodes.enumerated()), id: \.offset) { index, group in
+                        switch group {
+                        case .textNodes(let nodes):
+                            buildText(from: nodes, context: blockquoteContext)
+                                .fixedSize(horizontal: false, vertical: true)
+                        case .specialNode(let node):
+                            renderInlineNodeWrapper(node, context: blockquoteContext)
+                        }
+                    }
+                }
+            } else {
+                // 否则使用 AttributedString 渲染，支持正确换行
+                buildText(from: node.children, context: blockquoteContext)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
     

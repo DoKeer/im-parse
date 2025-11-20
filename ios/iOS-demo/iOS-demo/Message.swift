@@ -94,56 +94,36 @@ class MessageDataGenerator {
         
         let markdownTemplates = generateMarkdownTemplates()
         let deltaTemplates = generateDeltaTemplates()
-        
+        let count = markdownTemplates.count+deltaTemplates.count
         for i in 0..<count {
             let sender = senders[i % senders.count]
             let timestamp = Date().addingTimeInterval(-Double(count - i) * 60)
-            
-            // 随机选择消息类型
-            let useMarkdown = i % 2 == 0
+        
             let message: Message
             
-            if useMarkdown {
-                // 如果i == 0 ，把markdownTemplates 所有内容拼接起来，作为content
-                if i == 0 {
-                    let template = markdownTemplates.joined(separator: " \n ")
-                    message = Message(
-                        type: .markdown,
-                        content: template,
-                        sender: sender,
-                        timestamp: timestamp
-                    )
-                } else {
-                    let template = markdownTemplates[i % markdownTemplates.count]
-                    message = Message(
-                        type: .markdown,
-                        content: template,
-                        sender: sender,
-                        timestamp: timestamp
-                    )   
-                } 
+            if i < markdownTemplates.count {
+                let template = markdownTemplates[i]
+                message = Message(
+                    type: .markdown,
+                    content: template,
+                    sender: sender,
+                    timestamp: timestamp
+                )
             } else {
-                // 如果i == 0 ，把deltaTemplates 所有内容拼接起来，作为content
-                if i == 0 {
-                    let template = deltaTemplates.joined(separator: " \n ")
-                    message = Message(
-                        type: .delta,
-                        content: template,
-                        sender: sender,
-                        timestamp: timestamp
-                    )
-                } else {
-                    let template = deltaTemplates[i % deltaTemplates.count]
-                    message = Message(
-                        type: .delta,
-                        content: template,
-                        sender: sender,
-                        timestamp: timestamp
-                    )
-                }
+                let template = deltaTemplates[i-markdownTemplates.count]
+                message = Message(
+                    type: .delta,
+                    content: template,
+                    sender: sender,
+                    timestamp: timestamp
+                )
             }
             
             messages.append(message)
+        }
+        
+        if markdownTemplates.count < count {
+            // TODO 复制多份messages内容
         }
         
         return messages
@@ -437,6 +417,26 @@ class MessageDataGenerator {
             
             文档应该具有良好的可读性，各种元素之间应该有适当的间距，文本应该能够正确地换行，格式应该能够正确地应用。希望这篇测试文档能够帮助我们发现和修复渲染器中的问题。
             """
+            ,
+            
+            """
+            段落中有行内数学 $a^2 + b^2 = c^2$，前后还有普通文本。
+
+            这一行包含多个公式：$x$, $y + 1$, 和 $z_{i,j}$ 混在一起。
+
+            只开不关的行内数学 $a + b$ 和一个正常的 $c + d$。
+
+            整段是块级公式：
+
+            $$
+            \\int_0^1 x^2 \\, dx
+            $$
+
+            前面有文字但中间嵌入块级 $$a^2$$ 再接文字。
+
+            $$a + b$$ 紧挨着其他字符不含空格。
+
+            """
         ]
     }
     
@@ -502,7 +502,7 @@ class MessageDataGenerator {
             """,
             """
             {"ops":[{"insert":"Delta混合格式："},{"insert":"Delta粗体","attributes":{"bold":true}},{"insert":"Delta、"},{"insert":"Delta斜体","attributes":{"italic":true}},{"insert":"Delta、"},{"insert":"Delta代码","attributes":{"code":true}},{"insert":"Delta。\\n"}]}
-            """,
+            """
         ]
     }
 }
