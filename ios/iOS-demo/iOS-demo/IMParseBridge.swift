@@ -110,14 +110,6 @@ class IMParseCore {
         }
     }
     
-    /// 计算 AST 高度
-    static func calculateHeight(astJSON: String, width: CGFloat) -> CGFloat {
-        guard let cString = astJSON.cString(using: .utf8) else {
-            return 0
-        }
-        return CGFloat(calculate_ast_height(cString, Float(width)))
-    }
-    
     /// 将 Markdown 转换为 HTML
     static func markdownToHTML(_ input: String) -> ParseResult {
         return markdownToHTML(input, config: nil)
@@ -380,9 +372,6 @@ func parse_delta_to_json(_ input: UnsafePointer<CChar>) -> UnsafeMutablePointer<
 
 @_silgen_name("free_parse_result")
 func free_parse_result(_ result: UnsafeMutablePointer<IMParseResult>?)
-
-@_silgen_name("calculate_ast_height")
-func calculate_ast_height(_ ast_json: UnsafePointer<CChar>, _ width: Float) -> Float
 
 @_silgen_name("markdown_to_html")
 func markdown_to_html(_ input: UnsafePointer<CChar>) -> UnsafeMutablePointer<IMParseResult>?

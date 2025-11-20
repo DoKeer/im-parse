@@ -2,8 +2,6 @@ pub mod ast;
 pub mod markdown_parser;
 pub mod delta_parser;
 pub mod ast_builder;
-pub mod height_calculator;
-pub mod cache;
 pub mod html_renderer;
 pub mod style_config;
 
@@ -13,8 +11,6 @@ pub use ast::*;
 pub use markdown_parser::*;
 pub use delta_parser::*;
 pub use ast_builder::*;
-pub use height_calculator::*;
-pub use cache::*;
 pub use html_renderer::*;
 pub use style_config::*;
 

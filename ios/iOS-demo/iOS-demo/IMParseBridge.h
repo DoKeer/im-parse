@@ -31,12 +31,6 @@ IMParseResult * _Nullable parse_delta_to_json(const char * _Nonnull input);
 /// @param result 解析结果指针
 void free_parse_result(IMParseResult * _Nullable result);
 
-/// 计算 AST 高度
-/// @param ast_json AST JSON 字符串
-/// @param width 容器宽度
-/// @return 估算高度
-float calculate_ast_height(const char * _Nonnull ast_json, float width);
-
 /// 将 Markdown 转换为 HTML
 /// @param input Markdown 字符串
 /// @return 解析结果，需要调用 free_parse_result 释放

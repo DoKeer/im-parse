@@ -297,7 +297,7 @@ class UIKitRenderer {
     }
     
     /// 从行内节点构建 NSAttributedString
-    private func buildAttributedString(from nodes: [ASTNodeWrapper], context: UIKitRenderContext) -> NSAttributedString {
+    func buildAttributedString(from nodes: [ASTNodeWrapper], context: UIKitRenderContext) -> NSAttributedString {
         let result = NSMutableAttributedString()
         
         for node in nodes {
@@ -309,7 +309,7 @@ class UIKitRenderer {
     }
     
     /// 从单个行内节点构建 NSAttributedString
-    private func buildAttributedString(from node: ASTNodeWrapper, context: UIKitRenderContext) -> NSAttributedString {
+    func buildAttributedString(from node: ASTNodeWrapper, context: UIKitRenderContext) -> NSAttributedString {
         switch node {
         case .text(let textNode):
             let font = context.currentFont ?? context.theme.font
@@ -854,6 +854,9 @@ class UIKitRenderer {
                     // 触发布局更新
                     containerView.setNeedsLayout()
                     containerView.layoutIfNeeded()
+                    
+                    // 通知上层布局变化（如果有回调）
+                    // 这里可以使用 notification 或者 delegate，但在 cell 中通常由 table view 刷新触发布局更新
                 }
             }
         }

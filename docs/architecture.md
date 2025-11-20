@@ -58,7 +58,8 @@
 ┌─────────────────────────────────────────────────────────────┐
 │                   性能优化层                                  │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │ 高度预计算    │  │   缓存系统    │  │   懒加载     │     │
+│  │ 高度预计算    │  │ 异步布局系统  │  │   懒加载     │     │
+│  │ (Rust FFI)   │  │ (iOS UIKit)  │  │ (平台层)     │     │
 │  └──────────────┘  └──────────────┘  └──────────────┘     │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -67,7 +68,7 @@
 
 1. **统一抽象**：Markdown 和 Delta 统一解析为 HTML AST
 2. **平台无关**：AST 以 JSON 格式，便于跨平台传输
-3. **高性能**：解析层使用 Rust/C++，渲染层支持缓存和懒加载
+3. **高性能**：解析层使用 Rust，渲染层支持异步布局和懒加载
 4. **可扩展**：支持自定义节点和渲染器
 5. **类型安全**：各平台使用强类型语言，保证类型安全
 
@@ -501,19 +502,22 @@ struct RenderContext {
 ```
 ASTNodeWrapper (Codable)
     │
-    ▼
-UIKitRenderer.renderNodeWrapper()
+    ├─ UIKitRenderer.renderNodeWrapper() - 实时渲染（使用 Auto Layout）
+    │  ├─ renderParagraph() - 支持混合布局（NSAttributedString + UIView）
+    │  ├─ renderHeading() - 支持标题样式和特殊节点
+    │  ├─ renderList() - 支持嵌套列表，nestingLevel 参数
+    │  ├─ renderTable() - 表格渲染（UIStackView）
+    │  ├─ renderCodeBlock() - UILabel + 背景
+    │  ├─ renderMath() - UIImageView + MathHTMLRenderer
+    │  ├─ renderMermaid() - UIImageView + MermaidHTMLRenderer
+    │  ├─ renderImage() - UIImageView + URLSession
+    │  ├─ renderBlockquote() - 支持块级内容
+    │  └─ buildAttributedString() - NSAttributedString 构建
     │
-    ├─ renderParagraph() - 支持混合布局（NSAttributedString + UIView）
-    ├─ renderHeading() - 支持标题样式和特殊节点
-    ├─ renderList() - 支持嵌套列表，nestingLevel 参数
-    ├─ renderTable() - 表格渲染（UIStackView）
-    ├─ renderCodeBlock() - UILabel + 背景
-    ├─ renderMath() - UIImageView + MathHTMLRenderer
-    ├─ renderMermaid() - UIImageView + MermaidHTMLRenderer
-    ├─ renderImage() - UIImageView + URLSession
-    ├─ renderBlockquote() - 支持块级内容
-    └─ buildAttributedString() - NSAttributedString 构建
+    └─ UIKitLayoutCalculator.calculateLayout() - 异步布局计算
+       ├─ 后台线程预计算 NodeLayout
+       ├─ 构建 NSAttributedString
+       └─ 返回 NodeLayout 树
 ```
 
 #### 4.2.2 核心实现
@@ -523,6 +527,22 @@ class UIKitRenderer {
     func render(ast: RootNode, context: UIKitRenderContext) -> UIView
     
     private func renderNodeWrapper(_ wrapper: ASTNodeWrapper, context: UIKitRenderContext) -> UIView
+    
+    // 公开方法，供 UIKitLayoutCalculator 使用
+    func buildAttributedString(from nodes: [ASTNodeWrapper], context: UIKitRenderContext) -> NSAttributedString
+}
+
+class UIKitLayoutCalculator {
+    static func calculateLayout(ast: RootNode, context: UIKitRenderContext) -> NodeLayout
+}
+
+class NodeLayout {
+    let frame: CGRect
+    let children: [NodeLayout]
+    let node: ASTNodeWrapper?
+    let content: Any? // NSAttributedString 等预计算内容
+    
+    func render(context: UIKitRenderContext) -> UIView
 }
 
 struct UIKitRenderContext {
@@ -556,6 +576,12 @@ struct UIKitRenderContext {
 - 检测是否包含块级节点
 - 如果包含，使用块级渲染（`UIStackView` + `renderNodeWrapper`）
 - 如果不包含，使用行内渲染（`NSAttributedString`）
+
+**异步布局支持**：
+- 支持 Texture 风格的异步布局计算 (`UIKitLayoutCalculator.calculateLayout`)
+- 后台线程预计算 `NodeLayout` 对象，包含 Frame 和 `NSAttributedString`
+- 可以在 Cell 中直接渲染 `NodeLayout`，避免主线程布局开销
+- **高度反馈系统**：Cell 渲染完成后，使用 Auto Layout 的实际高度更新 `Message.estimatedHeight`，适应响应式、多尺寸、动态窗口环境
 
 #### 4.2.4 特殊节点渲染
 
@@ -695,98 +721,6 @@ pub struct RenderContext {
 }
 ```
 
-#### 5.1.4 缓存策略（已实现）
-
-```rust
-pub struct HeightCache {
-    cache: HashMap<String, CacheEntry<f32>>,
-    default_ttl: Duration,
-}
-
-// 缓存键生成
-pub fn generate_height_cache_key(ast_key: &str, width: f32) -> String {
-    format!("{}:{}", ast_key, width)
-}
-```
-
-### 5.2 缓存系统
-
-#### 5.2.1 多级缓存（已实现）
-
-```
-L1: 内存缓存 (AST, 高度)
-    │
-    ├─ ASTCache: HashMap<String, CacheEntry<RootNode>>
-    └─ HeightCache: HashMap<String, CacheEntry<f32>>
-    │
-    ▼
-L2: 磁盘缓存 (AST JSON, 图片) - 待实现
-    │
-    ▼
-L3: 网络缓存 (图片 CDN) - 平台层实现
-```
-
-#### 5.2.2 缓存键设计（已实现）
-
-```rust
-// AST 缓存键
-pub fn generate_cache_key(content: &str) -> String {
-    // 使用 DefaultHasher 生成哈希
-    format!("{:x}", hasher.finish())
-}
-
-// 高度缓存键
-pub fn generate_height_cache_key(ast_key: &str, width: f32) -> String {
-    format!("{}:{}", ast_key, width)
-}
-```
-
-- **AST 缓存键**：输入内容的哈希值
-- **高度缓存键**：`{ast_key}:{width}`
-
-#### 5.2.3 缓存失效策略（已实现）
-
-```rust
-pub struct CacheEntry<T> {
-    value: T,
-    created_at: Instant,
-    ttl: Duration,
-}
-
-impl<T> CacheEntry<T> {
-    fn is_expired(&self) -> bool {
-        self.created_at.elapsed() > self.ttl
-    }
-}
-```
-
-- **时间失效**：TTL 机制，默认 1 小时（可配置）
-- **手动清理**：`cleanup_expired()` 方法清理过期条目
-- **手动清除**：`clear()` 方法清除所有缓存
-
-#### 5.2.4 缓存使用示例
-
-```rust
-// AST 缓存
-let mut ast_cache = ASTCache::default();
-let key = generate_cache_key(markdown_content);
-if let Some(ast) = ast_cache.get(&key) {
-    // 使用缓存的 AST
-} else {
-    let ast = parse_markdown(markdown_content)?;
-    ast_cache.set(key, ast, None);
-}
-
-// 高度缓存
-let mut height_cache = HeightCache::default();
-let height_key = generate_height_cache_key(&ast_key, width);
-if let Some(height) = height_cache.get(&height_key) {
-    // 使用缓存的高度
-} else {
-    let height = ast.estimated_height(width, &context);
-    height_cache.set(height_key, height, None);
-}
-```
 
 ### 5.3 懒加载
 
@@ -807,6 +741,85 @@ if let Some(height) = height_cache.get(&height_key) {
 - Mermaid 图表：首次可见时才渲染
 - 数学公式：可以延迟渲染，使用占位符
 - 代码块：可以延迟语法高亮
+
+### 5.4 异步布局系统 (iOS UIKit)
+
+为了解决复杂列表滚动卡顿和高度计算不准确的问题，参考 [Texture (AsyncDisplayKit)](https://texturegroup.org/) 实现了异步布局计算系统。
+
+#### 5.4.1 核心概念
+
+**NodeLayout**：
+不可变的布局结果对象，包含：
+- `frame`: 节点在父坐标系中的位置和大小（用于初始估算）
+- `children`: 子节点的布局列表
+- `node`: 关联的 AST 节点
+- `content`: 预计算的渲染内容（如 `NSAttributedString`）
+- `style`: 背景色、圆角、边框等样式信息
+
+**UIKitLayoutCalculator**：
+独立的布局计算类，负责在后台线程预计算 AST 的布局信息。
+
+#### 5.4.2 工作流程
+
+1. **后台线程计算**：
+   - 在数据加载阶段（如 `loadMessages`），在后台队列调用 `calculateLayout(width:)`。
+   - 遍历 AST 树，递归计算每个节点的尺寸和位置。
+   - 预先构建 `NSAttributedString` 等耗时对象。
+   - 返回包含完整布局信息的 `NodeLayout` 树。
+
+2. **主线程渲染**：
+   - `cellForRowAt` 获取预计算的 `NodeLayout`。
+   - `NodeLayout.render(context:)` 快速创建视图。
+   - 使用 Auto Layout 约束（而非固定 frame），确保响应式布局。
+   - 文本直接赋值预计算的 `NSAttributedString`。
+
+3. **高度反馈系统**：
+   - Cell 渲染完成后，在下一个 run loop 中获取 Auto Layout 计算的实际高度。
+   - 通过回调函数将实际高度反馈给 `UIKitMessageListViewController`。
+   - 更新 `Message.estimatedHeight`，用于后续的 `heightForRowAt` 优化。
+   - 这样可以在响应式、多尺寸、动态窗口环境下保持准确性。
+
+#### 5.4.3 优势
+
+- **高性能**：移除了主线程的文本测量和布局计算开销。
+- **准确性**：通过反馈系统，使用 Auto Layout 的实际高度更新估算值，适应各种屏幕尺寸和方向变化。
+- **响应性**：列表滚动更加流畅，即使包含大量富文本内容。
+- **适应性**：Auto Layout 自动处理不同屏幕尺寸、旋转和动态窗口大小。
+
+#### 5.4.4 架构设计
+
+```
+后台线程 (DispatchQueue.global)
+    │
+    ├─ UIKitLayoutCalculator.calculateLayout()
+    │  ├─ 遍历 AST 树
+    │  ├─ 计算 frame（估算）
+    │  └─ 构建 NSAttributedString
+    │
+    ▼
+NodeLayout 树
+    │
+    ▼
+主线程 (DispatchQueue.main)
+    │
+    ├─ MessageTableViewCell.configure()
+    │  ├─ NodeLayout.render() → UIView
+    │  └─ 设置 Auto Layout 约束
+    │
+    ▼
+Auto Layout 计算实际高度
+    │
+    ├─ 下一个 run loop
+    │  └─ 获取 astView.bounds.height（AST 内容的实际高度）
+    │
+    ▼
+反馈回调 (onLayoutComplete)
+    │
+    ├─ UIKitMessageListViewController 接收反馈
+    │  └─ 更新 Message.estimatedHeight
+    │
+    └─ 用于后续 heightForRowAt 优化
+```
 
 ## 六、扩展能力设计
 
@@ -1023,7 +1036,7 @@ ReactDOM.render(<RenderAST node={ast} />, container);
 - 解析时间统计
 - 渲染时间统计
 - 内存使用统计
-- 缓存命中率统计
+- 异步布局计算时间统计
 
 ### 10.2 错误处理
 
@@ -1099,9 +1112,10 @@ ReactDOM.render(<RenderAST node={ast} />, container);
 
 | 功能 | 状态 | 说明 |
 |------|------|------|
-| 高度预计算 | ✅ | 所有节点类型已实现 |
-| AST 缓存 | ✅ | 内存缓存，TTL 机制 |
-| 高度缓存 | ✅ | 内存缓存，TTL 机制 |
+| 高度预计算 | ✅ | 所有节点类型已实现，通过 FFI 接口调用 |
+| AST 缓存 | ❌ | 已移除（未实际使用） |
+| 高度缓存 | ❌ | 已移除（未实际使用） |
+| 异步布局系统 (iOS) | ✅ | 使用 NodeLayout 在后台线程预计算布局 |
 | 渲染结果缓存 | ⏳ | 平台层实现 |
 | 图片缓存 | ⏳ | 平台层实现 |
 | 懒加载 | ⏳ | 平台层实现 |
@@ -1123,7 +1137,7 @@ ReactDOM.render(<RenderAST node={ast} />, container);
 | 解析性能 | < 10ms | ✅ | Rust 实现，性能优秀 |
 | 渲染性能 | < 50ms | ✅ | SwiftUI/UIKit 实现 |
 | 内存占用 | < 100KB | ✅ | AST 结构紧凑 |
-| 缓存命中率 | > 90% | ✅ | 缓存机制已实现 |
+| 异步布局性能 | < 20ms | ✅ | 后台线程计算，不影响主线程 |
 
 #### 11.2.2 兼容性要求
 
@@ -1153,7 +1167,6 @@ ReactDOM.render(<RenderAST node={ast} />, container);
 
 #### 中优先级
 - [ ] 自定义节点注册机制
-- [ ] 磁盘缓存
 - [ ] 图片懒加载
 - [ ] 虚拟滚动支持
 

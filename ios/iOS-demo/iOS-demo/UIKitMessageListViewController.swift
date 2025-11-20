@@ -12,6 +12,9 @@ class UIKitMessageListViewController: UIViewController {
     private var messages: [Message] = []
     private var tableView: UITableView!
     
+    // 高度反馈回调：当 cell 渲染完成后，使用 Auto Layout 的实际高度更新估算值
+    private var heightFeedbackCallbacks: [String: (CGFloat) -> Void] = [:]
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -50,10 +53,17 @@ class UIKitMessageListViewController: UIViewController {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let generatedMessages = MessageDataGenerator.generateMessages(count: 100)
             
-            // 解析消息
+            // 获取宽度（需要在主线程获取，或者假设屏幕宽度）
+            let screenWidth = UIScreen.main.bounds.width
+            // Cell layout: 16 (left) + 16 (right) for container, inside: 16 (left) + 16 (right) for content
+            // Total horizontal padding = 32 + 32 = 64
+            let contentWidth = screenWidth - 64
+            
+            // 解析消息并计算布局
             var parsedMessages = generatedMessages
             for i in 0..<parsedMessages.count {
-                parsedMessages[i].parse()
+                // calculateLayout 会自动调用 parse
+                parsedMessages[i].calculateLayout(width: contentWidth)
             }
             
             // 回到主线程更新 UI
@@ -72,26 +82,48 @@ extension UIKitMessageListViewController: UITableViewDataSource {
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "MessageCell", for: indexPath) as! MessageTableViewCell
+        // 计算 contentWidth: Screen - 32 (Container Margin) - 32 (Content Padding) = Screen - 64
+        let contentWidth = tableView.bounds.width - 64
         let message = messages[indexPath.row]
-        cell.configure(with: message, width: tableView.bounds.width - 40, viewController: self)
+        
+        // 设置高度反馈回调
+        let messageId = message.id
+        heightFeedbackCallbacks[messageId] = { [weak self] actualHeight in
+            // 更新消息的实际高度（减去 cell 的固定间距）
+            // Container Top (8) + Sender Top (12) + Sender Height (~17) + Spacing (8) + Content + Content Bottom (12) + Container Bottom (8)
+            // Total extra ~= 70
+            let contentHeight = actualHeight - 70
+            if let index = self?.messages.firstIndex(where: { $0.id == messageId }) {
+                self?.messages[index].estimatedHeight = max(0, contentHeight)
+            }
+        }
+        
+        cell.configure(
+            with: message,
+            width: contentWidth,
+            viewController: self,
+            onLayoutComplete: { [weak self] actualHeight in
+                // 触发高度反馈
+                self?.heightFeedbackCallbacks[messageId]?(actualHeight)
+            }
+        )
         return cell
     }
 }
 
 extension UIKitMessageListViewController: UITableViewDelegate {
-//    func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-//        let message = messages[indexPath.row]
-//        let width = tableView.bounds.width - 40
+    func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        let message = messages[indexPath.row]
+        
+        // 如果有预计算的高度，加上 Cell 的固定间距
+        // Container Top (8) + Sender Top (12) + Sender Height (~17) + Spacing (8) + Content + Content Bottom (12) + Container Bottom (8)
+        // Total extra ~= 65
+        if let contentHeight = message.estimatedHeight {
+            return contentHeight + 70
+        }
        
-//        // 如果还没有计算高度，先计算
-//        if message.estimatedHeight == nil {
-//            var mutableMessage = message
-//            mutableMessage.calculateHeight(width: width)
-//            messages[indexPath.row] = mutableMessage
-//        }
-       
-//        return message.estimatedHeight ?? 100
-//    }
+        return UITableView.automaticDimension
+    }
     
     // 使用自动布局，不需要实现 willDisplay 来预计算高度
     // Rust 端的高度计算不准确，因为它没有考虑到 UIKit 的实际布局（padding、spacing、容器视图等）
@@ -167,7 +199,7 @@ class MessageTableViewCell: UITableViewCell {
         ])
     }
     
-    func configure(with message: Message, width: CGFloat, viewController: UIViewController? = nil) {
+    func configure(with message: Message, width: CGFloat, viewController: UIViewController? = nil, onLayoutComplete: ((CGFloat) -> Void)? = nil) {
         self.message = message
         self.viewController = viewController
         
@@ -183,6 +215,48 @@ class MessageTableViewCell: UITableViewCell {
         // 添加长按手势
         let longPressGesture = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
         containerView.addGestureRecognizer(longPressGesture)
+        
+        // 优先使用预计算的布局
+        if let layout = message.layout {
+            let context = UIKitRenderContext(
+                theme: .default,
+                width: width,
+                onLinkTap: { url in UIApplication.shared.open(url) },
+                onImageTap: nil,
+                onMentionTap: nil
+            )
+            
+            let astView = layout.render(context: context)
+            astView.translatesAutoresizingMaskIntoConstraints = false
+            
+            contentView_wrapper.addSubview(astView)
+            
+            // 使用 Auto Layout 约束，让系统自动计算高度
+            NSLayoutConstraint.activate([
+                astView.topAnchor.constraint(equalTo: contentView_wrapper.topAnchor),
+                astView.leadingAnchor.constraint(equalTo: contentView_wrapper.leadingAnchor),
+                astView.trailingAnchor.constraint(equalTo: contentView_wrapper.trailingAnchor),
+                astView.bottomAnchor.constraint(equalTo: contentView_wrapper.bottomAnchor)
+            ])
+            
+            // 布局完成后，使用 Auto Layout 的实际高度进行反馈
+            // 使用下一个 run loop 来获取实际高度
+            DispatchQueue.main.async { [weak self, weak astView] in
+                guard let self = self, let astView = astView else { return }
+                // 强制布局更新
+                self.contentView_wrapper.setNeedsLayout()
+                self.contentView_wrapper.layoutIfNeeded()
+                
+                // 等待下一个 run loop，确保布局完成
+                DispatchQueue.main.async {
+                    // 获取实际高度（astView 的高度，即 AST 内容的实际高度）
+                    let actualHeight = astView.bounds.height
+                    onLayoutComplete?(actualHeight)
+                }
+            }
+            
+            return
+        }
         
         // 如果有 AST JSON，解析并渲染 AST
         if let astJSON = message.astJSON {
@@ -221,8 +295,23 @@ class MessageTableViewCell: UITableViewCell {
                             astView.trailingAnchor.constraint(equalTo: self.contentView_wrapper.trailingAnchor),
                             astView.bottomAnchor.constraint(equalTo: self.contentView_wrapper.bottomAnchor)
                         ])
+                        
+                        // 布局完成后，使用 Auto Layout 的实际高度进行反馈
+                        DispatchQueue.main.async { [weak self, weak astView] in
+                            guard let self = self, let astView = astView else { return }
+                            // 强制布局更新
+                            self.contentView_wrapper.setNeedsLayout()
+                            self.contentView_wrapper.layoutIfNeeded()
+                            
+                            // 等待下一个 run loop，确保布局完成
+                            DispatchQueue.main.async {
+                                // 获取实际高度（astView 的高度，即 AST 内容的实际高度）
+                                let actualHeight = astView.bounds.height
+                                onLayoutComplete?(actualHeight)
+                            }
+                        }
                     }
-                } catch {
+                } catch { 
                     // 解析失败，显示原始内容
                     print("Failed to parse AST JSON: \(error)")
                     DispatchQueue.main.async {
@@ -234,6 +323,19 @@ class MessageTableViewCell: UITableViewCell {
         } else {
             // 如果没有 AST，显示原始内容
             showPlainText(message.content)
+            
+            // 布局完成后反馈
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.contentView_wrapper.setNeedsLayout()
+                self.contentView_wrapper.layoutIfNeeded()
+                
+                // 等待下一个 run loop，确保布局完成
+                DispatchQueue.main.async {
+                    let actualHeight = self.contentView_wrapper.bounds.height
+                    onLayoutComplete?(actualHeight)
+                }
+            }
         }
     }
     
@@ -295,5 +397,3 @@ class MessageTableViewCell: UITableViewCell {
         ])
     }
 }
-
-

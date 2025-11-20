@@ -219,22 +219,6 @@ let context = RenderContext::default();
 let height = ast.estimated_height(300.0, &context);
 ```
 
-### 缓存使用示例
-
-```rust
-use im_parse_core::*;
-
-let mut cache = ASTCache::default();
-let key = generate_cache_key(markdown);
-
-if let Some(cached_ast) = cache.get(&key) {
-    // 使用缓存的 AST
-} else {
-    let ast = parse_markdown(markdown)?;
-    cache.set(key, ast, None);
-}
-```
-
 ## 📚 API 文档
 
 ### Rust API
@@ -243,7 +227,6 @@ if let Some(cached_ast) = cache.get(&key) {
 - [Markdown 解析器](rust-core/src/markdown_parser.rs)
 - [Delta 解析器](rust-core/src/delta_parser.rs)
 - [高度计算器](rust-core/src/height_calculator.rs)
-- [缓存系统](rust-core/src/cache.rs)
 
 ### iOS API
 

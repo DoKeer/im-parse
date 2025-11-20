@@ -120,27 +120,6 @@ pub extern "C" fn free_parse_result(result: *mut ParseResult) {
     }
 }
 
-/// 计算 AST 高度
-#[no_mangle]
-pub extern "C" fn calculate_ast_height(ast_json: *const c_char, width: f32) -> f32 {
-    let json_str = unsafe {
-        if ast_json.is_null() {
-            return 0.0;
-        }
-        match CStr::from_ptr(ast_json).to_str() {
-            Ok(s) => s,
-            Err(_) => return 0.0,
-        }
-    };
-
-    match deserialize_ast(json_str) {
-        Ok(ast) => {
-            let context = RenderContext::default();
-            ast.estimated_height(width, &context)
-        }
-        Err(_) => 0.0,
-    }
-}
 
 /// 将 Markdown 转换为 HTML
 #[no_mangle]
