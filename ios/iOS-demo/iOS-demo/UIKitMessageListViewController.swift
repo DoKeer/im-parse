@@ -6,14 +6,14 @@
 //
 
 import UIKit
+import Kingfisher
 
 class UIKitMessageListViewController: UIViewController {
     
     private var messages: [Message] = []
     private var tableView: UITableView!
     
-    // 高度反馈回调：当 cell 渲染完成后，使用 Auto Layout 的实际高度更新估算值
-    private var heightFeedbackCallbacks: [String: (CGFloat) -> Void] = [:]
+    // 不再需要高度反馈系统，直接使用预计算的高度
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -86,26 +86,11 @@ extension UIKitMessageListViewController: UITableViewDataSource {
         let contentWidth = tableView.bounds.width - 64
         let message = messages[indexPath.row]
         
-        // 设置高度反馈回调
-        let messageId = message.id
-        heightFeedbackCallbacks[messageId] = { [weak self] actualHeight in
-            // 更新消息的实际高度（减去 cell 的固定间距）
-            // Container Top (8) + Sender Top (12) + Sender Height (~17) + Spacing (8) + Content + Content Bottom (12) + Container Bottom (8)
-            // Total extra ~= 70
-            let contentHeight = actualHeight - 70
-            if let index = self?.messages.firstIndex(where: { $0.id == messageId }) {
-                self?.messages[index].estimatedHeight = max(0, contentHeight)
-            }
-        }
-        
         cell.configure(
             with: message,
             width: contentWidth,
             viewController: self,
-            onLayoutComplete: { [weak self] actualHeight in
-                // 触发高度反馈
-                self?.heightFeedbackCallbacks[messageId]?(actualHeight)
-            }
+            onLayoutComplete: nil // 不再需要反馈，直接使用预计算高度
         )
         return cell
     }
@@ -115,19 +100,21 @@ extension UIKitMessageListViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         let message = messages[indexPath.row]
         
-        // 如果有预计算的高度，加上 Cell 的固定间距
+        // 如果有预计算的布局，使用精确的高度
         // Container Top (8) + Sender Top (12) + Sender Height (~17) + Spacing (8) + Content + Content Bottom (12) + Container Bottom (8)
-        // Total extra ~= 65
+        // Total extra ~= 70
+        if let layout = message.layout {
+            return layout.frame.height + 70
+        }
+        
+        // 如果有估算高度，使用它
         if let contentHeight = message.estimatedHeight {
             return contentHeight + 70
         }
        
-        return UITableView.automaticDimension
+        // 否则返回估算值
+        return 100
     }
-    
-    // 使用自动布局，不需要实现 willDisplay 来预计算高度
-    // Rust 端的高度计算不准确，因为它没有考虑到 UIKit 的实际布局（padding、spacing、容器视图等）
-    // 系统会根据 cell 的约束自动计算高度
 }
 
 // MARK: - Message Cell
@@ -216,6 +203,17 @@ class MessageTableViewCell: UITableViewCell {
         let longPressGesture = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
         containerView.addGestureRecognizer(longPressGesture)
         
+        // 创建高度变化回调，通过 viewController 通知 tableView 更新
+        let onHeightChanged: ((CGFloat) -> Void)? = { [weak viewController] _ in
+            guard let viewController = viewController as? UIKitMessageListViewController else { return }
+            // 通知 table view 更新 cell 高度
+            DispatchQueue.main.async {
+                let tableView = viewController.tableView
+//                tableView.beginUpdates()
+//                tableView.endUpdates()
+            }
+        }
+        
         // 优先使用预计算的布局
         if let layout = message.layout {
             let context = UIKitRenderContext(
@@ -223,42 +221,25 @@ class MessageTableViewCell: UITableViewCell {
                 width: width,
                 onLinkTap: { url in UIApplication.shared.open(url) },
                 onImageTap: nil,
-                onMentionTap: nil
+                onMentionTap: nil,
+                imageLoaderDelegate: viewController as? UIKitImageLoaderDelegate,
+                onLayoutHeightChanged: onHeightChanged
             )
             
             let astView = layout.render(context: context)
-            astView.translatesAutoresizingMaskIntoConstraints = false
+            // 使用 frame 布局，不使用 Auto Layout
+            astView.frame = CGRect(origin: .zero, size: layout.frame.size)
             
             contentView_wrapper.addSubview(astView)
             
-            // 使用 Auto Layout 约束，让系统自动计算高度
-            NSLayoutConstraint.activate([
-                astView.topAnchor.constraint(equalTo: contentView_wrapper.topAnchor),
-                astView.leadingAnchor.constraint(equalTo: contentView_wrapper.leadingAnchor),
-                astView.trailingAnchor.constraint(equalTo: contentView_wrapper.trailingAnchor),
-                astView.bottomAnchor.constraint(equalTo: contentView_wrapper.bottomAnchor)
-            ])
-            
-            // 布局完成后，使用 Auto Layout 的实际高度进行反馈
-            // 使用下一个 run loop 来获取实际高度
-            DispatchQueue.main.async { [weak self, weak astView] in
-                guard let self = self, let astView = astView else { return }
-                // 强制布局更新
-                self.contentView_wrapper.setNeedsLayout()
-                self.contentView_wrapper.layoutIfNeeded()
-                
-                // 等待下一个 run loop，确保布局完成
-                DispatchQueue.main.async {
-                    // 获取实际高度（astView 的高度，即 AST 内容的实际高度）
-                    let actualHeight = astView.bounds.height
-                    onLayoutComplete?(actualHeight)
-                }
-            }
+            // 直接使用计算出的高度，不需要等待布局
+            let actualHeight = layout.frame.height
+            onLayoutComplete?(actualHeight)
             
             return
         }
         
-        // 如果有 AST JSON，解析并渲染 AST
+        // 如果有 AST JSON，解析并计算布局
         if let astJSON = message.astJSON {
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 do {
@@ -270,46 +251,33 @@ class MessageTableViewCell: UITableViewCell {
                     let decoder = JSONDecoder()
                     let rootNode = try decoder.decode(RootNode.self, from: jsonData)
                     
-                    // 回到主线程渲染 AST
+                    // 计算布局
+                    let context = UIKitRenderContext(
+                        theme: .default,
+                        width: width,
+                        onLinkTap: { url in UIApplication.shared.open(url) },
+                        onImageTap: nil,
+                        onMentionTap: nil,
+                        imageLoaderDelegate: viewController as? UIKitImageLoaderDelegate,
+                        onLayoutHeightChanged: onHeightChanged
+                    )
+                    
+                    // 使用 UIKitRenderer 的 frame 渲染方法
+                    let renderer = UIKitRenderer()
+                    
+                    // 回到主线程渲染
                     DispatchQueue.main.async {
                         guard let self = self else { return }
                         
-                        let renderer = UIKitRenderer()
-                        let context = UIKitRenderContext(
-                            theme: .default,
-                            width: width - 32, // 减去 padding
-                            onLinkTap: { url in
-                                UIApplication.shared.open(url)
-                            },
-                            onImageTap: nil,
-                            onMentionTap: nil
-                        )
-                        
-                        let astView = renderer.render(ast: rootNode, context: context)
-                        astView.translatesAutoresizingMaskIntoConstraints = false
+                        // 使用 renderWithFrame 方法，它内部使用 UIKitLayoutCalculator 计算布局
+                        let astView = renderer.renderWithFrame(ast: rootNode, context: context)
+                        // 使用 frame 布局
+                        astView.frame = CGRect(origin: .zero, size: astView.bounds.size)
                         self.contentView_wrapper.addSubview(astView)
                         
-                        NSLayoutConstraint.activate([
-                            astView.topAnchor.constraint(equalTo: self.contentView_wrapper.topAnchor),
-                            astView.leadingAnchor.constraint(equalTo: self.contentView_wrapper.leadingAnchor),
-                            astView.trailingAnchor.constraint(equalTo: self.contentView_wrapper.trailingAnchor),
-                            astView.bottomAnchor.constraint(equalTo: self.contentView_wrapper.bottomAnchor)
-                        ])
-                        
-                        // 布局完成后，使用 Auto Layout 的实际高度进行反馈
-                        DispatchQueue.main.async { [weak self, weak astView] in
-                            guard let self = self, let astView = astView else { return }
-                            // 强制布局更新
-                            self.contentView_wrapper.setNeedsLayout()
-                            self.contentView_wrapper.layoutIfNeeded()
-                            
-                            // 等待下一个 run loop，确保布局完成
-                            DispatchQueue.main.async {
-                                // 获取实际高度（astView 的高度，即 AST 内容的实际高度）
-                                let actualHeight = astView.bounds.height
-                                onLayoutComplete?(actualHeight)
-                            }
-                        }
+                        // 使用计算出的高度
+                        let actualHeight = astView.bounds.height
+                        onLayoutComplete?(actualHeight)
                     }
                 } catch { 
                     // 解析失败，显示原始内容
@@ -324,17 +292,18 @@ class MessageTableViewCell: UITableViewCell {
             // 如果没有 AST，显示原始内容
             showPlainText(message.content)
             
-            // 布局完成后反馈
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.contentView_wrapper.setNeedsLayout()
-                self.contentView_wrapper.layoutIfNeeded()
-                
-                // 等待下一个 run loop，确保布局完成
-                DispatchQueue.main.async {
-                    let actualHeight = self.contentView_wrapper.bounds.height
-                    onLayoutComplete?(actualHeight)
-                }
+            // 计算纯文本高度
+            if let onLayoutComplete = onLayoutComplete {
+                let text = message.content
+                let font = UIFont.systemFont(ofSize: 16)
+                let size = (text as NSString).boundingRect(
+                    with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    attributes: [.font: font],
+                    context: nil
+                ).size
+                let textHeight = ceil(size.height)
+                onLayoutComplete(textHeight)
             }
         }
     }
@@ -395,5 +364,29 @@ class MessageTableViewCell: UITableViewCell {
             label.trailingAnchor.constraint(equalTo: contentView_wrapper.trailingAnchor),
             label.bottomAnchor.constraint(equalTo: contentView_wrapper.bottomAnchor)
         ])
+    }
+}
+
+// MARK: - UIKitImageLoaderDelegate
+
+extension UIKitMessageListViewController: UIKitImageLoaderDelegate {
+    func loadImage(url: URL, into imageView: UIImageView, completion: @escaping (UIImage?, Error?) -> Void) {
+        // 使用 Kingfisher 加载图片
+        imageView.kf.setImage(
+            with: url,
+            placeholder: nil,
+            options: [
+                .transition(.fade(0.2)),
+                .cacheOriginalImage
+            ],
+            completionHandler: { result in
+                switch result {
+                case .success(let value):
+                    completion(value.image, nil)
+                case .failure(let error):
+                    completion(nil, error)
+                }
+            }
+        )
     }
 }

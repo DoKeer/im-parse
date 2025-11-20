@@ -7,6 +7,16 @@
 
 import UIKit
 
+/// 图片加载代理协议
+protocol UIKitImageLoaderDelegate: AnyObject {
+    /// 加载图片
+    /// - Parameters:
+    ///   - url: 图片 URL
+    ///   - imageView: 目标图片视图
+    ///   - completion: 加载完成回调，参数为加载的图片和错误信息
+    func loadImage(url: URL, into imageView: UIImageView, completion: @escaping (UIImage?, Error?) -> Void)
+}
+
 /// UIKit 渲染上下文
 struct UIKitRenderContext {
     var theme: UIKitTheme
@@ -17,6 +27,10 @@ struct UIKitRenderContext {
     // 当前文本样式（用于标题等需要特殊样式的场景）
     var currentFont: UIFont?
     var currentTextColor: UIColor?
+    // 图片加载代理（可选）
+    weak var imageLoaderDelegate: UIKitImageLoaderDelegate?
+    // 布局高度变化回调（用于通知 cell 高度变化）
+    var onLayoutHeightChanged: ((CGFloat) -> Void)?
 }
 
 /// UIKit 主题配置
@@ -132,7 +146,15 @@ extension UIKitTheme {
 /// UIKit AST 渲染器
 class UIKitRenderer {
     
-    /// 渲染 AST 根节点
+    /// 渲染 AST 根节点（使用 UIStackView 和 Auto Layout）
+    ///
+    /// 这个方法使用 UIStackView 和 Auto Layout 来布局视图，适合需要动态调整的场景。
+    /// 如果需要精确控制布局和更好的性能，请使用 `renderWithFrame(ast:context:)` 方法。
+    ///
+    /// - Parameters:
+    ///   - ast: AST 根节点
+    ///   - context: 渲染上下文
+    /// - Returns: 使用 Auto Layout 的 UIView
     func render(ast: RootNode, context: UIKitRenderContext) -> UIView {
         let containerView = UIStackView()
         containerView.axis = .vertical
@@ -146,6 +168,28 @@ class UIKitRenderer {
         }
         
         return containerView
+    }
+    
+    /// 渲染 AST 根节点（使用 frame 计算，不使用 Auto Layout）
+    /// 
+    /// 这个方法使用 UIKitLayoutCalculator 在后台预计算布局，然后使用 frame 精确渲染视图。
+    /// 与 `render(ast:context:)` 方法不同，这个方法：
+    /// - 不使用 UIStackView 和 Auto Layout
+    /// - 所有视图使用精确的 frame 定位
+    /// - 高度在渲染前就已经计算完成
+    /// - 性能更好，适合需要精确控制布局的场景
+    ///
+    /// - Parameters:
+    ///   - ast: AST 根节点
+    ///   - context: 渲染上下文
+    /// - Returns: 使用 frame 布局的 UIView
+    func renderWithFrame(ast: RootNode, context: UIKitRenderContext) -> UIView {
+        // 使用 UIKitLayoutCalculator 计算布局（在后台线程完成）
+        let layout = UIKitLayoutCalculator.calculateLayout(ast: ast, context: context)
+        
+        // 使用 NodeLayout 的 render 方法，它使用 frame 布局而不是 Auto Layout
+        // 返回的视图的所有子视图都使用精确的 frame 定位
+        return layout.render(context: context)
     }
     
     /// 渲染节点包装器
@@ -806,61 +850,124 @@ class UIKitRenderer {
             return containerView
         }
         
-        // 使用 URLSession 加载图片
-        let task = URLSession.shared.dataTask(with: url) { [weak imageView, weak containerView, weak activityIndicator] data, response, error in
-            DispatchQueue.main.async {
-                activityIndicator?.stopAnimating()
-                activityIndicator?.removeFromSuperview()
-                
-                guard let containerView = containerView,
-                      let imageView = imageView else { return }
-                
-                if let error = error {
-                    print("图片加载错误: \(error.localizedDescription)")
-                    self.showImageError(in: containerView, message: "加载失败")
-                    return
-                }
-                
-                guard let data = data, let image = UIImage(data: data) else {
-                    print("无法解析图片数据")
-                    self.showImageError(in: containerView, message: "无法解析图片")
-                    return
-                }
-                
-                // 图片加载成功
-                imageView.image = image
-                
-                // 如果图片加载成功且没有指定尺寸，更新宽高比约束
-                if node.width == nil || node.height == nil {
-                    let imageAspectRatio = image.size.width / image.size.height
-                    guard imageAspectRatio > 0 && imageAspectRatio.isFinite else {
+        // 优先使用代理加载图片
+        if let delegate = context.imageLoaderDelegate {
+            delegate.loadImage(url: url, into: imageView) { [weak imageView, weak containerView, weak activityIndicator] image, error in
+                DispatchQueue.main.async {
+                    activityIndicator?.stopAnimating()
+                    activityIndicator?.removeFromSuperview()
+                    
+                    guard let containerView = containerView,
+                          let imageView = imageView else { return }
+                    
+                    if let error = error {
+                        print("图片加载错误: \(error.localizedDescription)")
+                        self.showImageError(in: containerView, message: "加载失败")
                         return
                     }
                     
-                    // 移除旧的宽高比约束
-                    imageView.constraints.forEach { constraint in
-                        if constraint.firstAttribute == .width && 
-                           constraint.secondAttribute == .height &&
-                           constraint.priority.rawValue < 1000 {
-                            constraint.isActive = false
-                        }
+                    guard let image = image else {
+                        print("无法解析图片数据")
+                        self.showImageError(in: containerView, message: "无法解析图片")
+                        return
                     }
                     
-                    // 添加新的宽高比约束
-                    let aspectRatioConstraint = imageView.widthAnchor.constraint(equalTo: imageView.heightAnchor, multiplier: imageAspectRatio)
-                    aspectRatioConstraint.priority = UILayoutPriority(750)
-                    aspectRatioConstraint.isActive = true
+                    // 图片加载成功
+                    imageView.image = image
                     
-                    // 触发布局更新
-                    containerView.setNeedsLayout()
-                    containerView.layoutIfNeeded()
-                    
-                    // 通知上层布局变化（如果有回调）
-                    // 这里可以使用 notification 或者 delegate，但在 cell 中通常由 table view 刷新触发布局更新
+                    // 如果图片加载成功且没有指定尺寸，更新宽高比约束
+                    if node.width == nil || node.height == nil {
+                        let imageAspectRatio = image.size.width / image.size.height
+                        guard imageAspectRatio > 0 && imageAspectRatio.isFinite else {
+                            return
+                        }
+                        
+                        // 移除旧的宽高比约束
+                        imageView.constraints.forEach { constraint in
+                            if constraint.firstAttribute == .width && 
+                               constraint.secondAttribute == .height &&
+                               constraint.priority.rawValue < 1000 {
+                                constraint.isActive = false
+                            }
+                        }
+                        
+                        // 添加新的宽高比约束
+                        let aspectRatioConstraint = imageView.widthAnchor.constraint(equalTo: imageView.heightAnchor, multiplier: imageAspectRatio)
+                        aspectRatioConstraint.priority = UILayoutPriority(750)
+                        aspectRatioConstraint.isActive = true
+                        
+                        // 触发布局更新
+                        containerView.setNeedsLayout()
+                        containerView.layoutIfNeeded()
+                        
+                        // 通知上层布局变化（如果有回调）
+                        if let onHeightChanged = context.onLayoutHeightChanged {
+                            let newHeight = containerView.bounds.height
+                            onHeightChanged(newHeight)
+                        }
+                    }
                 }
             }
+        } else {
+            // 兜底方案：使用 URLSession 加载图片
+            let task = URLSession.shared.dataTask(with: url) { [weak imageView, weak containerView, weak activityIndicator] data, response, error in
+                DispatchQueue.main.async {
+                    activityIndicator?.stopAnimating()
+                    activityIndicator?.removeFromSuperview()
+                    
+                    guard let containerView = containerView,
+                          let imageView = imageView else { return }
+                    
+                    if let error = error {
+                        print("图片加载错误: \(error.localizedDescription)")
+                        self.showImageError(in: containerView, message: "加载失败")
+                        return
+                    }
+                    
+                    guard let data = data, let image = UIImage(data: data) else {
+                        print("无法解析图片数据")
+                        self.showImageError(in: containerView, message: "无法解析图片")
+                        return
+                    }
+                    
+                    // 图片加载成功
+                    imageView.image = image
+                    
+                    // 如果图片加载成功且没有指定尺寸，更新宽高比约束
+                    if node.width == nil || node.height == nil {
+                        let imageAspectRatio = image.size.width / image.size.height
+                        guard imageAspectRatio > 0 && imageAspectRatio.isFinite else {
+                            return
+                        }
+                        
+                        // 移除旧的宽高比约束
+                        imageView.constraints.forEach { constraint in
+                            if constraint.firstAttribute == .width && 
+                               constraint.secondAttribute == .height &&
+                               constraint.priority.rawValue < 1000 {
+                                constraint.isActive = false
+                            }
+                        }
+                        
+                        // 添加新的宽高比约束
+                        let aspectRatioConstraint = imageView.widthAnchor.constraint(equalTo: imageView.heightAnchor, multiplier: imageAspectRatio)
+                        aspectRatioConstraint.priority = UILayoutPriority(750)
+                        aspectRatioConstraint.isActive = true
+                        
+                        // 触发布局更新
+                        containerView.setNeedsLayout()
+                        containerView.layoutIfNeeded()
+                        
+                        // 通知上层布局变化（如果有回调）
+                        if let onHeightChanged = context.onLayoutHeightChanged {
+                            let newHeight = containerView.bounds.height
+                            onHeightChanged(newHeight)
+                        }
+                    }
+                }
+            }
+            task.resume()
         }
-        task.resume()
         
         return containerView
     }
@@ -1238,7 +1345,7 @@ class UIKitRenderer {
     }
     
     /// 渲染数学公式
-    private func renderMath(_ node: MathNode, context: UIKitRenderContext) -> UIView {
+    func renderMath(_ node: MathNode, context: UIKitRenderContext) -> UIView {
         let containerView = UIView()
         containerView.backgroundColor = context.theme.codeBackgroundColor
         containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
@@ -1310,7 +1417,7 @@ class UIKitRenderer {
     }
     
     /// 显示数学公式错误
-    private func showMathError(in containerView: UIView, message: String) {
+    func showMathError(in containerView: UIView, message: String) {
         let errorLabel = UILabel()
         errorLabel.text = message
         errorLabel.font = .systemFont(ofSize: 12)
@@ -1330,7 +1437,7 @@ class UIKitRenderer {
     }
     
     /// 渲染 Mermaid 图表
-    private func renderMermaid(_ node: MermaidNode, context: UIKitRenderContext) -> UIView {
+    func renderMermaid(_ node: MermaidNode, context: UIKitRenderContext) -> UIView {
         let containerView = UIView()
         containerView.backgroundColor = context.theme.codeBackgroundColor
         containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
@@ -1402,7 +1509,7 @@ class UIKitRenderer {
     }
     
     /// 显示 Mermaid 图表错误
-    private func showMermaidError(in containerView: UIView, message: String) {
+    func showMermaidError(in containerView: UIView, message: String) {
         let errorLabel = UILabel()
         errorLabel.text = message
         errorLabel.font = .systemFont(ofSize: 12)
