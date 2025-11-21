@@ -11,22 +11,33 @@ import Foundation
 // C 函数定义在 IMParseBridge.h 中，通过 IMParseSDK.h 导入
 
 /// 解析结果
-struct ParseResult {
-    let success: Bool
-    let astJSON: String?
-    let error: ParseError?
+public struct ParseResult {
+    public let success: Bool
+    public let astJSON: String?
+    public let error: ParseError?
     
-    struct ParseError {
-        let code: Int32
-        let message: String
+    public struct ParseError {
+        public let code: Int32
+        public let message: String
+        
+        public init(code: Int32, message: String) {
+            self.code = code
+            self.message = message
+        }
+    }
+    
+    public init(success: Bool, astJSON: String?, error: ParseError?) {
+        self.success = success
+        self.astJSON = astJSON
+        self.error = error
     }
 }
 
 /// Rust 核心解析器
-class IMParseCore {
+public class IMParseCore {
     
     /// 解析 Markdown
-    static func parseMarkdown(_ input: String) -> ParseResult {
+    public static func parseMarkdown(_ input: String) -> ParseResult {
         guard let cString = input.cString(using: .utf8) else {
             return ParseResult(
                 success: false,
@@ -69,7 +80,7 @@ class IMParseCore {
     }
     
     /// 解析 Delta
-    static func parseDelta(_ input: String) -> ParseResult {
+    public static func parseDelta(_ input: String) -> ParseResult {
         guard let cString = input.cString(using: .utf8) else {
             return ParseResult(
                 success: false,
@@ -114,12 +125,12 @@ class IMParseCore {
     }
     
     /// 将 Markdown 转换为 HTML
-    static func markdownToHTML(_ input: String) -> ParseResult {
+    public static func markdownToHTML(_ input: String) -> ParseResult {
         return markdownToHTML(input, config: nil)
     }
     
     /// 将 Markdown 转换为 HTML（使用样式配置）
-    static func markdownToHTML(_ input: String, config: StyleConfig?) -> ParseResult {
+    public static func markdownToHTML(_ input: String, config: StyleConfig?) -> ParseResult {
         return input.withCString { inputCString in
             if let config = config, let json = config.toJSON() {
                 return json.withCString { configCString in
@@ -198,12 +209,12 @@ class IMParseCore {
     }
     
     /// 将 Delta 转换为 HTML
-    static func deltaToHTML(_ input: String) -> ParseResult {
+    public static func deltaToHTML(_ input: String) -> ParseResult {
         return deltaToHTML(input, config: nil)
     }
     
     /// 将 Delta 转换为 HTML（使用样式配置）
-    static func deltaToHTML(_ input: String, config: StyleConfig?) -> ParseResult {
+    public static func deltaToHTML(_ input: String, config: StyleConfig?) -> ParseResult {
         return input.withCString { inputCString in
             if let config = config, let json = config.toJSON() {
                 return json.withCString { configCString in

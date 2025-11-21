@@ -154,10 +154,10 @@ public class NodeLayout {
 
 /// UIKit 布局计算器
 /// 负责在后台线程预计算 AST 的布局信息
-class UIKitLayoutCalculator {
+public class UIKitLayoutCalculator {
     
     /// 计算 AST 的布局
-    static func calculateLayout(ast: RootNode, context: UIKitRenderContext) -> NodeLayout {
+    public static func calculateLayout(ast: RootNode, context: UIKitRenderContext) -> NodeLayout {
         // 根节点是一个垂直堆栈
         return calculateVerticalStackLayout(
             children: ast.children,

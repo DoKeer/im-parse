@@ -7,6 +7,7 @@
 
 import Foundation
 import UIKit
+import IMParseSDK
 
 /// 消息类型
 public enum MessageType: String, Codable {

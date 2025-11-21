@@ -26,7 +26,8 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
   # 核心功能：解析和模型（所有版本都需要）
   s.subspec 'Core' do |core|
     core.source_files = 'IMParseSDK/Classes/Core/**/*.{h,m,swift}', 
-                        'IMParseSDK/Classes/Models/**/*.{h,m,swift}',
+                        'IMParseSDK/Classes/Models/ASTNodes.swift',
+                        'IMParseSDK/Classes/Models/StyleConfig.swift',
                         'IMParseSDK/IMParseSDK.h'
     core.public_header_files = 'IMParseSDK/IMParseSDK.h', 'IMParseSDK/Classes/Core/**/*.h'
     core.frameworks = 'Foundation'
@@ -66,7 +67,6 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
   # ==================== UIKit Subspec ====================
   # UIKit 渲染器版本
   s.subspec 'UIKit' do |uikit|
-
     uikit.dependency 'IMParseSDK/Core'
     
     uikit.source_files = 'IMParseSDK/Classes/Renderers/UIKitRenderer.swift',
@@ -81,9 +81,11 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
   # ==================== SwiftUI Subspec ====================
   # SwiftUI 渲染器版本（需要 iOS 15.0+）
   s.subspec 'SwiftUI' do |swiftui|
+    swiftui.ios.deployment_target = '15.0'
     swiftui.dependency 'IMParseSDK/Core'
     
     swiftui.source_files = 'IMParseSDK/Classes/Renderers/SwiftUIRenderer.swift',
+                           'IMParseSDK/Classes/Renderers/SwiftUIRenderContext.swift',
                            'IMParseSDK/Classes/Renderers/MathHTMLRenderer.swift',
                            'IMParseSDK/Classes/Renderers/MermaidHTMLRenderer.swift',
                            'IMParseSDK/Classes/Utils/SharedWebViewPool.swift'
