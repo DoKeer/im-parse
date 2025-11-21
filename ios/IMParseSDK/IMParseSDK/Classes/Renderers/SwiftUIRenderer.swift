@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// SwiftUI 渲染器
+@available(iOS 15.0, *)
 public struct SwiftUIRenderer {
     public init() {}
     
@@ -957,6 +958,7 @@ extension TextAlign {
 
 /// 数学公式 HTML 渲染视图（使用 WebView 渲染为图片）
 /// 从 Rust Core 获取 KaTeX HTML，然后使用 MathHTMLRenderer 渲染为图片
+@available(iOS 15.0, *)
 struct MathSVGView: View {
     let mathContent: String
     let display: Bool
@@ -1023,6 +1025,7 @@ struct MathSVGView: View {
 
 /// Mermaid 图表 HTML 渲染视图（使用 WebView 渲染为图片）
 /// 使用 MermaidHTMLRenderer 将 Mermaid 代码渲染为图片
+@available(iOS 15.0, *)
 struct MermaidSVGView: View {
     let mermaidContent: String
     let context: RenderContext
