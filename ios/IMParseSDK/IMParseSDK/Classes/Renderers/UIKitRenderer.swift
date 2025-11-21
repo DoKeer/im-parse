@@ -428,7 +428,7 @@ public class UIKitRenderer {
     }
     
     /// 从行内节点构建 NSAttributedString
-    func buildAttributedString(from nodes: [ASTNodeWrapper], context: UIKitRenderContext) -> NSAttributedString {
+    public func buildAttributedString(from nodes: [ASTNodeWrapper], context: UIKitRenderContext) -> NSAttributedString {
         let result = NSMutableAttributedString()
         
         for node in nodes {

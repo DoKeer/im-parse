@@ -247,7 +247,7 @@ impl MarkdownParser {
                     // 忽略 HTML 标签（安全考虑）
                 }
                 Event::SoftBreak => {
-                    builder.add_text(" ".to_string());
+                    builder.add_text("\n".to_string());
                 }
                 Event::HardBreak => {
                     builder.add_text("\n".to_string());
@@ -291,6 +291,14 @@ impl MarkdownParser {
                                 children.push(ASTNode::Code(CodeNode {
                                     content: code.to_string(),
                                 }));
+                            }
+                            Event::SoftBreak => {
+                                // 软换行：添加换行符文本节点
+                                self.process_inline_text_with_math(children, "\n".to_string(), current_styles);
+                            }
+                            Event::HardBreak => {
+                                // 硬换行：添加换行符文本节点
+                                self.process_inline_text_with_math(children, "\n".to_string(), current_styles);
                             }
                             Event::Html(_) => {
                                 // 忽略 HTML

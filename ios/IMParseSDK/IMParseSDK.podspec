@@ -81,7 +81,6 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
   # ==================== SwiftUI Subspec ====================
   # SwiftUI 渲染器版本（需要 iOS 15.0+）
   s.subspec 'SwiftUI' do |swiftui|
-    swiftui.ios.deployment_target = '15.0'
     swiftui.dependency 'IMParseSDK/Core'
     
     swiftui.source_files = 'IMParseSDK/Classes/Renderers/SwiftUIRenderer.swift',
