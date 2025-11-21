@@ -386,64 +386,7 @@ class MessageDataGenerator {
     private static func generateDeltaTemplates() -> [String] {
         return [
             """
-            {"ops":[{"insert":"Delta这是一条简单的 Delta 消息。\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"DeltaHello "},{"insert":"DeltaWorld","attributes":{"bold":true}},{"insert":"Delta\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"Delta这是"},{"insert":"Delta斜体","attributes":{"italic":true}},{"insert":"Delta文本。\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"Delta这是"},{"insert":"Delta下划线","attributes":{"underline":true}},{"insert":"Delta文本。\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"Delta这是"},{"insert":"Delta删除线","attributes":{"strike":true}},{"insert":"Delta文本。\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"Delta这是"},{"insert":"Delta链接","attributes":{"link":"https://fastly.picsum.photos/id/994/200/200.jpg?hmac=a0dwH_eftBXVmeonrMy5xNmGDPwiXgXrzUjjUQLEtR8"}},{"insert":"Delta。\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"Delta这是"},{"insert":"Delta代码","attributes":{"code":true}},{"insert":"Delta文本。\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"Delta代码块：\\n"},{"insert":"Deltafunction hello() {\\n    console.log('Hello');\\n}","attributes":{"code-block":"javascript"}},{"insert":"Delta\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"Delta列表项 1","attributes":{"list":"bullet"}},{"insert":"Delta\\n"},{"insert":"Delta列表项 2","attributes":{"list":"bullet"}},{"insert":"Delta\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"Delta第一项","attributes":{"list":"ordered"}},{"insert":"Delta\\n"},{"insert":"Delta第二项","attributes":{"list":"ordered"}},{"insert":"Delta\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":{"image":"https://fastly.picsum.photos/id/994/200/200.jpg?hmac=a0dwH_eftBXVmeonrMy5xNmGDPwiXgXrzUjjUQLEtR8"}},{"insert":"Delta\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"Delta这是"},{"insert":"Delta粗体","attributes":{"bold":true}},{"insert":"Delta和"},{"insert":"Delta斜体","attributes":{"italic":true}},{"insert":"Delta的组合。\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"Delta数学公式：","attributes":{"bold":true}},{"insert":{"formula":"E = mc^2"}},{"insert":"Delta\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"Delta这是一条"},{"insert":"Delta非常长","attributes":{"bold":true}},{"insert":"Delta的消息，用来测试文本换行和高度计算。它包含了很多内容，应该能够正确地换行显示。\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"Delta@Alice","attributes":{"mention":true}},{"insert":"Delta 提到了你。\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"Delta标题","attributes":{"header":1}},{"insert":"Delta\\n"},{"insert":"Delta这是内容。\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"Delta这是"},{"insert":"Delta红色","attributes":{"color":"#ff0000"}},{"insert":"Delta文本。\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"Delta这是"},{"insert":"Delta背景色","attributes":{"background":"#ffff00"}},{"insert":"Delta文本。\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"Delta多行\\n文本\\n消息\\n"}]}
-            """,
-            """
-            {"ops":[{"insert":"Delta混合格式："},{"insert":"Delta粗体","attributes":{"bold":true}},{"insert":"Delta、"},{"insert":"Delta斜体","attributes":{"italic":true}},{"insert":"Delta、"},{"insert":"Delta代码","attributes":{"code":true}},{"insert":"Delta。\\n"}]}
+            {"ops":[{"attributes":{"bold":true},"insert":"加粗"},{"insert":"\n"},{"attributes":{"italic":true},"insert":"倾斜"},{"insert":"\n"},{"attributes":{"underline":true},"insert":"下划线"},{"insert":"\n"},{"attributes":{"color":"#e60000"},"insert":"颜色"},{"insert":"\n有序"},{"attributes":{"list":"ordered"},"insert":"\n"},{"insert":"有序"},{"attributes":{"list":"ordered"},"insert":"\n"},{"insert":"无序"},{"attributes":{"list":"bullet"},"insert":"\n"},{"insert":"无序"},{"attributes":{"list":"bullet"},"insert":"\n"},{"insert":{"imageContainer":{"fullScreen":"0","width":"320","height":"207","url":"https://p5.360teams.com/t01f3fc962bf33e48b0.png"}}},{"insert":"\n"},{"insert":{"mention":{"index":"0","denotationChar":"@","id":"all","name":"所有人"}}},{"insert":" "},{"insert":{"mention":{"index":"2","denotationChar":"@","id":"MDEP000227","name":"张春山","user_type":"0"}}},{"insert":" "},{"insert":{"mention":{"index":"1","denotationChar":"@","id":"MDEP005343","name":"刘国庆","user_type":"0"}}},{"insert":" \n\n"}]}
             """
         ]
     }

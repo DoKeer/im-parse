@@ -272,6 +272,12 @@ impl ASTBuilder {
         self.add_inline_node(mention_node);
     }
 
+    /// 添加表情
+    pub fn add_emoji(&mut self, content: String) {
+        let emoji_node = ASTNode::Emoji(EmojiNode { content });
+        self.add_inline_node(emoji_node);
+    }
+
     /// 添加水平分割线
     pub fn add_horizontal_rule(&mut self) {
         self.end_paragraph(); // 结束当前段落

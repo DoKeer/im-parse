@@ -24,17 +24,17 @@ mkdir -p "$SDK_LIB_DIR"
 
 # 构建 iOS 设备版本 (arm64)
 echo "📱 构建 iOS 设备版本 (arm64)..."
-cargo build --release --target aarch64-apple-ios
+RUSTFLAGS="-C link-arg=-dead_strip" cargo build --release --target aarch64-apple-ios
 
 # 构建 iOS 模拟器版本 (arm64)
 echo "📱 构建 iOS 模拟器版本 (arm64)..."
-cargo build --release --target aarch64-apple-ios-sim
+RUSTFLAGS="-C link-arg=-dead_strip" cargo build --release --target aarch64-apple-ios-sim
 
 # 构建 iOS 模拟器版本 (x86_64) - 如果需要支持 Intel Mac
 HAS_X86_64=false
 if [ -d "$HOME/.rustup/toolchains" ]; then
     echo "📱 构建 iOS 模拟器版本 (x86_64)..."
-    if cargo build --release --target x86_64-apple-ios 2>/dev/null; then
+    if RUSTFLAGS="-C link-arg=-dead_strip" cargo build --release --target x86_64-apple-ios 2>/dev/null; then
         HAS_X86_64=true
         echo "✅ x86_64 构建成功"
     else
@@ -69,6 +69,12 @@ create_framework() {
     
     # 复制静态库作为 framework 的二进制文件
     cp "$static_lib" "$framework_binary"
+    
+    # 使用 strip 去除调试符号和未使用的符号（进一步减小体积）
+    if command -v strip >/dev/null 2>&1; then
+        strip -S -x "$framework_binary" 2>/dev/null || strip "$framework_binary" 2>/dev/null || true
+        echo "   ✂️  已去除调试符号"
+    fi
     
     # 创建 Headers 目录（如果需要头文件，可以在这里添加）
     # 目前 Rust FFI 通过 C 头文件访问，不需要在这里添加
@@ -164,6 +170,12 @@ else
     echo "   ⚠️  警告: 没有找到任何模拟器库"
 fi
 
+# 对合并后的模拟器库也进行 strip
+if [ -f "$SIM_FRAMEWORK_DIR/${XCFRAMEWORK_NAME}" ] && command -v strip >/dev/null 2>&1; then
+    strip -S -x "$SIM_FRAMEWORK_DIR/${XCFRAMEWORK_NAME}" 2>/dev/null || strip "$SIM_FRAMEWORK_DIR/${XCFRAMEWORK_NAME}" 2>/dev/null || true
+    echo "   ✂️  已去除模拟器库调试符号"
+fi
+
 # 复制 Framework 元数据（从第一个模拟器 Framework）
 if [ -n "$SIM_ARM64_FRAMEWORK" ]; then
     TEMP_SIM_FRAMEWORK_DIR="$TEMP_FRAMEWORKS_DIR/ios-simulator-temp-arm64/${XCFRAMEWORK_NAME}.framework"
@@ -213,13 +225,19 @@ if [ $? -eq 0 ]; then
     # 显示 XCFramework 信息
     echo ""
     echo "📊 XCFramework 信息:"
+    
+    # 计算总大小
+    total_size=$(du -sh "$XCFRAMEWORK_OUTPUT" | cut -f1)
+    echo "   总大小: $total_size"
+    
     echo "   包含的平台:"
     for platform_dir in "$XCFRAMEWORK_OUTPUT"/*; do
         if [ -d "$platform_dir" ]; then
             framework_path="$platform_dir/${XCFRAMEWORK_NAME}.framework/${XCFRAMEWORK_NAME}"
             if [ -f "$framework_path" ]; then
                 arch_info=$(file "$framework_path" 2>/dev/null | grep -o 'architecture: [^,]*' || echo 'unknown')
-                echo "   - $(basename "$platform_dir"): $arch_info"
+                framework_size=$(du -sh "$platform_dir" | cut -f1)
+                echo "   - $(basename "$platform_dir"): $arch_info (大小: $framework_size)"
             else
                 echo "   - $(basename "$platform_dir"): framework found"
             fi

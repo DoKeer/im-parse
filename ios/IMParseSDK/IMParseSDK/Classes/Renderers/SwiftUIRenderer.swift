@@ -65,6 +65,10 @@ public struct SwiftUIRenderer {
             return AnyView(renderMermaid(node, context: context))
         case .mention(let node):
             return AnyView(renderMention(node, context: context))
+        case .emoji(let node):
+            return AnyView(renderEmoji(node, context: context))
+        case .color(let node):
+            return AnyView(renderColor(node, context: context))
         case .blockquote(let node):
             return AnyView(renderBlockquote(node, context: context))
         case .horizontalRule(_):
@@ -298,8 +302,46 @@ public struct SwiftUIRenderer {
             attributedString.backgroundColor = colorToSwiftUIColor(context.theme.codeBackgroundColor)
             return attributedString
             
+        case .emoji(let emojiNode):
+            // 表情：直接显示内容
+            var attributedString = AttributedString(emojiNode.content)
+            let font = context.currentFont ?? context.theme.font
+            let fontSize = getFontSize(from: font, context: context)
+            attributedString.font = .system(size: fontSize)
+            attributedString.foregroundColor = colorToSwiftUIColor(context.currentTextColor ?? context.theme.textColor)
+            return attributedString
+            
+        case .color(let colorNode):
+            // 颜色节点：应用颜色到子节点
+            let color = parseColor(from: colorNode.color) ?? (context.currentTextColor ?? context.theme.textColor)
+            let colorContext = RenderContext(
+                theme: context.theme,
+                width: context.width,
+                onLinkTap: context.onLinkTap,
+                onImageTap: context.onImageTap,
+                onMentionTap: context.onMentionTap,
+                currentFont: context.currentFont,
+                currentTextColor: color
+            )
+            var result = AttributedString()
+            for child in colorNode.children {
+                let childString = buildAttributedString(from: child, context: colorContext)
+                result.append(childString)
+            }
+            return result
+            
+        case .mention(let mentionNode):
+            // 提及：在 AttributedString 中显示为文本，但可以添加特殊样式
+            var attributedString = AttributedString("@\(mentionNode.name)")
+            let font = context.currentFont ?? context.theme.font
+            let fontSize = getFontSize(from: font, context: context)
+            attributedString.font = .system(size: fontSize)
+            attributedString.foregroundColor = colorToSwiftUIColor(context.theme.mentionTextColor)
+            // 可以添加背景色，但 AttributedString 的背景色支持有限
+            return attributedString
+            
         default:
-            // 对于其他类型（图片、数学公式、Mermaid、提及），返回空字符串
+            // 对于其他类型（图片、数学公式、Mermaid），返回空字符串
             // 这些节点会在 renderParagraphWithSpecialNodes 中单独处理
             return AttributedString()
         }
@@ -753,6 +795,68 @@ public struct SwiftUIRenderer {
     }
     
     @ViewBuilder
+    private func renderEmoji(_ node: EmojiNode, context: RenderContext) -> some View {
+        // 表情内容通常是表情符号字符串，直接显示
+        Text(node.content)
+            .font(context.theme.font)
+    }
+    
+    @ViewBuilder
+    private func renderColor(_ node: ColorNode, context: RenderContext) -> some View {
+        // 颜色节点：应用颜色到子节点
+        let color = parseColor(from: node.color) ?? (context.currentTextColor ?? context.theme.textColor)
+        let colorContext = RenderContext(
+            theme: context.theme,
+            width: context.width,
+            onLinkTap: context.onLinkTap,
+            onImageTap: context.onImageTap,
+            onMentionTap: context.onMentionTap,
+            currentFont: context.currentFont,
+            currentTextColor: color
+        )
+        
+        // 渲染子节点
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(node.children.enumerated()), id: \.offset) { index, child in
+                renderNodeWrapper(child, context: colorContext)
+            }
+        }
+    }
+    
+    /// 解析颜色字符串（支持十六进制和 CSS 颜色）
+    private func parseColor(from colorString: String) -> Color? {
+        let trimmed = colorString.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // 尝试解析十六进制颜色
+        if trimmed.hasPrefix("#") {
+            return Color(hex: trimmed)
+        }
+        
+        // 尝试解析 rgb/rgba
+        if trimmed.hasPrefix("rgb") {
+            // 简化处理：这里可以扩展支持 rgb/rgba 解析
+            // 暂时返回 nil，使用默认颜色
+            return nil
+        }
+        
+        // 尝试使用系统颜色名称
+        switch trimmed.lowercased() {
+        case "red": return .red
+        case "blue": return .blue
+        case "green": return .green
+        case "yellow": return .yellow
+        case "orange": return .orange
+        case "purple": return .purple
+        case "pink": return .pink
+        case "black": return .black
+        case "white": return .white
+        case "gray", "grey": return .gray
+        default:
+            return nil
+            }
+    }
+    
+    @ViewBuilder
     private func renderBlockquote(_ node: BlockquoteNode, context: RenderContext) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Rectangle()
@@ -929,6 +1033,10 @@ public struct SwiftUIRenderer {
             return AnyView(renderLink(node, context: context))
         case .mention(let node):
             return AnyView(renderMention(node, context: context))
+        case .emoji(let node):
+            return AnyView(renderEmoji(node, context: context))
+        case .color(let node):
+            return AnyView(renderColor(node, context: context))
         case .math(let node):
             // 行内数学公式
             return AnyView(renderMath(node, context: context))

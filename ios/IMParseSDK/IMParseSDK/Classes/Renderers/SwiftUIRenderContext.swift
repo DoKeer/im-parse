@@ -338,6 +338,18 @@ extension MentionNode: ASTNode {
     }
 }
 
+extension EmojiNode: ASTNode {
+    public func render(context: RenderContext) -> AnyView {
+        AnyView(EmptyView()) // 由渲染器处理
+    }
+}
+
+extension ColorNode: ASTNode {
+    public func render(context: RenderContext) -> AnyView {
+        AnyView(EmptyView()) // 由渲染器处理
+    }
+}
+
 extension BlockquoteNode: ASTNode {
     public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView()) // 由渲染器处理

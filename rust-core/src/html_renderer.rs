@@ -397,6 +397,16 @@ hr {{
                 format!("<span class=\"mention\" data-id=\"{}\">@{}</span>", 
                     escape_html_attr(&mention.id), escape_html(&mention.name))
             }
+            ASTNode::Emoji(emoji) => {
+                format!("<span class=\"emoji\">{}</span>", escape_html(&emoji.content))
+            }
+            ASTNode::Color(color) => {
+                let content: String = color.children.iter()
+                    .map(|child| self.render_node(child))
+                    .collect();
+                format!("<span style=\"color: {}\">{}</span>", 
+                    escape_html_attr(&color.color), content)
+            }
             ASTNode::HorizontalRule(_) => {
                 "<hr/>\n".to_string()
             }

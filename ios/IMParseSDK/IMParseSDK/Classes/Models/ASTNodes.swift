@@ -570,6 +570,64 @@ public struct MentionNode: Codable {
     }
 }
 
+public struct EmojiNode: Codable {
+    public var content: String
+    
+    enum CodingKeys: String, CodingKey {
+        case type
+        case content
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let typeString = try container.decode(String.self, forKey: .type)
+        guard typeString == "emoji" else {
+            throw DecodingError.dataCorrupted(DecodingError.Context(
+                codingPath: decoder.codingPath,
+                debugDescription: "Expected type 'emoji', got '\(typeString)'"
+            ))
+        }
+        content = try container.decode(String.self, forKey: .content)
+    }
+    
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode("emoji", forKey: .type)
+        try container.encode(content, forKey: .content)
+    }
+}
+
+public struct ColorNode: Codable {
+    public var color: String
+    public var children: [ASTNodeWrapper]
+    
+    enum CodingKeys: String, CodingKey {
+        case type
+        case color
+        case children
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let typeString = try container.decode(String.self, forKey: .type)
+        guard typeString == "color" else {
+            throw DecodingError.dataCorrupted(DecodingError.Context(
+                codingPath: decoder.codingPath,
+                debugDescription: "Expected type 'color', got '\(typeString)'"
+            ))
+        }
+        color = try container.decode(String.self, forKey: .color)
+        children = try container.decode([ASTNodeWrapper].self, forKey: .children)
+    }
+    
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode("color", forKey: .type)
+        try container.encode(color, forKey: .color)
+        try container.encode(children, forKey: .children)
+    }
+}
+
 public struct BlockquoteNode: Codable {
     public var children: [ASTNodeWrapper]
     
@@ -644,6 +702,8 @@ public enum ASTNodeWrapper: Codable {
     case math(MathNode)
     case mermaid(MermaidNode)
     case mention(MentionNode)
+    case emoji(EmojiNode)
+    case color(ColorNode)
     case blockquote(BlockquoteNode)
     case horizontalRule(HorizontalRuleNode)
     
@@ -696,6 +756,10 @@ public enum ASTNodeWrapper: Codable {
             self = .mermaid(try MermaidNode(from: decoder))
         case "mention":
             self = .mention(try MentionNode(from: decoder))
+        case "emoji":
+            self = .emoji(try EmojiNode(from: decoder))
+        case "color":
+            self = .color(try ColorNode(from: decoder))
         case "blockquote":
             self = .blockquote(try BlockquoteNode(from: decoder))
         case "horizontalRule":
@@ -750,6 +814,10 @@ public enum ASTNodeWrapper: Codable {
             try node.encode(to: encoder)
         case .mention(let node):
             try node.encode(to: encoder)
+        case .emoji(let node):
+            try node.encode(to: encoder)
+        case .color(let node):
+            try node.encode(to: encoder)
         case .blockquote(let node):
             try node.encode(to: encoder)
         case .horizontalRule(let node):
@@ -801,6 +869,10 @@ public enum ASTNodeWrapper: Codable {
         case .mermaid(let node):
             return node
         case .mention(let node):
+            return node
+        case .emoji(let node):
+            return node
+        case .color(let node):
             return node
         case .blockquote(let node):
             return node

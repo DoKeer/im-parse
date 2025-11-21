@@ -20,13 +20,115 @@ impl DeltaParser {
         let mut in_list = false;
         let mut list_type = ListType::Bullet;
 
-        for op in &delta.ops {
+        for (idx, op) in delta.ops.iter().enumerate() {
             match op {
                 DeltaOp::Insert { insert, attributes } => {
+                    // 检查下一个操作是否是列表项结束（用于处理文本在换行符之前的情况）
+                    let next_op_is_list_item = delta.ops.get(idx + 1)
+                        .and_then(|next_op| {
+                            if let DeltaOp::Insert { insert: next_insert, attributes: next_attrs } = next_op {
+                                if matches!(next_insert, InsertValue::Text(ref text) if text == "\n") {
+                                    next_attrs.as_ref()
+                                        .and_then(|attrs| attrs.get("list"))
+                                        .and_then(|v| v.as_str())
+                                        .map(|list_str| {
+                                            let is_checked = if list_str == "checked" {
+                                                Some(true)
+                                            } else if list_str == "unchecked" {
+                                                Some(false)
+                                            } else {
+                                                None
+                                            };
+                                            let new_list_type = if is_checked.is_some() {
+                                                ListType::Bullet
+                                            } else if list_str == "ordered" {
+                                                ListType::Ordered
+                                            } else {
+                                                ListType::Bullet
+                                            };
+                                            (new_list_type, is_checked)
+                                        })
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        });
+
+                    // 检查当前操作是否是列表项结束（换行符 + 列表属性）
+                    let is_list_item_end = matches!(insert, InsertValue::Text(ref text) if text == "\n")
+                        && attributes.as_ref()
+                            .and_then(|attrs| attrs.get("list"))
+                            .and_then(|v| v.as_str())
+                            .is_some();
+
+                    // 如果是列表项结束，先处理列表属性，然后处理换行符
+                    if is_list_item_end {
+                        if let Some(attrs) = attributes {
+                            if let Some(list_attr) = attrs.get("list") {
+                                if let Some(list_str) = list_attr.as_str() {
+                                    let is_checked = if list_str == "checked" {
+                                        Some(true)
+                                    } else if list_str == "unchecked" {
+                                        Some(false)
+                                    } else {
+                                        None
+                                    };
+                                    
+                                    let new_list_type = if is_checked.is_some() {
+                                        ListType::Bullet
+                                    } else if list_str == "ordered" {
+                                        ListType::Ordered
+                                    } else {
+                                        ListType::Bullet
+                                    };
+
+                                    if !in_list || list_type != new_list_type {
+                                        // 结束旧列表
+                                        if in_list {
+                                            builder.end_list();
+                                        }
+
+                                        // 开始新列表
+                                        list_type = new_list_type;
+                                        in_list = true;
+                                        builder.start_list(list_type.clone());
+                                    }
+
+                                    // 添加列表项（使用当前的段落内容）
+                                    if !current_paragraph_children.is_empty() {
+                                        builder.add_list_item(
+                                            std::mem::take(&mut current_paragraph_children),
+                                            is_checked,
+                                        );
+                                    } else {
+                                        // 空列表项
+                                        builder.add_list_item(Vec::new(), is_checked);
+                                    }
+                                    continue; // 跳过后续处理，因为换行符已经处理了
+                                }
+                            }
+                        }
+                    }
+
+                    // 处理普通插入操作
                     match insert {
                         InsertValue::Text(text) => {
                             if text == "\n" {
-                                // 换行，结束当前段落
+                                // 普通换行，结束当前段落或列表项
+                                if in_list {
+                                    // 在列表中，结束当前列表项（空列表项）
+                                    if !current_paragraph_children.is_empty() {
+                                        builder.add_list_item(
+                                            std::mem::take(&mut current_paragraph_children),
+                                            None,
+                                        );
+                                    } else {
+                                        builder.add_list_item(Vec::new(), None);
+                                    }
+                                } else {
+                                    // 不在列表中，结束当前段落
                                 if !current_paragraph_children.is_empty() {
                                     builder.start_paragraph();
                                     if let Some(para) = &mut builder.current_paragraph {
@@ -37,28 +139,125 @@ impl DeltaParser {
                                     // 空行，创建空段落
                                     builder.start_paragraph();
                                     builder.end_paragraph();
+                                    }
+                                }
+                            } else if text.starts_with('\n') {
+                                // 文本以换行符开头（如 "\n有序"）
+                                // 检查下一个操作是否是列表项结束
+                                if let Some((new_list_type, is_checked)) = next_op_is_list_item {
+                                    // 下一个操作是列表项结束，不要结束当前段落
+                                    // 只处理换行，保留文本在 current_paragraph_children 中
+                                    // 然后处理剩余文本
+                                    let remaining_text = &text[1..];
+                                    if !remaining_text.is_empty() {
+                                        let styled_nodes = self.build_styled_text(remaining_text, attributes);
+                                        current_paragraph_children.extend(styled_nodes);
+                                    }
+                                } else {
+                                    // 下一个操作不是列表项结束，正常处理换行
+                                    if in_list {
+                                        if !current_paragraph_children.is_empty() {
+                                            builder.add_list_item(
+                                                std::mem::take(&mut current_paragraph_children),
+                                                None,
+                                            );
+                                        } else {
+                                            builder.add_list_item(Vec::new(), None);
+                                        }
+                                    } else {
+                                        if !current_paragraph_children.is_empty() {
+                                            builder.start_paragraph();
+                                            if let Some(para) = &mut builder.current_paragraph {
+                                                para.children = std::mem::take(&mut current_paragraph_children);
+                                            }
+                                            builder.end_paragraph();
+                                        } else {
+                                            builder.start_paragraph();
+                                            builder.end_paragraph();
+                                        }
+                                    }
+                                    // 然后处理剩余文本
+                                    let remaining_text = &text[1..];
+                                    if !remaining_text.is_empty() {
+                                        let styled_nodes = self.build_styled_text(remaining_text, attributes);
+                                        current_paragraph_children.extend(styled_nodes);
+                                    }
                                 }
                             } else {
                                 // 添加文本，应用样式
-                                let styled_nodes = self.build_styled_text(text, attributes);
+                                let styled_nodes = self.build_styled_text(&text, attributes);
                                 current_paragraph_children.extend(styled_nodes);
                             }
                         }
-                        InsertValue::Image { image } => {
-                            // 结束当前段落
+                        InsertValue::Object(obj) => {
+                            // 检查是否是图片
+                            if obj.contains_key("imageContainer") || obj.contains_key("image") {
+                                // 结束当前段落或列表项
                             if !current_paragraph_children.is_empty() {
+                                    if in_list {
+                                        // 在列表中，先结束当前列表项
+                                        builder.add_list_item(
+                                            std::mem::take(&mut current_paragraph_children),
+                                            None,
+                                        );
+                                    } else {
+                                        // 不在列表中，结束当前段落
                                 builder.start_paragraph();
                                 if let Some(para) = &mut builder.current_paragraph {
                                     para.children = std::mem::take(&mut current_paragraph_children);
                                 }
                                 builder.end_paragraph();
                             }
+                                }
 
-                            builder.add_image(image.clone(), None, None, None);
+                                // 尝试从 imageContainer 或 image 字段获取 URL
+                                let image_url = obj.get("image")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string())
+                                    .or_else(|| {
+                                        obj.get("imageContainer")
+                                            .and_then(|v| v.as_object())
+                                            .and_then(|ic| ic.get("url"))
+                                            .and_then(|v| v.as_str())
+                                            .map(|s| s.to_string())
+                                    })
+                                    .unwrap_or_default();
+
+                                if !image_url.is_empty() {
+                                    // 图片作为块级元素，总是单独处理
+                                    builder.add_image(image_url, None, None, None);
+                                }
+                            }
+                            // 检查是否是提及
+                            else if obj.contains_key("mention") {
+                                if let Some(mention_val) = obj.get("mention") {
+                                    if let Ok(mention) = serde_json::from_value::<MentionValue>(mention_val.clone()) {
+                                        let name = mention.name.unwrap_or_else(|| mention.id.clone());
+                                        // 提及作为行内节点添加到当前段落/列表项
+                                        let mention_node = ASTNode::Mention(MentionNode { 
+                                            id: mention.id.clone(), 
+                                            name 
+                                        });
+                                        current_paragraph_children.push(mention_node);
+                                    }
+                                }
+                            }
+                            // 检查是否是表情
+                            else if obj.contains_key("emoji") {
+                                if let Some(emoji_val) = obj.get("emoji") {
+                                    if let Ok(emoji) = serde_json::from_value::<EmojiValue>(emoji_val.clone()) {
+                                        // 表情作为行内节点添加到当前段落/列表项
+                                        let emoji_node = ASTNode::Emoji(EmojiNode { 
+                                            content: emoji.content 
+                                        });
+                                        current_paragraph_children.push(emoji_node);
+                                    }
+                                }
+                            }
                         }
                         InsertValue::Formula { formula } => {
                             // 结束当前段落
-                            if !current_paragraph_children.is_empty() {
+                            if !in_list && !current_paragraph_children.is_empty() {
                                 builder.start_paragraph();
                                 if let Some(para) = &mut builder.current_paragraph {
                                     para.children = std::mem::take(&mut current_paragraph_children);
@@ -70,50 +269,19 @@ impl DeltaParser {
                         }
                     }
 
-                    // 处理列表属性
+                    // 处理非列表项结束的情况下的列表属性变化
+                    // 注意：列表属性应该在换行符上，但为了健壮性，我们也检查其他情况
+                    if !is_list_item_end {
                     if let Some(attrs) = attributes {
                         if let Some(list_attr) = attrs.get("list") {
-                            if let Some(list_str) = list_attr.as_str() {
-                                let new_list_type = if list_str == "ordered" {
-                                    ListType::Ordered
-                                } else {
-                                    ListType::Bullet
-                                };
-
-                                if !in_list || list_type != new_list_type {
-                                    // 结束旧列表
-                                    if in_list {
-                                        builder.end_list();
-                                    }
-
-                                    // 开始新列表
-                                    list_type = new_list_type;
-                                    in_list = true;
-                                    builder.start_list(list_type.clone());
-                                }
-
-                                // 检查是否是列表项结束
-                                if let InsertValue::Text(text) = insert {
-                                    if text == "\n" {
-                                        // 列表项结束
-                                        if !current_paragraph_children.is_empty() {
-                                            builder.add_list_item(
-                                                std::mem::take(&mut current_paragraph_children),
-                                                None,
-                                            );
-                                        }
-                                    }
-                                }
+                                // 列表属性不在换行符上，这种情况不应该发生
+                                // 但为了健壮性，我们忽略它（因为列表属性应该在换行符上）
                             }
                         } else if in_list {
                             // 没有列表属性，结束列表
                             builder.end_list();
                             in_list = false;
                         }
-                    } else if in_list {
-                        // 没有属性，结束列表
-                        builder.end_list();
-                        in_list = false;
                     }
                 }
                 DeltaOp::Retain { .. } => {
@@ -199,6 +367,10 @@ impl DeltaParser {
                 styles.push(DeltaStyle::Link(link.to_string()));
             }
 
+            if let Some(color) = attrs.get("color").and_then(|v| v.as_str()) {
+                styles.push(DeltaStyle::Color(color.to_string()));
+            }
+
             if attrs.get("code").and_then(|v| v.as_bool()).unwrap_or(false) {
                 return vec![ASTNode::Code(CodeNode {
                     content: text.to_string(),
@@ -233,6 +405,10 @@ impl DeltaParser {
                     }),
                     DeltaStyle::Link(url) => ASTNode::Link(LinkNode {
                         url: url.clone(),
+                        children: vec![current],
+                    }),
+                    DeltaStyle::Color(color) => ASTNode::Color(crate::ast::ColorNode {
+                        color: color.clone(),
                         children: vec![current],
                     }),
                 };
@@ -410,12 +586,22 @@ enum DeltaOp {
 #[serde(untagged)]
 enum InsertValue {
     Text(String),
-    Image {
-        image: String,
-    },
+    Object(serde_json::Map<String, serde_json::Value>),
     Formula {
         formula: String,
     },
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct MentionValue {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct EmojiValue {
+    pub content: String,
 }
 
 type DeltaAttributes = serde_json::Map<String, Value>;
@@ -427,6 +613,7 @@ enum DeltaStyle {
     Underline,
     Strike,
     Link(String),
+    Color(String), // CSS color string (e.g., "#FF0000", "rgb(255,0,0)")
 }
 
 /// Delta 文本部分（用于数学公式解析）

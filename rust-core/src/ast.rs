@@ -21,6 +21,8 @@ pub enum ASTNode {
     Underline(UnderlineNode),
     #[serde(rename = "strike")]
     Strike(StrikeNode),
+    #[serde(rename = "color")]
+    Color(ColorNode),
     #[serde(rename = "code")]
     Code(CodeNode),
     #[serde(rename = "codeBlock")]
@@ -47,6 +49,8 @@ pub enum ASTNode {
     Card(CardNode),
     #[serde(rename = "mention")]
     Mention(MentionNode),
+    #[serde(rename = "emoji")]
+    Emoji(EmojiNode),
     #[serde(rename = "horizontalRule")]
     HorizontalRule(HorizontalRuleNode),
     #[serde(rename = "blockquote")]
@@ -99,6 +103,13 @@ pub struct UnderlineNode {
 /// 删除线节点
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StrikeNode {
+    pub children: Vec<ASTNode>,
+}
+
+/// 颜色节点（用于文本颜色）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ColorNode {
+    pub color: String, // CSS color string (e.g., "#FF0000", "rgb(255,0,0)")
     pub children: Vec<ASTNode>,
 }
 
@@ -210,6 +221,12 @@ pub struct MentionNode {
     pub name: String,
 }
 
+/// 表情节点
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmojiNode {
+    pub content: String,
+}
+
 /// 水平分割线节点
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HorizontalRuleNode;
@@ -234,6 +251,4 @@ impl Default for RootNode {
     }
 }
 
-// 为 ASTNode 实现 HeightCalculator 需要访问内部节点
-// 这个实现放在 height_calculator.rs 中
 

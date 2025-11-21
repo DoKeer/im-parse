@@ -15,9 +15,25 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 pulldown-cmark = "0.9"
 thiserror = "1.0"
-hashbrown = "0.14"
+# 使用标准库的 HashMap 而不是 hashbrown（如果不需要性能优化）
+# hashbrown = "0.14"
 katex-rs = "0.2"
 
 [dev-dependencies]
 criterion = "0.5"
+
+# 优化 release 构建，减小体积
+[profile.release]
+# 优化级别：z = 优化大小，s = 优化大小和速度的平衡
+opt-level = "z"
+# 启用 LTO (Link Time Optimization) 可以显著减小体积
+lto = true
+# 去除调试符号
+strip = true
+# 减小代码大小
+codegen-units = 1
+# 禁用溢出检查（release 模式默认禁用，但明确指定更安全）
+overflow-checks = false
+# 减小 panic 处理代码大小
+panic = "abort"
 

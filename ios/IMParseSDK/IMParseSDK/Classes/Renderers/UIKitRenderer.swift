@@ -333,6 +333,10 @@ public class UIKitRenderer {
             return renderMermaid(node, context: context)
         case .mention(let node):
             return renderMention(node, context: context)
+        case .emoji(let node):
+            return renderEmoji(node, context: context)
+        case .color(let node):
+            return renderColor(node, context: context)
         case .blockquote(let node):
             return renderBlockquote(node, context: context)
         case .horizontalRule(let node):
@@ -1635,6 +1639,95 @@ public class UIKitRenderer {
         return containerView
     }
     
+    /// 渲染表情
+    private func renderEmoji(_ node: EmojiNode, context: UIKitRenderContext) -> UIView {
+        let label = UILabel()
+        label.text = node.content
+        label.font = context.theme.font
+        label.textColor = context.currentTextColor ?? context.theme.textColor
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }
+    
+    /// 渲染颜色节点
+    private func renderColor(_ node: ColorNode, context: UIKitRenderContext) -> UIView {
+        // 解析颜色
+        let color = parseUIColor(from: node.color) ?? (context.currentTextColor ?? context.theme.textColor)
+        
+        // 创建颜色上下文
+        var colorContext = context
+        colorContext.currentTextColor = color
+        
+        // 渲染子节点
+        let containerView = UIView()
+        containerView.translatesAutoresizingMaskIntoConstraints = false
+        
+        var previousView: UIView?
+        for (index, child) in node.children.enumerated() {
+            let childView = renderInlineNodeWrapper(child, context: colorContext)
+            childView.translatesAutoresizingMaskIntoConstraints = false
+            containerView.addSubview(childView)
+            
+            NSLayoutConstraint.activate([
+                childView.topAnchor.constraint(equalTo: containerView.topAnchor),
+                childView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
+            ])
+            
+            if let previous = previousView {
+                NSLayoutConstraint.activate([
+                    childView.leadingAnchor.constraint(equalTo: previous.trailingAnchor)
+                ])
+            } else {
+                NSLayoutConstraint.activate([
+                    childView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor)
+                ])
+            }
+            
+            if index == node.children.count - 1 {
+                NSLayoutConstraint.activate([
+                    childView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor)
+                ])
+            }
+            
+            previousView = childView
+        }
+        
+        return containerView
+    }
+    
+    /// 解析颜色字符串（支持十六进制和 CSS 颜色）
+    private func parseUIColor(from colorString: String) -> UIColor? {
+        let trimmed = colorString.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // 尝试解析十六进制颜色（UIColor(hex:) 会自动处理 # 前缀）
+        if trimmed.hasPrefix("#") {
+            return UIColor(hex: trimmed)
+        }
+        
+        // 尝试解析 rgb/rgba
+        if trimmed.hasPrefix("rgb") {
+            // 简化处理：这里可以扩展支持 rgb/rgba 解析
+            // 暂时返回 nil，使用默认颜色
+            return nil
+        }
+        
+        // 尝试使用系统颜色名称
+        switch trimmed.lowercased() {
+        case "red": return .systemRed
+        case "blue": return .systemBlue
+        case "green": return .systemGreen
+        case "yellow": return .systemYellow
+        case "orange": return .systemOrange
+        case "purple": return .systemPurple
+        case "pink": return .systemPink
+        case "black": return .black
+        case "white": return .white
+        case "gray", "grey": return .gray
+        default:
+            return nil
+        }
+    }
+    
     /// 渲染引用块
     private func renderBlockquote(_ node: BlockquoteNode, context: UIKitRenderContext) -> UIView {
         let stackView = UIStackView()
@@ -1796,6 +1889,10 @@ public class UIKitRenderer {
             return renderLink(node, context: context)
         case .mention(let node):
             return renderMention(node, context: context)
+        case .emoji(let node):
+            return renderEmoji(node, context: context)
+        case .color(let node):
+            return renderColor(node, context: context)
         case .math(let node):
             // 行内数学公式
             return renderMath(node, context: context)
