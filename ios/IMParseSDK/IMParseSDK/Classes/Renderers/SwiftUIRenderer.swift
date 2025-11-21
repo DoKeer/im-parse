@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// 渲染上下文
+@available(iOS 15.0, *)
 public struct RenderContext {
     public var theme: Theme
     public var width: CGFloat
@@ -29,6 +30,7 @@ public struct RenderContext {
 }
 
 /// 主题配置
+@available(iOS 15.0, *)
 public struct Theme {
     public var font: Font
     public var fontSize: CGFloat  // 基础字体大小（用于计算标题大小）
@@ -124,6 +126,7 @@ public struct Theme {
     }
 }
 
+@available(iOS 15.0, *)
 extension Theme {
     /// 从 StyleConfig 创建 Theme
     public init(from config: StyleConfig) {
@@ -201,11 +204,13 @@ extension Theme {
 }
 
 /// AST 节点协议
+@available(iOS 15.0, *)
 public protocol ASTNode {
     func render(context: RenderContext) -> AnyView
 }
 
 /// SwiftUI 渲染器
+@available(iOS 15.0, *)
 public struct SwiftUIRenderer {
     public init() {}
     
@@ -1145,6 +1150,7 @@ public struct SwiftUIRenderer {
 
 // MARK: - Color 扩展（用于解析十六进制颜色）
 
+@available(iOS 15.0, *)
 extension Color {
     /// 从十六进制字符串创建 Color
     init?(hex: String) {
@@ -1174,6 +1180,7 @@ extension Color {
 
 // MARK: - 辅助扩展
 
+@available(iOS 15.0, *)
 extension TextAlign {
     var alignment: Alignment {
         switch self {
@@ -1191,6 +1198,7 @@ extension TextAlign {
 
 /// 数学公式 HTML 渲染视图（使用 WebView 渲染为图片）
 /// 从 Rust Core 获取 KaTeX HTML，然后使用 MathHTMLRenderer 渲染为图片
+@available(iOS 15.0, *)
 struct MathSVGView: View {
     let mathContent: String
     let display: Bool
@@ -1257,6 +1265,7 @@ struct MathSVGView: View {
 
 /// Mermaid 图表 HTML 渲染视图（使用 WebView 渲染为图片）
 /// 使用 MermaidHTMLRenderer 将 Mermaid 代码渲染为图片
+@available(iOS 15.0, *)
 struct MermaidSVGView: View {
     let mermaidContent: String
     let context: RenderContext
@@ -1320,6 +1329,7 @@ struct MermaidSVGView: View {
 }
 
 /// SVG 缓存管理器
+@available(iOS 15.0, *)
 class MathSVGCache {
     static let shared = MathSVGCache()
     private var cache: [String: UIImage] = [:]
@@ -1404,6 +1414,7 @@ class MathSVGCache {
 
 // MARK: - AST 节点类型定义（简化版，实际应从 Rust 绑定生成）
 
+@available(iOS 15.0, *)
 public struct RootNode: ASTNode, Codable {
     public var children: [ASTNodeWrapper]
     
@@ -1431,6 +1442,7 @@ public struct RootNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct ParagraphNode: ASTNode, Codable {
     public var children: [ASTNodeWrapper]
     public func render(context: RenderContext) -> AnyView {
@@ -1461,6 +1473,7 @@ public struct ParagraphNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct HeadingNode: ASTNode, Codable {
     public var level: UInt8
     public var children: [ASTNodeWrapper]
@@ -1495,6 +1508,7 @@ public struct HeadingNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct TextNode: ASTNode, Codable {
     public var content: String
     public func render(context: RenderContext) -> AnyView {
@@ -1525,6 +1539,7 @@ public struct TextNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct StrongNode: ASTNode, Codable {
     public var children: [ASTNodeWrapper]
     public func render(context: RenderContext) -> AnyView {
@@ -1555,6 +1570,7 @@ public struct StrongNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct EmNode: ASTNode, Codable {
     public var children: [ASTNodeWrapper]
     public func render(context: RenderContext) -> AnyView {
@@ -1585,6 +1601,7 @@ public struct EmNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct UnderlineNode: ASTNode, Codable {
     public var children: [ASTNodeWrapper]
     public func render(context: RenderContext) -> AnyView {
@@ -1615,6 +1632,7 @@ public struct UnderlineNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct StrikeNode: ASTNode, Codable {
     public var children: [ASTNodeWrapper]
     public func render(context: RenderContext) -> AnyView {
@@ -1645,6 +1663,7 @@ public struct StrikeNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct CodeNode: ASTNode, Codable {
     public var content: String
     public func render(context: RenderContext) -> AnyView {
@@ -1675,6 +1694,7 @@ public struct CodeNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct CodeBlockNode: ASTNode, Codable {
     public var language: String?
     public var content: String
@@ -1709,6 +1729,7 @@ public struct CodeBlockNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct LinkNode: ASTNode, Codable {
     public var url: String
     public var children: [ASTNodeWrapper]
@@ -1743,6 +1764,7 @@ public struct LinkNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct ImageNode: ASTNode, Codable {
     public var url: String
     public var width: Float?
@@ -1785,11 +1807,13 @@ public struct ImageNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public enum ListType: String, Codable {
     case bullet = "bullet"
     case ordered = "ordered"
 }
 
+@available(iOS 15.0, *)
 public struct ListItemNode: Codable {
     public var children: [ASTNodeWrapper]
     public var checked: Bool?
@@ -1814,6 +1838,7 @@ public struct ListItemNode: Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct ListNode: ASTNode, Codable {
     public var listType: ListType
     public var items: [ListItemNode]
@@ -1848,6 +1873,7 @@ public struct ListNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct TableNode: ASTNode, Codable {
     public var rows: [TableRow]
     public func render(context: RenderContext) -> AnyView {
@@ -1878,6 +1904,7 @@ public struct TableNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct TableRow: Codable {
     public var cells: [TableCell]
     
@@ -1897,6 +1924,7 @@ public struct TableRow: Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct TableCell: Codable {
     public var children: [ASTNodeWrapper]
     public var align: TextAlign?
@@ -1920,12 +1948,14 @@ public struct TableCell: Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public enum TextAlign: String, Codable {
     case left
     case center
     case right
 }
 
+@available(iOS 15.0, *)
 public struct MathNode: ASTNode, Codable {
     public var content: String
     public var display: Bool
@@ -1960,6 +1990,7 @@ public struct MathNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct MermaidNode: ASTNode, Codable {
     public var content: String
     public func render(context: RenderContext) -> AnyView {
@@ -1990,6 +2021,7 @@ public struct MermaidNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct MentionNode: ASTNode, Codable {
     public var id: String
     public var name: String
@@ -2024,6 +2056,7 @@ public struct MentionNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct BlockquoteNode: ASTNode, Codable {
     public var children: [ASTNodeWrapper]
     public func render(context: RenderContext) -> AnyView {
@@ -2054,6 +2087,7 @@ public struct BlockquoteNode: ASTNode, Codable {
     }
 }
 
+@available(iOS 15.0, *)
 public struct HorizontalRuleNode: ASTNode, Codable {
     public func render(context: RenderContext) -> AnyView {
         AnyView(EmptyView())
@@ -2083,6 +2117,7 @@ public struct HorizontalRuleNode: ASTNode, Codable {
 // MARK: - ASTNodeWrapper
 
 /// ASTNode 包装器，用于 JSON 序列化/反序列化
+@available(iOS 15.0, *)
 public enum ASTNodeWrapper: Codable {
     case root(RootNode)
     case paragraph(ParagraphNode)

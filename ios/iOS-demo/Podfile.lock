@@ -1,12 +1,12 @@
 PODS:
-  - IMParseSDK/Core (0.1.0)
-  - IMParseSDK/Full (0.1.0):
+  - IMParseSDK/Core (1.0.0)
+  - IMParseSDK/Full (1.0.0):
     - IMParseSDK/Core
     - IMParseSDK/SwiftUI
     - IMParseSDK/UIKit
-  - IMParseSDK/SwiftUI (0.1.0):
+  - IMParseSDK/SwiftUI (1.0.0):
     - IMParseSDK/Core
-  - IMParseSDK/UIKit (0.1.0):
+  - IMParseSDK/UIKit (1.0.0):
     - IMParseSDK/Core
 
 DEPENDENCIES:
@@ -17,7 +17,7 @@ EXTERNAL SOURCES:
     :path: "../IMParseSDK"
 
 SPEC CHECKSUMS:
-  IMParseSDK: ea11db0f63e21cd95c97906a6ac564febf453e11
+  IMParseSDK: 1dc7e123f026ecc8ab7d9714c0cc7e865bd7b76a
 
 PODFILE CHECKSUM: c14d4cc3ff9b01d000a87e49182b9821f8cb3f30
 

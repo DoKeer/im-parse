@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'IMParseSDK'
-  s.version          = '0.1.0'
+  s.version          = '1.0.0'
   s.summary          = 'iOS SDK for parsing and rendering Markdown and Delta format messages'
   s.description      = <<-DESC
 IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS SDK。
@@ -13,6 +13,7 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
   s.source           = { :git => 'https://github.com/your-org/im-parse.git', :tag => s.version.to_s }
 
   s.swift_version = '5.0'
+  s.ios.deployment_target = '13.0'
 
   # 默认包含所有内容（完整版）
   s.default_subspecs = 'Full'
@@ -65,7 +66,6 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
   # ==================== UIKit Subspec ====================
   # UIKit 渲染器版本
   s.subspec 'UIKit' do |uikit|
-    uikit.ios.deployment_target = '13.0'
 
     uikit.dependency 'IMParseSDK/Core'
     
@@ -81,7 +81,6 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
   # ==================== SwiftUI Subspec ====================
   # SwiftUI 渲染器版本（需要 iOS 15.0+）
   s.subspec 'SwiftUI' do |swiftui|
-    swiftui.ios.deployment_target = '15.0'
     swiftui.dependency 'IMParseSDK/Core'
     
     swiftui.source_files = 'IMParseSDK/Classes/Renderers/SwiftUIRenderer.swift',
@@ -95,7 +94,6 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
   # ==================== Full Subspec ====================
   # 完整版本：包含所有功能（UIKit + SwiftUI，需要 iOS 15.0+）
   s.subspec 'Full' do |full|
-    full.ios.deployment_target = '15.0'
     full.dependency 'IMParseSDK/Core'
     full.dependency 'IMParseSDK/UIKit'
     full.dependency 'IMParseSDK/SwiftUI'
