@@ -689,6 +689,19 @@ public class UIKitLayoutCalculator {
     /// 估算数学公式的尺寸
     /// 根据 MathHTMLRenderer 的处理逻辑，尝试获取更精确的尺寸
     private static func estimateMathSize(node: MathNode, context: UIKitRenderContext, width: CGFloat) -> CGSize {
+        // 生成缓存键（使用内容字符串作为key）
+        let cacheKey = "math:\(node.content):\(node.display)"
+        
+        // 优先从缓存获取尺寸
+        if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey) {
+            // 如果缓存中有尺寸，使用缓存的尺寸
+            // 注意：缓存的尺寸可能是图片的实际尺寸，需要加上padding
+            let padding = context.theme.codeBlockPadding
+            let totalHeight = cachedSize.height + padding * 2
+            // 宽度使用传入的width（限制最大宽度）
+            return CGSize(width: width, height: totalHeight)
+        }
+        
         // 从 rust-core 获取 HTML（同步操作，可以在后台线程执行）
         let result = IMParseCore.mathToHTML(node.content, display: node.display)
         
@@ -732,6 +745,18 @@ public class UIKitLayoutCalculator {
     /// 根据 MermaidHTMLRenderer 的处理逻辑，尝试获取更精确的尺寸
     private static func estimateMermaidSize(node: MermaidNode, context: UIKitRenderContext, width: CGFloat) -> CGSize {
         let padding = context.theme.codeBlockPadding
+        
+        // 生成缓存键（使用内容字符串作为key）
+        let cacheKey = "mermaid:\(node.content)"
+        
+        // 优先从缓存获取尺寸
+        if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey) {
+            // 如果缓存中有尺寸，使用缓存的尺寸
+            // 注意：缓存的尺寸可能是图片的实际尺寸，需要加上padding
+            let totalHeight = cachedSize.height + padding * 2
+            // 宽度使用传入的width（限制最大宽度）
+            return CGSize(width: width, height: totalHeight)
+        }
         
         // 从 rust-core 获取 HTML（同步操作，可以在后台线程执行）
         let textColor = context.theme.textColor

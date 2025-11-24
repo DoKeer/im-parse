@@ -14,6 +14,7 @@ class UIKitMessageListViewController: UIViewController {
     private var messages: [Message] = []
     private var tableView: UITableView!
     
+    // 使用 Kingfisher 的图片缓存来缓存数学公式和 Mermaid 图表的图片
     // 不再需要高度反馈系统，直接使用预计算的高度
     
     override func viewDidLoad() {
@@ -23,8 +24,15 @@ class UIKitMessageListViewController: UIViewController {
         view.backgroundColor = .systemBackground
         
         setupTableView()
+        setupCache()
         loadMessages()
     }
+    
+    private func setupCache() {
+        // Kingfisher 会自动处理内存警告和缓存清理
+        // 不需要手动监听内存警告
+    }
+    
     
     private func setupTableView() {
         tableView = UITableView(frame: .zero, style: .plain)
@@ -94,9 +102,26 @@ extension UIKitMessageListViewController: UITableViewDataSource {
         
         cell.configure(
             with: message,
+            indexPath:indexPath,
             width: contentWidth,
             viewController: self,
-            onLayoutComplete: nil // 不再需要反馈，直接使用预计算高度
+            onLayoutComplete:{ [weak tableView, weak self] height in
+                DispatchQueue.main.async {
+                    guard let tableView = tableView,
+                          let self = self,
+                          indexPath.row < self.messages.count else { return }
+                    
+                    // 获取当前 cell 的实际高度（包含所有 padding）
+                    let currentHeight = cell.frame.height
+                    
+                    // 只有当高度变化超过阈值时才刷新
+                    if abs(height - currentHeight) > 1.0 {
+                        // 使用 beginUpdates/endUpdates 来避免完全重新加载
+                        tableView.beginUpdates()
+                        tableView.endUpdates()
+                    }
+                }
+            }
         )
         return cell
     }
@@ -133,6 +158,8 @@ class MessageTableViewCell: UITableViewCell {
     private let typeLabel = UILabel()
     private var message: Message?
     private weak var viewController: UIViewController?
+    private var lastReportedHeight: CGFloat = 0 // 记录上次报告的高度，防止重复调用
+    private var isConfiguring = false // 防止在配置过程中重复调用
     
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -192,9 +219,13 @@ class MessageTableViewCell: UITableViewCell {
         ])
     }
     
-    func configure(with message: Message, width: CGFloat, viewController: UIViewController? = nil, onLayoutComplete: ((CGFloat) -> Void)? = nil) {
+    func configure(with message: Message, indexPath:IndexPath ,width: CGFloat, viewController: UIViewController? = nil, onLayoutComplete: ((CGFloat) -> Void)? = nil) {
         self.message = message
         self.viewController = viewController
+        
+        // 重置标志
+        isConfiguring = true
+        lastReportedHeight = 0
         
         senderLabel.text = message.sender
         typeLabel.text = message.type.rawValue.uppercased()
@@ -209,14 +240,15 @@ class MessageTableViewCell: UITableViewCell {
         let longPressGesture = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
         containerView.addGestureRecognizer(longPressGesture)
         
-        // 创建高度变化回调，通过 viewController 通知 tableView 更新
-        let onHeightChanged: ((CGFloat) -> Void)? = { [weak viewController] _ in
-            guard let viewController = viewController as? UIKitMessageListViewController else { return }
-            // 通知 table view 更新 cell 高度
-            DispatchQueue.main.async {
-                let tableView = viewController.tableView
-//                tableView.beginUpdates()
-//                tableView.endUpdates()
+        // 创建防抖的高度变化回调
+        let onHeightChanged: ((CGFloat) -> Void)? = { [weak self] heightDiff in
+            guard let self = self else { return }
+            // 只有在配置完成后才允许高度变化回调，且高度变化超过阈值
+            if !self.isConfiguring && abs(heightDiff) > 1.0 {
+                // heightDiff 是内容高度的变化，计算新的总高度（当前总高度 + 内容高度变化）
+                let newTotalHeight = self.lastReportedHeight + heightDiff
+                self.lastReportedHeight = newTotalHeight
+                onLayoutComplete?(newTotalHeight)
             }
         }
         
@@ -237,8 +269,10 @@ class MessageTableViewCell: UITableViewCell {
             contentView_wrapper.addSubview(astView)
             
             // 直接使用计算出的高度，不需要等待布局
-            let actualHeight = layout.frame.height
-            onLayoutComplete?(actualHeight)
+            // 对于预计算的布局，高度已经确定，不需要触发 onLayoutComplete
+            // 因为 heightForRowAt 已经使用了预计算的高度
+            isConfiguring = false
+            lastReportedHeight = layout.frame.height + 70
             
             return
         }
@@ -279,7 +313,11 @@ class MessageTableViewCell: UITableViewCell {
                         
                         // 使用计算出的高度
                         let actualHeight = astView.bounds.height
-                        onLayoutComplete?(actualHeight)
+                        let totalHeight = actualHeight + 70 // 加上容器 padding
+                        self.isConfiguring = false
+                        self.lastReportedHeight = totalHeight
+                        // 只在高度确实变化时才触发回调
+                        onLayoutComplete?(totalHeight)
                     }
                 } catch { 
                     // 解析失败，显示原始内容
@@ -305,7 +343,12 @@ class MessageTableViewCell: UITableViewCell {
                     context: nil
                 ).size
                 let textHeight = ceil(size.height)
-                onLayoutComplete(textHeight)
+                let totalHeight = textHeight + 70 // 加上容器 padding
+                isConfiguring = false
+                lastReportedHeight = totalHeight
+                onLayoutComplete(totalHeight)
+            } else {
+                isConfiguring = false
             }
         }
     }
@@ -403,6 +446,7 @@ class MessageTableViewCell: UITableViewCell {
                 print("Mermaid 图表被点击，内容长度: \(mermaidNode.content.count) 字符")
             },
             imageLoaderDelegate: viewController as? UIKitImageLoaderDelegate,
+            formulaSizeCacheDelegate: viewController as? UIKitFormulaSizeCacheDelegate,
             onLayoutHeightChanged: onHeightChanged
         )
     }
@@ -448,6 +492,82 @@ extension UIKitMessageListViewController: UIKitImageLoaderDelegate {
                 }
             }
         )
+    }
+}
+
+// MARK: - UIKitFormulaSizeCacheDelegate
+
+extension UIKitMessageListViewController: UIKitFormulaSizeCacheDelegate {
+    /// 获取缓存的尺寸
+    /// 从 Kingfisher 的图片缓存中读取图片，然后返回图片尺寸
+    /// - Parameter key: 缓存键（公式或Mermaid的内容字符串）
+    /// - Returns: 缓存的尺寸，如果不存在则返回nil
+    func getCachedSize(for key: String) -> CGSize? {
+        // 生成 Kingfisher 缓存键
+        let cacheKey = generateCacheKey(for: key)
+        
+        // 从 Kingfisher 内存缓存中同步读取图片
+        if let cachedImage = ImageCache.default.retrieveImageInMemoryCache(forKey: cacheKey) {
+            // 从内存缓存中获取尺寸
+            return cachedImage.size
+        }
+        
+        // 注意：Kingfisher 的磁盘读取是异步的，这里我们只检查内存缓存
+        // 如果内存缓存中没有，返回 nil，布局计算会使用估算高度
+        // 当图片从磁盘加载到内存后，会触发高度刷新
+        return nil
+    }
+    
+    /// 保存尺寸到缓存
+    /// 实际上，这个方法会在图片渲染完成后被调用，此时图片已经保存到 Kingfisher 缓存
+    /// 这里我们只需要记录尺寸信息（可选，因为可以从图片中获取）
+    /// - Parameters:
+    ///   - size: 要缓存的尺寸
+    ///   - key: 缓存键（公式或Mermaid的内容字符串）
+    func setCachedSize(_ size: CGSize, for key: String) {
+        // 图片已经通过 saveFormulaImage 方法保存到 Kingfisher 缓存
+        // 这里不需要额外操作，因为尺寸可以从缓存的图片中获取
+    }
+    
+    /// 保存公式图片到 Kingfisher 缓存
+    /// - Parameters:
+    ///   - image: 要缓存的图片
+    ///   - key: 缓存键（公式或Mermaid的内容字符串）
+    func saveFormulaImage(_ image: UIImage, for key: String) {
+        let cacheKey = generateCacheKey(for: key)
+        // 保存到 Kingfisher 缓存（包括内存和磁盘）
+        ImageCache.default.store(image, forKey: cacheKey, toDisk: true)
+    }
+    
+    /// 从 Kingfisher 缓存获取公式图片
+    /// - Parameters:
+    ///   - key: 缓存键
+    ///   - completion: 完成回调，返回缓存的图片
+    func getCachedFormulaImage(for key: String, completion: @escaping (UIImage?) -> Void) {
+        let cacheKey = generateCacheKey(for: key)
+        // 从 Kingfisher 缓存中读取（包括内存和磁盘）
+        ImageCache.default.retrieveImage(forKey: cacheKey) { result in
+            switch result {
+            case .success(let value):
+                completion(value.image)
+            case .failure:
+                completion(nil)
+            }
+        }
+    }
+    
+    /// 生成缓存键（参考 Kingfisher 的键生成策略）
+    /// - Parameter key: 原始键
+    /// - Returns: 处理后的缓存键
+    private func generateCacheKey(for key: String) -> String {
+        // Kingfisher 使用 MD5 哈希，这里我们使用简单的处理
+        // 如果键太长，使用哈希
+        if key.count > 200 {
+            // 对于过长的键，使用哈希
+            return "formula_hash_\(key.hash)"
+        }
+        // 添加前缀以区分公式图片和其他图片
+        return "formula_\(key)"
     }
 }
 

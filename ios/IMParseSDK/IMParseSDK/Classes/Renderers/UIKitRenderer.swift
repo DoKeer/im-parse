@@ -632,7 +632,7 @@ public class UIKitRenderer {
         imageView.contentMode = .scaleAspectFit
         imageView.clipsToBounds = true
         imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.backgroundColor = UIColor.systemGray6
+        imageView.backgroundColor = UIColor.clear
         
         let activityIndicator = UIActivityIndicatorView(style: .medium)
         activityIndicator.translatesAutoresizingMaskIntoConstraints = false
@@ -1192,6 +1192,10 @@ public class UIKitRenderer {
         }
         
         let fontSize = node.display ? 16.0 : 14.0
+        
+        // 生成缓存键（使用内容字符串作为key）
+        let cacheKey = "math:\(node.content):\(node.display)"
+        
         MathHTMLRenderer.shared.render(
             html: html,
             display: node.display,
@@ -1204,6 +1208,28 @@ public class UIKitRenderer {
                 
                 if let image = image {
                     imageView.image = image
+                    
+                    // 保存图片到 Kingfisher 缓存
+                    context.formulaSizeCacheDelegate?.saveFormulaImage(image, for: cacheKey)
+                    
+                    // 获取图片的实际尺寸
+                    let imageSize = image.size
+                    
+                    // 保存尺寸到缓存（从图片中获取）
+                    context.formulaSizeCacheDelegate?.setCachedSize(imageSize, for: cacheKey)
+                    
+                    // 计算实际需要的总高度（图片高度 + padding）
+                    let padding = context.theme.codeBlockPadding
+                    let actualHeight = imageSize.height + padding * 2
+                    
+                    // 获取当前容器的高度
+                    let currentHeight = containerView.frame.height
+                    
+                    // 如果实际高度与当前高度不同，触发高度刷新回调
+                    if abs(actualHeight - currentHeight) > 1.0, let onHeightChanged = context.onLayoutHeightChanged {
+                        let heightDiff = actualHeight - currentHeight
+                        onHeightChanged(heightDiff)
+                    }
                 } else {
                     // 渲染失败时，像代码块一样展示原始内容
                     imageView.removeFromSuperview()
@@ -1284,6 +1310,9 @@ public class UIKitRenderer {
                                         Int(bgComponents[2] * 255)
         )
         
+        // 生成缓存键（使用内容字符串作为key）
+        let cacheKey = "mermaid:\(node.content)"
+        
         MermaidHTMLRenderer.shared.render(
             mermaidCode: node.content,
             textColor: textColorHex,
@@ -1295,6 +1324,28 @@ public class UIKitRenderer {
                 
                 if let image = image {
                     imageView.image = image
+                    
+                    // 保存图片到 Kingfisher 缓存
+                    context.formulaSizeCacheDelegate?.saveFormulaImage(image, for: cacheKey)
+                    
+                    // 获取图片的实际尺寸
+                    let imageSize = image.size
+                    
+                    // 保存尺寸到缓存（从图片中获取）
+                    context.formulaSizeCacheDelegate?.setCachedSize(imageSize, for: cacheKey)
+                    
+                    // 计算实际需要的总高度（图片高度 + padding）
+                    let padding = context.theme.codeBlockPadding
+                    let actualHeight = imageSize.height + padding * 2
+                    
+                    // 获取当前容器的高度
+                    let currentHeight = containerView.frame.height
+                    
+                    // 如果实际高度与当前高度不同，触发高度刷新回调
+                    if abs(actualHeight - currentHeight) > 1.0, let onHeightChanged = context.onLayoutHeightChanged {
+                        let heightDiff = actualHeight - currentHeight
+                        onHeightChanged(heightDiff)
+                    }
                 } else {
                     // 渲染失败时，像代码块一样展示原始内容
                     imageView.removeFromSuperview()
