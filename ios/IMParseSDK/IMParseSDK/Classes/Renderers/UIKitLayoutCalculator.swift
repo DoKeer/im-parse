@@ -92,6 +92,9 @@ public class NodeLayout {
                 textView.backgroundColor = .clear
                 textView.frame = CGRect(origin: .zero, size: frame.size)
                 
+                // 让 UITextView 的文本垂直居中，与 UILabel 对齐
+                centerTextViewVertically(textView, attributedString: attributedString, frame: frame.size)
+                
                 // 设置代理以处理链接点击
                 let linkHandler = LinkHandler(onLinkTap: context.onLinkTap)
                 textView.delegate = linkHandler
@@ -256,12 +259,16 @@ public class NodeLayout {
                         textView_.textContainerInset = .zero
                         textView_.textContainer.lineFragmentPadding = 0
                         textView_.backgroundColor = .clear
-                        textView_.frame = CGRect(
+                        let cellFrame = CGRect(
                             x: cellPadding,
                             y: cellPadding,
                             width: cellLayout.frame.width - cellPadding * 2,
                             height: cellLayout.frame.height - cellPadding * 2
                         )
+                        textView_.frame = cellFrame
+                        
+                        // 让 UITextView 的文本垂直居中，与 UILabel 对齐
+                        centerTextViewVertically(textView_, attributedString: attributedString, frame: cellFrame.size)
                         
                         // 设置代理以处理链接点击
                         let linkHandler = LinkHandler(onLinkTap: context.onLinkTap)
@@ -316,6 +323,29 @@ public class NodeLayout {
                 containerView.addSubview(divider)
                 currentY += 1
             }
+        }
+    }
+    
+    /// 让 UITextView 的文本垂直居中，与 UILabel 对齐
+    /// - Parameters:
+    ///   - textView: UITextView 实例
+    ///   - attributedString: 属性字符串
+    ///   - frame: 文本视图的 frame 大小
+    private func centerTextViewVertically(_ textView: UITextView, attributedString: NSAttributedString, frame: CGSize) {
+        // 计算文本的实际高度
+        let textSize = attributedString.boundingRect(
+            with: CGSize(width: frame.width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        ).size
+        
+        let textHeight = ceil(textSize.height)
+        let containerHeight = frame.height
+        
+        // 如果文本高度小于容器高度，调整 textContainerInset 使其垂直居中
+        if textHeight < containerHeight {
+            let verticalInset = (containerHeight - textHeight) / 2.0
+            textView.textContainerInset = UIEdgeInsets(top: verticalInset, left: 0, bottom: verticalInset, right: 0)
         }
     }
     
