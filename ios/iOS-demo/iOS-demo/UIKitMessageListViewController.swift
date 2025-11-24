@@ -375,7 +375,7 @@ class MessageTableViewCell: UITableViewCell {
         onHeightChanged: ((CGFloat) -> Void)?
     ) -> UIKitRenderContext {
         return UIKitRenderContext(
-            theme: .default,
+            theme: UIKitTheme.default,
             width: width,
             onLinkTap: { url in
                 // URL 打开浏览器

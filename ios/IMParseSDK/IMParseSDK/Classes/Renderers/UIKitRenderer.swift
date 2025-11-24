@@ -28,7 +28,7 @@ public class UIKitRenderer {
     public init() {}
     
     deinit {
-        print("UIKitRenderer 实例被销毁")
+//        print("UIKitRenderer 实例被销毁")
     }
     
     // MARK: - 公共 API
@@ -43,18 +43,39 @@ public class UIKitRenderer {
     ///   - context: 渲染上下文
     /// - Returns: 使用 Auto Layout 的 UIView
     public func render(ast: RootNode, context: UIKitRenderContext) -> UIView {
+        // 应用 maxContentWidth 限制内容宽度
+        let effectiveWidth = min(context.width, context.theme.maxContentWidth)
+        
+        // 创建外层容器，应用 contentPadding
+        let outerContainer = UIView()
+        outerContainer.translatesAutoresizingMaskIntoConstraints = false
+        
+        // 创建内容容器（UIStackView）
         let containerView = UIStackView()
         containerView.axis = .vertical
         containerView.alignment = .leading
         containerView.spacing = context.theme.paragraphSpacing
         containerView.distribution = .fill
+        containerView.translatesAutoresizingMaskIntoConstraints = false
+        
+        outerContainer.addSubview(containerView)
+        
+        // 设置约束：内容容器有内边距
+        NSLayoutConstraint.activate([
+            containerView.topAnchor.constraint(equalTo: outerContainer.topAnchor, constant: context.theme.contentPadding),
+            containerView.leadingAnchor.constraint(equalTo: outerContainer.leadingAnchor, constant: context.theme.contentPadding),
+            containerView.trailingAnchor.constraint(equalTo: outerContainer.trailingAnchor, constant: -context.theme.contentPadding),
+            containerView.bottomAnchor.constraint(equalTo: outerContainer.bottomAnchor, constant: -context.theme.contentPadding),
+            // 限制最大宽度
+            containerView.widthAnchor.constraint(lessThanOrEqualToConstant: effectiveWidth - context.theme.contentPadding * 2)
+        ])
         
         for child in ast.children {
             let childView = renderNodeWrapper(child, context: context)
             containerView.addArrangedSubview(childView)
         }
         
-        return containerView
+        return outerContainer
     }
     
     /// 渲染 AST 根节点（使用 frame 计算，不使用 Auto Layout）
@@ -131,7 +152,20 @@ public class UIKitRenderer {
         case .link(let node):
             return renderLink(node, context: context)
         case .image(let node):
-            return renderImage(node, context: context)
+            // Auto Layout 模式：需要添加 imageMargin 边距
+            let imageView = renderImage(node, context: context)
+            let marginContainer = UIView()
+            marginContainer.translatesAutoresizingMaskIntoConstraints = false
+            marginContainer.addSubview(imageView)
+            
+            NSLayoutConstraint.activate([
+                imageView.topAnchor.constraint(equalTo: marginContainer.topAnchor, constant: context.theme.imageMargin),
+                imageView.leadingAnchor.constraint(equalTo: marginContainer.leadingAnchor),
+                imageView.trailingAnchor.constraint(equalTo: marginContainer.trailingAnchor),
+                imageView.bottomAnchor.constraint(equalTo: marginContainer.bottomAnchor, constant: -context.theme.imageMargin)
+            ])
+            
+            return marginContainer
         case .list(let node):
             return renderList(node, context: context)
         case .listItem(_):
@@ -990,9 +1024,21 @@ public class UIKitRenderer {
         stackView.spacing = 0
         stackView.distribution = .fillEqually
         
-        for cell in row.cells {
+        for (index, cell) in row.cells.enumerated() {
             let cellView = renderTableCell(cell, isHeader: isHeader, context: context)
             stackView.addArrangedSubview(cellView)
+            
+            // 在单元格之间添加垂直分隔线（除了最后一个单元格）
+            if index < row.cells.count - 1 {
+                let divider = UIView()
+                divider.backgroundColor = context.theme.tableBorderColor
+                divider.translatesAutoresizingMaskIntoConstraints = false
+                // 分隔线使用固定宽度，不会影响单元格的 fillEqually 分配
+                NSLayoutConstraint.activate([
+                    divider.widthAnchor.constraint(equalToConstant: 1)
+                ])
+                stackView.addArrangedSubview(divider)
+            }
         }
         
         return stackView

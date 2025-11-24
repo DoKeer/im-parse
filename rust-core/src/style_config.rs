@@ -191,7 +191,7 @@ fn default_blockquote_border_width() -> f32 { 4.0 }
 fn default_blockquote_border_color() -> String { "#dddddd".to_string() }
 fn default_blockquote_text_color() -> String { "#666666".to_string() }
 fn default_image_border_radius() -> f32 { 8.0 }
-fn default_image_margin() -> f32 { 16.0 }
+fn default_image_margin() -> f32 { 0.0 }
 fn default_mention_background() -> String { "#E3F2FD".to_string() }
 fn default_mention_text_color() -> String { "#1976D2".to_string() }
 fn default_card_background() -> String { "#f9f9f9".to_string() }
@@ -199,9 +199,9 @@ fn default_card_border_color() -> String { "#dddddd".to_string() }
 fn default_card_padding() -> f32 { 16.0 }
 fn default_card_border_radius() -> f32 { 8.0 }
 fn default_hr_color() -> String { "#dddddd".to_string() }
-fn default_line_height() -> f32 { 1.6 }
+fn default_line_height() -> f32 { 1.0 }
 fn default_max_content_width() -> f32 { 800.0 }
-fn default_content_padding() -> f32 { 20.0 }
+fn default_content_padding() -> f32 { 2.0 }
 
 impl StyleConfig {
     /// 创建深色模式配置

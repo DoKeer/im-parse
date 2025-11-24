@@ -110,11 +110,21 @@ public class NodeLayout {
             switch nodeWrapper {
             case .image(let imgNode):
                 // 图片：使用 UIKitRenderer 渲染（已包含点击事件处理）
+                // 注意：frame.size 已经包含了 imageMargin，所以需要创建容器视图
+                let containerView = UIView()
+                containerView.frame = CGRect(origin: .zero, size: frame.size)
+                
                 let renderer = UIKitRenderer()
                 let imageView = renderer.renderImage(imgNode, context: context)
                 // 移除 Auto Layout 约束，转换为 frame 布局
-                convertToFrameLayout(imageView, size: frame.size)
-                view = imageView
+                let imageMargin = context.theme.imageMargin
+                let imageSize = CGSize(width: frame.size.width, height: frame.size.height - imageMargin * 2)
+                convertToFrameLayout(imageView, size: imageSize)
+                
+                // 图片视图在容器中的位置（上下有边距）
+                imageView.frame = CGRect(x: 0, y: imageMargin, width: imageSize.width, height: imageSize.height)
+                containerView.addSubview(imageView)
+                view = containerView
                 
             case .codeBlock(let codeBlockNode):
                 // 代码块：使用 UIKitRenderer 渲染（已包含点击事件处理）
@@ -125,11 +135,16 @@ public class NodeLayout {
                 view = codeBlockView
                 
             case .table(_):
+                // 表格：需要特殊处理，渲染行和单元格
+                // 注意：表格的 children 是 rowLayouts，每个 rowLayout 的 children 是 cellLayouts
                 view = UIView()
                 view.frame = CGRect(origin: .zero, size: frame.size)
                 // 绘制边框
                 view.layer.borderWidth = 1
                 view.layer.borderColor = context.theme.tableBorderColor.cgColor
+                
+                // 表格内容通过递归渲染 children（rowLayouts）来显示
+                // 但我们需要在渲染时添加行分隔线和单元格分隔线
                 
             case .math(let mathNode):
                 // 数学公式：使用 UIKitRenderer 渲染（已包含点击事件处理）
@@ -181,6 +196,9 @@ public class NodeLayout {
         // 注意：对于代码块，renderCodeBlock 已经创建了完整的视图（包括文本），所以跳过 children 处理
         if let nodeWrapper = node, case .codeBlock = nodeWrapper {
             // 代码块已经通过 renderCodeBlock 创建了完整视图，不需要再处理 children
+        } else if let nodeWrapper = node, case .table = nodeWrapper {
+            // 表格：需要特殊处理，渲染行、单元格分隔线和单元格内容
+            renderTableChildren(children: children, into: view, context: context)
         } else {
             for childLayout in children {
                 let childView = childLayout.render(context: context)
@@ -195,6 +213,110 @@ public class NodeLayout {
         }
         
         return view
+    }
+    
+    /// 渲染表格的子视图（行和单元格）
+    private func renderTableChildren(children: [NodeLayout], into containerView: UIView, context: UIKitRenderContext) {
+        let cellPadding = context.theme.tableCellPadding
+        var currentY: CGFloat = 0
+        
+        for (rowIndex, rowLayout) in children.enumerated() {
+            // 渲染行（包含单元格）
+            let rowView = UIView()
+            rowView.frame = CGRect(x: 0, y: currentY, width: rowLayout.frame.width, height: rowLayout.frame.height)
+            rowView.backgroundColor = rowLayout.backgroundColor
+            containerView.addSubview(rowView)
+            
+            // 渲染行内的单元格
+            var currentX: CGFloat = 0
+            for (cellIndex, cellLayout) in rowLayout.children.enumerated() {
+                // 创建单元格容器
+                let cellView = UIView()
+                cellView.frame = CGRect(x: currentX, y: 0, width: cellLayout.frame.width, height: cellLayout.frame.height)
+                rowView.addSubview(cellView)
+                
+                // 渲染单元格内容（NSAttributedString）
+                if let attributedString = cellLayout.content as? NSAttributedString {
+                    // 检查是否包含链接
+                    var hasLink = false
+                    attributedString.enumerateAttribute(.link, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
+                        if value != nil {
+                            hasLink = true
+                            stop.pointee = true
+                        }
+                    }
+                    
+                    let textView: UIView
+                    if hasLink {
+                        // 如果包含链接，使用 UITextView 以支持点击
+                        let textView_ = UITextView()
+                        textView_.attributedText = attributedString
+                        textView_.isEditable = false
+                        textView_.isScrollEnabled = false
+                        textView_.textContainerInset = .zero
+                        textView_.textContainer.lineFragmentPadding = 0
+                        textView_.backgroundColor = .clear
+                        textView_.frame = CGRect(
+                            x: cellPadding,
+                            y: cellPadding,
+                            width: cellLayout.frame.width - cellPadding * 2,
+                            height: cellLayout.frame.height - cellPadding * 2
+                        )
+                        
+                        // 设置代理以处理链接点击
+                        let linkHandler = LinkHandler(onLinkTap: context.onLinkTap)
+                        textView_.delegate = linkHandler
+                        objc_setAssociatedObject(textView_, &AssociatedKeys.linkHandler, linkHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                        
+                        textView = textView_
+                    } else {
+                        // 纯文本，使用 UILabel 性能更好
+                        let label = UILabel()
+                        label.attributedText = attributedString
+                        label.numberOfLines = 0
+                        label.frame = CGRect(
+                            x: cellPadding,
+                            y: cellPadding,
+                            width: cellLayout.frame.width - cellPadding * 2,
+                            height: cellLayout.frame.height - cellPadding * 2
+                        )
+                        textView = label
+                    }
+                    cellView.addSubview(textView)
+                }
+                
+                // 在单元格右侧添加垂直分隔线（除了最后一个单元格）
+                if cellIndex < rowLayout.children.count - 1 {
+                    let divider = UIView()
+                    divider.backgroundColor = context.theme.tableBorderColor
+                    divider.frame = CGRect(
+                        x: currentX + cellLayout.frame.width,
+                        y: 0,
+                        width: 1,
+                        height: cellLayout.frame.height
+                    )
+                    rowView.addSubview(divider)
+                }
+                
+                currentX += cellLayout.frame.width
+            }
+            
+            currentY += rowLayout.frame.height
+            
+            // 在行下方添加水平分隔线（除了最后一行）
+            if rowIndex < children.count - 1 {
+                let divider = UIView()
+                divider.backgroundColor = context.theme.tableBorderColor
+                divider.frame = CGRect(
+                    x: 0,
+                    y: currentY,
+                    width: rowLayout.frame.width,
+                    height: 1
+                )
+                containerView.addSubview(divider)
+                currentY += 1
+            }
+        }
     }
     
     /// 将使用 Auto Layout 的视图转换为 frame 布局
@@ -269,13 +391,28 @@ public class UIKitLayoutCalculator {
     
     /// 计算 AST 的布局
     public static func calculateLayout(ast: RootNode, context: UIKitRenderContext) -> NodeLayout {
-        // 根节点是一个垂直堆栈
-        return calculateVerticalStackLayout(
+        // 应用 maxContentWidth 限制内容宽度
+        let effectiveWidth = min(context.width, context.theme.maxContentWidth)
+        
+        // 应用 contentPadding，计算实际可用宽度
+        let contentWidth = effectiveWidth - context.theme.contentPadding * 2
+        
+        // 根节点是一个垂直堆栈，应用内边距
+        let innerLayout = calculateVerticalStackLayout(
             children: ast.children,
             context: context,
-            origin: .zero,
-            width: context.width,
+            origin: CGPoint(x: context.theme.contentPadding, y: context.theme.contentPadding),
+            width: contentWidth,
             spacing: context.theme.paragraphSpacing
+        )
+        
+        // 返回包含内边距的总布局
+        let totalWidth = effectiveWidth
+        let totalHeight = innerLayout.frame.height + context.theme.contentPadding * 2
+        
+        return NodeLayout(
+            frame: CGRect(origin: .zero, size: CGSize(width: totalWidth, height: totalHeight)),
+            children: [innerLayout]
         )
     }
     
@@ -290,8 +427,11 @@ public class UIKitLayoutCalculator {
         var currentY: CGFloat = 0
         var childLayouts: [NodeLayout] = []
         
+        // 确保宽度不超过 maxContentWidth（如果传入的 width 已经考虑了内边距，这里不需要再次限制）
+        let effectiveWidth = min(width, context.theme.maxContentWidth)
+        
         for child in children {
-            let childLayout = calculateNodeLayout(child, context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+            let childLayout = calculateNodeLayout(child, context: context, origin: CGPoint(x: 0, y: currentY), width: effectiveWidth)
             childLayouts.append(childLayout)
             currentY += childLayout.frame.height + spacing
         }
@@ -305,7 +445,7 @@ public class UIKitLayoutCalculator {
         let totalHeight = max(0, currentY)
         
         return NodeLayout(
-            frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
+            frame: CGRect(origin: origin, size: CGSize(width: effectiveWidth, height: totalHeight)),
             children: childLayouts
         )
     }
@@ -423,19 +563,24 @@ public class UIKitLayoutCalculator {
             
         case .image(let imgNode):
             // 图片布局
-            var height: CGFloat = 200 // 默认高度
+            // 应用 imageMargin，在图片上下添加边距
+            let imageMargin = context.theme.imageMargin
+            var imageHeight: CGFloat = 200 // 默认高度
             
             if let h = imgNode.height, let w = imgNode.width {
                 // 如果有尺寸，按比例计算
                 let ratio = CGFloat(h) / CGFloat(w)
-                height = width * ratio
+                imageHeight = width * ratio
             } else {
                 // 默认 4:3
-                height = width * 0.75
+                imageHeight = width * 0.75
             }
             
+            // 总高度 = 图片高度 + 上下边距
+            let totalHeight = imageHeight + imageMargin * 2
+            
             return NodeLayout(
-                frame: CGRect(origin: origin, size: CGSize(width: width, height: height)),
+                frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
                 node: node
             )
             
@@ -623,6 +768,7 @@ public class UIKitLayoutCalculator {
             switch child {
             case .image(let imgNode):
                 flushTextNodes()
+                // 图片布局已经包含了 imageMargin，所以这里直接使用
                 let imgLayout = calculateNodeLayout(.image(imgNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
                 childLayouts.append(imgLayout)
                 currentY += imgLayout.frame.height
@@ -685,6 +831,7 @@ public class UIKitLayoutCalculator {
             switch child {
             case .image(let imgNode):
                 flushTextNodes()
+                // 图片布局已经包含了 imageMargin，所以这里直接使用
                 let imgLayout = calculateNodeLayout(.image(imgNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
                 childLayouts.append(imgLayout)
                 currentY += imgLayout.frame.height
@@ -939,6 +1086,7 @@ public class UIKitLayoutCalculator {
             switch child {
             case .image(let imgNode):
                 flushTextNodes()
+                // 图片布局已经包含了 imageMargin，所以这里直接使用
                 let imgLayout = calculateNodeLayout(.image(imgNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
                 childLayouts.append(imgLayout)
                 currentY += imgLayout.frame.height

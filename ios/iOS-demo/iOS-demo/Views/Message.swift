@@ -76,7 +76,7 @@ public struct Message: Identifiable, Codable {
         
         // 创建布局上下文
         let context = UIKitRenderContext(
-            theme: .default, // 使用默认主题，实际项目中可能需要从配置获取
+            theme: UIKitTheme.default, // 使用默认主题，实际项目中可能需要从配置获取
             width: width,
             onLinkTap: nil,
             onImageTap: nil,
