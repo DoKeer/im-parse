@@ -692,10 +692,22 @@ public class UIKitLayoutCalculator {
         // 从 rust-core 获取 HTML（同步操作，可以在后台线程执行）
         let result = IMParseCore.mathToHTML(node.content, display: node.display)
         
-        guard result.success, let html = result.astJSON else {
-            // 如果获取 HTML 失败，使用默认估算值
-            let minHeight: CGFloat = node.display ? 60 : 30
-            return CGSize(width: width, height: minHeight)
+        guard result.success, let _ = result.astJSON else {
+            // 如果获取 HTML 失败，像代码块一样计算高度（基于文本内容）
+            let padding = context.theme.codeBlockPadding
+            let contentWidth = width - padding * 2
+            
+            let font = context.theme.codeFont
+            let attrString = NSAttributedString(string: node.content, attributes: [.font: font])
+            
+            let size = attrString.boundingRect(
+                with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).size
+            
+            let height = ceil(size.height) + padding * 2
+            return CGSize(width: width, height: height)
         }
         
         // 根据 HTML 内容和 display 模式估算尺寸
@@ -743,8 +755,20 @@ public class UIKitLayoutCalculator {
         let result = IMParseCore.mermaidToHTML(node.content, textColor: textColorHex, backgroundColor: backgroundColorHex)
         
         guard result.success else {
-            // 如果获取 HTML 失败，使用默认估算值
-            return CGSize(width: width, height: 300 + padding * 2)
+            // 如果获取 HTML 失败，像代码块一样计算高度（基于文本内容）
+            let contentWidth = width - padding * 2
+            
+            let font = context.theme.codeFont
+            let attrString = NSAttributedString(string: node.content, attributes: [.font: font])
+            
+            let size = attrString.boundingRect(
+                with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).size
+            
+            let height = ceil(size.height) + padding * 2
+            return CGSize(width: width, height: height)
         }
         
         // 根据 Mermaid 代码长度和类型估算尺寸

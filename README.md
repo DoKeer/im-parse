@@ -226,7 +226,6 @@ let height = ast.estimated_height(300.0, &context);
 - [AST 节点类型](rust-core/src/ast.rs)
 - [Markdown 解析器](rust-core/src/markdown_parser.rs)
 - [Delta 解析器](rust-core/src/delta_parser.rs)
-- [高度计算器](rust-core/src/height_calculator.rs)
 
 ### iOS API
 
@@ -278,7 +277,6 @@ im-parse/
 │   │   ├── markdown_parser.rs
 │   │   ├── delta_parser.rs
 │   │   ├── ast_builder.rs
-│   │   ├── height_calculator.rs
 │   │   └── cache.rs
 │   └── Cargo.toml
 ├── ios/                     # iOS 渲染器

@@ -142,33 +142,19 @@ impl MarkdownParser {
                         Tag::Paragraph => {
                             // 检查当前段落是否只包含块级公式
                             // 需要收集所有文本节点的内容，因为 pulldown-cmark 可能会将公式拆分成多个节点
+                            // 注意：pulldown-cmark 可能会将 LaTeX 中的某些内容误解析为 Markdown 格式（如斜体）
+                            // 所以我们需要更宽松的检查：只要文本内容看起来像块级公式，就尝试提取
                             let should_convert_to_block_math = if let Some(para) = &builder.current_paragraph {
-                                // 收集所有文本内容
+                                // 收集所有文本内容（包括嵌套在样式节点中的文本）
                                 let mut full_text = String::new();
-                                let mut only_text_nodes = true;
+                                self.collect_all_text_nodes(&para.children, &mut full_text);
                                 
-                                for child in &para.children {
-                                    match child {
-                                        ASTNode::Text(text_node) => {
-                                            full_text.push_str(&text_node.content);
-                                        }
-                                        _ => {
-                                            only_text_nodes = false;
-                                            break;
-                                        }
-                                    }
-                                }
-                                
-                                // 如果只包含文本节点，检查是否是块级公式
-                                if only_text_nodes {
-                                    let trimmed = full_text.trim();
-                                    if trimmed.starts_with("$$") && trimmed.ends_with("$$") && trimmed.len() > 4 {
-                                        let inner = trimmed[2..trimmed.len()-2].trim();
-                                        // 确保内部没有嵌套的 $$
-                                        !inner.contains("$$")
-                                    } else {
-                                        false
-                                    }
+                                // 检查是否是块级公式
+                                let trimmed = full_text.trim();
+                                if trimmed.starts_with("$$") && trimmed.ends_with("$$") && trimmed.len() > 4 {
+                                    let inner = trimmed[2..trimmed.len()-2].trim();
+                                    // 确保内部没有嵌套的 $$
+                                    !inner.contains("$$")
                                 } else {
                                     false
                                 }
@@ -179,13 +165,9 @@ impl MarkdownParser {
                             if should_convert_to_block_math {
                                 // 获取块级公式内容
                                 if let Some(para) = builder.current_paragraph.take() {
-                                    // 收集所有文本内容
+                                    // 收集所有文本内容（包括嵌套在样式节点中的文本）
                                     let mut full_text = String::new();
-                                    for child in &para.children {
-                                        if let ASTNode::Text(text_node) = child {
-                                            full_text.push_str(&text_node.content);
-                                        }
-                                    }
+                                    self.collect_all_text_nodes(&para.children, &mut full_text);
                                     let trimmed = full_text.trim();
                                     let inner = trimmed[2..trimmed.len()-2].trim();
                                     builder.add_math(inner.to_string(), true);
@@ -362,38 +344,20 @@ impl MarkdownParser {
                     self.collect_inline_content(events, &mut para_children, &mut current_styles);
                     
                     // 检查是否是块级公式
+                    // 注意：pulldown-cmark 可能会将 LaTeX 中的某些内容误解析为 Markdown 格式
+                    // 所以我们需要收集所有文本内容（包括嵌套在样式节点中的文本）
                     let should_convert_to_block_math = {
                         let mut full_text = String::new();
-                        let mut only_text_nodes = true;
+                        self.collect_all_text_nodes(&para_children, &mut full_text);
                         
-                        for child in &para_children {
-                            match child {
-                                ASTNode::Text(text_node) => {
-                                    full_text.push_str(&text_node.content);
-                                }
-                                _ => {
-                                    only_text_nodes = false;
-                                    break;
-                                }
-                            }
-                        }
-                        
-                        if only_text_nodes {
-                            let trimmed = full_text.trim();
-                            trimmed.starts_with("$$") && trimmed.ends_with("$$") && trimmed.len() > 4
-                                && !trimmed[2..trimmed.len()-2].trim().contains("$$")
-                        } else {
-                            false
-                        }
+                        let trimmed = full_text.trim();
+                        trimmed.starts_with("$$") && trimmed.ends_with("$$") && trimmed.len() > 4
+                            && !trimmed[2..trimmed.len()-2].trim().contains("$$")
                     };
                     
                     if should_convert_to_block_math {
                         let mut full_text = String::new();
-                        for child in &para_children {
-                            if let ASTNode::Text(text_node) = child {
-                                full_text.push_str(&text_node.content);
-                            }
-                        }
+                        self.collect_all_text_nodes(&para_children, &mut full_text);
                         let trimmed = full_text.trim();
                         let inner = trimmed[2..trimmed.len()-2].trim();
                         children.push(ASTNode::Math(MathNode { content: inner.to_string(), display: true }));
@@ -544,38 +508,20 @@ impl MarkdownParser {
                         }
                     }
                     // 检查是否是块级公式
+                    // 注意：pulldown-cmark 可能会将 LaTeX 中的某些内容误解析为 Markdown 格式
+                    // 所以我们需要收集所有文本内容（包括嵌套在样式节点中的文本）
                     let should_convert_to_block_math = {
                         let mut full_text = String::new();
-                        let mut only_text_nodes = true;
+                        self.collect_all_text_nodes(&para_children, &mut full_text);
                         
-                        for child in &para_children {
-                            match child {
-                                ASTNode::Text(text_node) => {
-                                    full_text.push_str(&text_node.content);
-                                }
-                                _ => {
-                                    only_text_nodes = false;
-                                    break;
-                                }
-                            }
-                        }
-                        
-                        if only_text_nodes {
-                            let trimmed = full_text.trim();
-                            trimmed.starts_with("$$") && trimmed.ends_with("$$") && trimmed.len() > 4
-                                && !trimmed[2..trimmed.len()-2].trim().contains("$$")
-                        } else {
-                            false
-                        }
+                        let trimmed = full_text.trim();
+                        trimmed.starts_with("$$") && trimmed.ends_with("$$") && trimmed.len() > 4
+                            && !trimmed[2..trimmed.len()-2].trim().contains("$$")
                     };
                     
                     if should_convert_to_block_math {
                         let mut full_text = String::new();
-                        for child in &para_children {
-                            if let ASTNode::Text(text_node) = child {
-                                full_text.push_str(&text_node.content);
-                            }
-                        }
+                        self.collect_all_text_nodes(&para_children, &mut full_text);
                         let trimmed = full_text.trim();
                         let inner = trimmed[2..trimmed.len()-2].trim();
                         children.push(ASTNode::Math(MathNode { content: inner.to_string(), display: true }));
@@ -1005,6 +951,32 @@ impl MarkdownParser {
         }
 
         Some(current)
+    }
+
+    /// 递归收集所有文本节点的内容（包括嵌套在样式节点中的文本）
+    fn collect_all_text_nodes(&self, nodes: &[ASTNode], output: &mut String) {
+        for node in nodes {
+            match node {
+                ASTNode::Text(text_node) => {
+                    output.push_str(&text_node.content);
+                }
+                ASTNode::Strong(strong_node) => {
+                    self.collect_all_text_nodes(&strong_node.children, output);
+                }
+                ASTNode::Em(em_node) => {
+                    self.collect_all_text_nodes(&em_node.children, output);
+                }
+                ASTNode::Strike(strike_node) => {
+                    self.collect_all_text_nodes(&strike_node.children, output);
+                }
+                ASTNode::Link(link_node) => {
+                    self.collect_all_text_nodes(&link_node.children, output);
+                }
+                _ => {
+                    // 其他节点类型不收集文本
+                }
+            }
+        }
     }
 }
 

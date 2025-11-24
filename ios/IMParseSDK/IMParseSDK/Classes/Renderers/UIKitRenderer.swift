@@ -99,7 +99,7 @@ public class UIKitRenderer {
         // 返回的视图的所有子视图都使用精确的 frame 定位
         return layout.render(context: context)
     }
-    
+
     /// 从节点列表构建 NSAttributedString
     /// (代理给 UIKitAttributedStringBuilder)
     public func buildAttributedString(from nodes: [ASTNodeWrapper], context: UIKitRenderContext) -> NSAttributedString {
@@ -1134,7 +1134,24 @@ public class UIKitRenderer {
         let result = IMParseCore.mathToHTML(node.content, display: node.display)
         
         guard result.success, let html = result.astJSON else {
-            showMathError(in: containerView, message: "无法获取数学公式 HTML")
+            // 渲染失败时，像代码块一样展示原始内容
+            let label = UILabel()
+            label.text = node.content
+            label.font = context.theme.codeFont
+            label.textColor = context.theme.codeTextColor
+            label.numberOfLines = 0
+            label.translatesAutoresizingMaskIntoConstraints = false
+            
+            containerView.addSubview(label)
+            
+            let padding = context.theme.codeBlockPadding
+            NSLayoutConstraint.activate([
+                label.topAnchor.constraint(equalTo: containerView.topAnchor, constant: padding),
+                label.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: padding),
+                label.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -padding),
+                label.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -padding)
+            ])
+            
             return containerView
         }
         
@@ -1188,33 +1205,30 @@ public class UIKitRenderer {
                 if let image = image {
                     imageView.image = image
                 } else {
-                    self.showMathError(in: containerView, message: "数学公式渲染失败")
+                    // 渲染失败时，像代码块一样展示原始内容
                     imageView.removeFromSuperview()
+                    
+                    let label = UILabel()
+                    label.text = node.content
+                    label.font = context.theme.codeFont
+                    label.textColor = context.theme.codeTextColor
+                    label.numberOfLines = 0
+                    label.translatesAutoresizingMaskIntoConstraints = false
+                    
+                    containerView.addSubview(label)
+                    
+                    let padding = context.theme.codeBlockPadding
+                    NSLayoutConstraint.activate([
+                        label.topAnchor.constraint(equalTo: containerView.topAnchor, constant: padding),
+                        label.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: padding),
+                        label.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -padding),
+                        label.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -padding)
+                    ])
                 }
             }
         }
         
         return containerView
-    }
-    
-    /// 显示数学公式错误
-    func showMathError(in containerView: UIView, message: String) {
-        let errorLabel = UILabel()
-        errorLabel.text = message
-        errorLabel.font = .systemFont(ofSize: 12)
-        errorLabel.textColor = .secondaryLabel
-        errorLabel.textAlignment = .center
-        errorLabel.numberOfLines = 0
-        errorLabel.translatesAutoresizingMaskIntoConstraints = false
-        
-        containerView.addSubview(errorLabel)
-        NSLayoutConstraint.activate([
-            errorLabel.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
-            errorLabel.centerYAnchor.constraint(equalTo: containerView.centerYAnchor),
-            errorLabel.leadingAnchor.constraint(greaterThanOrEqualTo: containerView.leadingAnchor, constant: 8),
-            errorLabel.trailingAnchor.constraint(lessThanOrEqualTo: containerView.trailingAnchor, constant: -8),
-            containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 30)
-        ])
     }
     
     /// 渲染 Mermaid 图表
@@ -1282,33 +1296,30 @@ public class UIKitRenderer {
                 if let image = image {
                     imageView.image = image
                 } else {
-                    self.showMermaidError(in: containerView, message: "Mermaid 图表渲染失败")
+                    // 渲染失败时，像代码块一样展示原始内容
                     imageView.removeFromSuperview()
+                    
+                    let label = UILabel()
+                    label.text = node.content
+                    label.font = context.theme.codeFont
+                    label.textColor = context.theme.codeTextColor
+                    label.numberOfLines = 0
+                    label.translatesAutoresizingMaskIntoConstraints = false
+                    
+                    containerView.addSubview(label)
+                    
+                    let padding = context.theme.codeBlockPadding
+                    NSLayoutConstraint.activate([
+                        label.topAnchor.constraint(equalTo: containerView.topAnchor, constant: padding),
+                        label.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: padding),
+                        label.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -padding),
+                        label.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -padding)
+                    ])
                 }
             }
         }
         
         return containerView
-    }
-    
-    /// 显示 Mermaid 图表错误
-    func showMermaidError(in containerView: UIView, message: String) {
-        let errorLabel = UILabel()
-        errorLabel.text = message
-        errorLabel.font = .systemFont(ofSize: 12)
-        errorLabel.textColor = .secondaryLabel
-        errorLabel.textAlignment = .center
-        errorLabel.numberOfLines = 0
-        errorLabel.translatesAutoresizingMaskIntoConstraints = false
-        
-        containerView.addSubview(errorLabel)
-        NSLayoutConstraint.activate([
-            errorLabel.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
-            errorLabel.centerYAnchor.constraint(equalTo: containerView.centerYAnchor),
-            errorLabel.leadingAnchor.constraint(greaterThanOrEqualTo: containerView.leadingAnchor, constant: 8),
-            errorLabel.trailingAnchor.constraint(lessThanOrEqualTo: containerView.trailingAnchor, constant: -8),
-            containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 100)
-        ])
     }
     
     /// 渲染提及
