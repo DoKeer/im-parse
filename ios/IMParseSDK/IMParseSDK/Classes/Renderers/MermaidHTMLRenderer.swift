@@ -339,7 +339,7 @@ private class MermaidWebViewDelegate: NSObject, WKNavigationDelegate {
 
 // MARK: - Associated Keys
 
-private struct AssociatedKeys {
+fileprivate struct AssociatedKeys {
     static var delegate = "mermaidWebViewDelegate"
     static var processing = "mermaidWebViewProcessing"
 }

@@ -452,7 +452,7 @@ private class MathWebViewDelegate: NSObject, WKNavigationDelegate {
 
 // MARK: - Associated Keys
 
-private struct AssociatedKeys {
+fileprivate struct AssociatedKeys {
     static var delegate = "mathWebViewDelegate"
     static var processing = "mathWebViewProcessing"
 }

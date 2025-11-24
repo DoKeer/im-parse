@@ -2,241 +2,36 @@
 //  UIKitRenderer.swift
 //  IMParseSDK
 //
+//  Created by IMParse on 2025.
+//
 //  UIKit 版本的 AST 渲染器
+//  负责将 AST 节点树转换为 UIView 树
 //
 
 import UIKit
 
-/// 图片加载代理协议
-public protocol UIKitImageLoaderDelegate: AnyObject {
-    /// 加载图片
-    /// - Parameters:
-    ///   - url: 图片 URL
-    ///   - imageView: 目标图片视图
-    ///   - completion: 加载完成回调，参数为加载的图片和错误信息
-    func loadImage(url: URL, into imageView: UIImageView, completion: @escaping (UIImage?, Error?) -> Void)
-}
-
-/// UIKit 渲染上下文
-public struct UIKitRenderContext {
-    public var theme: UIKitTheme
-    public var width: CGFloat
-    public var onLinkTap: ((URL) -> Void)?
-    public var onImageTap: ((ImageNode) -> Void)?
-    public var onMentionTap: ((MentionNode) -> Void)?
-    public var onCodeBlockTap: ((CodeBlockNode) -> Void)?
-    public var onMathTap: ((MathNode) -> Void)?
-    public var onMermaidTap: ((MermaidNode) -> Void)?
-    // 当前文本样式（用于标题等需要特殊样式的场景）
-    public var currentFont: UIFont?
-    public var currentTextColor: UIColor?
-    // 图片加载代理（可选）
-    public weak var imageLoaderDelegate: UIKitImageLoaderDelegate?
-    // 布局高度变化回调（用于通知 cell 高度变化）
-    public var onLayoutHeightChanged: ((CGFloat) -> Void)?
-    
-    public init(theme: UIKitTheme,
-                width: CGFloat,
-                onLinkTap: ((URL) -> Void)? = nil,
-                onImageTap: ((ImageNode) -> Void)? = nil,
-                onMentionTap: ((MentionNode) -> Void)? = nil,
-                onCodeBlockTap: ((CodeBlockNode) -> Void)? = nil,
-                onMathTap: ((MathNode) -> Void)? = nil,
-                onMermaidTap: ((MermaidNode) -> Void)? = nil,
-                currentFont: UIFont? = nil,
-                currentTextColor: UIColor? = nil,
-                imageLoaderDelegate: UIKitImageLoaderDelegate? = nil,
-                onLayoutHeightChanged: ((CGFloat) -> Void)? = nil) {
-        self.theme = theme
-        self.width = width
-        self.onLinkTap = onLinkTap
-        self.onImageTap = onImageTap
-        self.onMentionTap = onMentionTap
-        self.onCodeBlockTap = onCodeBlockTap
-        self.onMathTap = onMathTap
-        self.onMermaidTap = onMermaidTap
-        self.currentFont = currentFont
-        self.currentTextColor = currentTextColor
-        self.imageLoaderDelegate = imageLoaderDelegate
-        self.onLayoutHeightChanged = onLayoutHeightChanged
-    }
-}
-
-/// UIKit 主题配置
-public struct UIKitTheme {
-    public var font: UIFont
-    public var fontSize: CGFloat  // 基础字体大小（用于计算标题大小）
-    public var codeFont: UIFont
-    public var textColor: UIColor
-    public var linkColor: UIColor
-    public var codeBackgroundColor: UIColor
-    public var codeTextColor: UIColor
-    public var headingColors: [UIColor]
-    public var paragraphSpacing: CGFloat
-    public var listItemSpacing: CGFloat
-    public var codeBlockPadding: CGFloat
-    public var codeBlockBorderRadius: CGFloat
-    public var tableCellPadding: CGFloat
-    public var tableBorderColor: UIColor
-    public var tableHeaderBackground: UIColor
-    public var blockquoteBorderWidth: CGFloat
-    public var blockquoteBorderColor: UIColor
-    public var blockquoteTextColor: UIColor
-    public var imageBorderRadius: CGFloat
-    public var imageMargin: CGFloat
-    public var mentionBackground: UIColor
-    public var mentionTextColor: UIColor
-    public var cardBackground: UIColor
-    public var cardBorderColor: UIColor
-    public var cardPadding: CGFloat
-    public var cardBorderRadius: CGFloat
-    public var hrColor: UIColor
-    public var lineHeight: CGFloat
-    public var maxContentWidth: CGFloat
-    public var contentPadding: CGFloat
-    
-    public init(font: UIFont,
-                fontSize: CGFloat,
-                codeFont: UIFont,
-                textColor: UIColor,
-                linkColor: UIColor,
-                codeBackgroundColor: UIColor,
-                codeTextColor: UIColor,
-                headingColors: [UIColor],
-                paragraphSpacing: CGFloat,
-                listItemSpacing: CGFloat,
-                codeBlockPadding: CGFloat,
-                codeBlockBorderRadius: CGFloat,
-                tableCellPadding: CGFloat,
-                tableBorderColor: UIColor,
-                tableHeaderBackground: UIColor,
-                blockquoteBorderWidth: CGFloat,
-                blockquoteBorderColor: UIColor,
-                blockquoteTextColor: UIColor,
-                imageBorderRadius: CGFloat,
-                imageMargin: CGFloat,
-                mentionBackground: UIColor,
-                mentionTextColor: UIColor,
-                cardBackground: UIColor,
-                cardBorderColor: UIColor,
-                cardPadding: CGFloat,
-                cardBorderRadius: CGFloat,
-                hrColor: UIColor,
-                lineHeight: CGFloat,
-                maxContentWidth: CGFloat,
-                contentPadding: CGFloat) {
-        self.font = font
-        self.fontSize = fontSize
-        self.codeFont = codeFont
-        self.textColor = textColor
-        self.linkColor = linkColor
-        self.codeBackgroundColor = codeBackgroundColor
-        self.codeTextColor = codeTextColor
-        self.headingColors = headingColors
-        self.paragraphSpacing = paragraphSpacing
-        self.listItemSpacing = listItemSpacing
-        self.codeBlockPadding = codeBlockPadding
-        self.codeBlockBorderRadius = codeBlockBorderRadius
-        self.tableCellPadding = tableCellPadding
-        self.tableBorderColor = tableBorderColor
-        self.tableHeaderBackground = tableHeaderBackground
-        self.blockquoteBorderWidth = blockquoteBorderWidth
-        self.blockquoteBorderColor = blockquoteBorderColor
-        self.blockquoteTextColor = blockquoteTextColor
-        self.imageBorderRadius = imageBorderRadius
-        self.imageMargin = imageMargin
-        self.mentionBackground = mentionBackground
-        self.mentionTextColor = mentionTextColor
-        self.cardBackground = cardBackground
-        self.cardBorderColor = cardBorderColor
-        self.cardPadding = cardPadding
-        self.cardBorderRadius = cardBorderRadius
-        self.hrColor = hrColor
-        self.lineHeight = lineHeight
-        self.maxContentWidth = maxContentWidth
-        self.contentPadding = contentPadding
-    }
-}
-
-extension UIKitTheme {
-    /// 从 StyleConfig 创建 UIKitTheme
-    public init(from config: StyleConfig) {
-        self.fontSize = CGFloat(config.fontSize)
-        self.font = .systemFont(ofSize: self.fontSize)
-        self.codeFont = .monospacedSystemFont(ofSize: CGFloat(config.codeFontSize), weight: .regular)
-        self.textColor = UIColor(hex: config.textColor) ?? .label
-        self.linkColor = UIColor(hex: config.linkColor) ?? .systemBlue
-        self.codeBackgroundColor = UIColor(hex: config.codeBackgroundColor) ?? UIColor(white: 0.95, alpha: 1.0)
-        self.codeTextColor = UIColor(hex: config.codeTextColor) ?? .label
-        self.headingColors = config.headingColors.map { UIColor(hex: $0) ?? .label }
-        self.paragraphSpacing = CGFloat(config.paragraphSpacing)
-        self.listItemSpacing = CGFloat(config.listItemSpacing)
-        self.codeBlockPadding = CGFloat(config.codeBlockPadding)
-        self.codeBlockBorderRadius = CGFloat(config.codeBlockBorderRadius)
-        self.tableCellPadding = CGFloat(config.tableCellPadding)
-        self.tableBorderColor = UIColor(hex: config.tableBorderColor) ?? UIColor.gray.withAlphaComponent(0.3)
-        self.tableHeaderBackground = UIColor(hex: config.tableHeaderBackground) ?? UIColor.gray.withAlphaComponent(0.1)
-        self.blockquoteBorderWidth = CGFloat(config.blockquoteBorderWidth)
-        self.blockquoteBorderColor = UIColor(hex: config.blockquoteBorderColor) ?? UIColor.gray.withAlphaComponent(0.3)
-        self.blockquoteTextColor = UIColor(hex: config.blockquoteTextColor) ?? .secondaryLabel
-        self.imageBorderRadius = CGFloat(config.imageBorderRadius)
-        self.imageMargin = CGFloat(config.imageMargin)
-        self.mentionBackground = UIColor(hex: config.mentionBackground) ?? UIColor.systemBlue.withAlphaComponent(0.1)
-        self.mentionTextColor = UIColor(hex: config.mentionTextColor) ?? .systemBlue
-        self.cardBackground = UIColor(hex: config.cardBackground) ?? UIColor.systemGray6
-        self.cardBorderColor = UIColor(hex: config.cardBorderColor) ?? UIColor.gray.withAlphaComponent(0.3)
-        self.cardPadding = CGFloat(config.cardPadding)
-        self.cardBorderRadius = CGFloat(config.cardBorderRadius)
-        self.hrColor = UIColor(hex: config.hrColor) ?? .separator
-        self.lineHeight = CGFloat(config.lineHeight)
-        self.maxContentWidth = CGFloat(config.maxContentWidth)
-        self.contentPadding = CGFloat(config.contentPadding)
-    }
-    
-    /// 默认主题（从 StyleConfig.default() 创建）
-    public static var `default`: UIKitTheme {
-        if let config = StyleConfig.default() {
-            return UIKitTheme(from: config)
-        }
-        // 回退到硬编码值
-        return UIKitTheme(
-        font: .systemFont(ofSize: 16),
-            fontSize: 16,
-            codeFont: .monospacedSystemFont(ofSize: 14, weight: .regular),
-        textColor: .label,
-        linkColor: .systemBlue,
-        codeBackgroundColor: UIColor(white: 0.95, alpha: 1.0),
-        codeTextColor: .label,
-            headingColors: [.label, .label, .label, .label, .label, .label],
-            paragraphSpacing: 16,
-            listItemSpacing: 8,
-            codeBlockPadding: 16,
-            codeBlockBorderRadius: 8,
-            tableCellPadding: 8,
-            tableBorderColor: UIColor.gray.withAlphaComponent(0.3),
-            tableHeaderBackground: UIColor.gray.withAlphaComponent(0.1),
-            blockquoteBorderWidth: 4,
-            blockquoteBorderColor: UIColor.gray.withAlphaComponent(0.3),
-            blockquoteTextColor: .secondaryLabel,
-            imageBorderRadius: 8,
-            imageMargin: 16,
-            mentionBackground: UIColor.systemBlue.withAlphaComponent(0.1),
-            mentionTextColor: .systemBlue,
-            cardBackground: UIColor.systemGray6,
-            cardBorderColor: UIColor.gray.withAlphaComponent(0.3),
-            cardPadding: 16,
-            cardBorderRadius: 8,
-            hrColor: .separator,
-            lineHeight: 1.6,
-            maxContentWidth: 800,
-            contentPadding: 20
-        )
-    }
-}
+// MARK: - UIKit AST 渲染器
 
 /// UIKit AST 渲染器
+/// 提供两种渲染模式：
+/// 1. `render(ast:context:)`: 使用 Auto Layout (UIStackView) 渲染，适合动态内容
+/// 2. `renderWithFrame(ast:context:)`: 使用 Frame 布局 (UIKitLayoutCalculator) 渲染，性能更好
 public class UIKitRenderer {
+    
+    // MARK: - 属性
+    
+    /// 属性字符串构建器
+    private let attributedStringBuilder = UIKitAttributedStringBuilder()
+    
+    // MARK: - 初始化
+    
     public init() {}
+    
+    deinit {
+        print("UIKitRenderer 实例被销毁")
+    }
+    
+    // MARK: - 公共 API
     
     /// 渲染 AST 根节点（使用 UIStackView 和 Auto Layout）
     ///
@@ -263,7 +58,7 @@ public class UIKitRenderer {
     }
     
     /// 渲染 AST 根节点（使用 frame 计算，不使用 Auto Layout）
-    /// 
+    ///
     /// 这个方法使用 UIKitLayoutCalculator 在后台预计算布局，然后使用 frame 精确渲染视图。
     /// 与 `render(ast:context:)` 方法不同，这个方法：
     /// - 不使用 UIStackView 和 Auto Layout
@@ -283,6 +78,20 @@ public class UIKitRenderer {
         // 返回的视图的所有子视图都使用精确的 frame 定位
         return layout.render(context: context)
     }
+    
+    /// 从节点列表构建 NSAttributedString
+    /// (代理给 UIKitAttributedStringBuilder)
+    public func buildAttributedString(from nodes: [ASTNodeWrapper], context: UIKitRenderContext) -> NSAttributedString {
+        return attributedStringBuilder.buildAttributedString(from: nodes, context: context)
+    }
+    
+    /// 从单个节点构建 NSAttributedString
+    /// (代理给 UIKitAttributedStringBuilder)
+    func buildAttributedString(from node: ASTNodeWrapper, context: UIKitRenderContext) -> NSAttributedString {
+        return attributedStringBuilder.buildAttributedString(from: node, context: context)
+    }
+    
+    // MARK: - 私有渲染方法
     
     /// 渲染节点包装器
     private func renderNodeWrapper(_ wrapper: ASTNodeWrapper, context: UIKitRenderContext) -> UIView {
@@ -325,15 +134,15 @@ public class UIKitRenderer {
             return renderImage(node, context: context)
         case .list(let node):
             return renderList(node, context: context)
-        case .listItem(let node):
+        case .listItem(_):
             // ListItem 在 renderList 中处理
             return UIView()
         case .table(let node):
             return renderTable(node, context: context)
-        case .tableRow(let node):
+        case .tableRow(_):
             // TableRow 在 renderTable 中处理
             return UIView()
-        case .tableCell(let node):
+        case .tableCell(_):
             // TableCell 在 renderTable 中处理
             return UIView()
         case .math(let node):
@@ -348,7 +157,7 @@ public class UIKitRenderer {
             return renderColor(node, context: context)
         case .blockquote(let node):
             return renderBlockquote(node, context: context)
-        case .horizontalRule(let node):
+        case .horizontalRule(_):
             return renderHorizontalRule(context: context)
         }
     }
@@ -379,6 +188,21 @@ public class UIKitRenderer {
     private func renderParagraphAsAttributedString(_ node: ParagraphNode, context: UIKitRenderContext) -> UIView {
         let attributedString = buildAttributedString(from: node.children, context: context)
         
+        // 使用 UITextView 替代 UILabel 以支持链接点击
+        // 注意：在 renderWithFrame 中有特定的处理逻辑，这里主要用于 Auto Layout 模式
+        let textView = UITextView()
+        textView.attributedText = attributedString
+        textView.isEditable = false
+        textView.isScrollEnabled = false
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.backgroundColor = .clear
+        // 注意：这里我们无法直接设置 delegate 为 context 中的 block
+        // 在 Auto Layout 模式下，链接点击可能需要额外处理，或者使用自定义 Label
+        // 暂时保持 UILabel 逻辑，因为 renderWithFrame 会处理 Frame 模式下的链接
+        
+        // 实际上，为了简单起见，对于 render(Auto Layout)，我们还是使用 UILabel
+        // 如果需要链接点击，建议使用 renderWithFrame
         let label = UILabel()
         label.attributedText = attributedString
         label.numberOfLines = 0
@@ -436,119 +260,6 @@ public class UIKitRenderer {
         return containerView
     }
     
-    /// 从行内节点构建 NSAttributedString
-    public func buildAttributedString(from nodes: [ASTNodeWrapper], context: UIKitRenderContext) -> NSAttributedString {
-        let result = NSMutableAttributedString()
-        
-        for node in nodes {
-            let attributedString = buildAttributedString(from: node, context: context)
-            result.append(attributedString)
-        }
-        
-        return result
-    }
-    
-    /// 从单个行内节点构建 NSAttributedString
-    func buildAttributedString(from node: ASTNodeWrapper, context: UIKitRenderContext) -> NSAttributedString {
-        switch node {
-        case .text(let textNode):
-            let font = context.currentFont ?? context.theme.font
-            let color = context.currentTextColor ?? context.theme.textColor
-            return NSAttributedString(
-                string: textNode.content,
-                attributes: [
-                    .font: font,
-                    .foregroundColor: color
-                ]
-            )
-            
-        case .strong(let strongNode):
-            let font = context.currentFont ?? context.theme.font
-            let color = context.currentTextColor ?? context.theme.textColor
-            let boldFont = UIFont.boldSystemFont(ofSize: font.pointSize)
-            let result = NSMutableAttributedString()
-            for child in strongNode.children {
-                let childString = buildAttributedString(from: child, context: context)
-                // 应用粗体
-                let mutableString = NSMutableAttributedString(attributedString: childString)
-                mutableString.addAttribute(.font, value: boldFont, range: NSRange(location: 0, length: mutableString.length))
-                result.append(mutableString)
-            }
-            return result
-            
-        case .em(let emNode):
-            let font = context.currentFont ?? context.theme.font
-            let color = context.currentTextColor ?? context.theme.textColor
-            let result = NSMutableAttributedString()
-            for child in emNode.children {
-                let childString = buildAttributedString(from: child, context: context)
-                let mutableString = NSMutableAttributedString(attributedString: childString)
-                // 应用斜体（倾斜）
-                mutableString.addAttribute(.obliqueness, value: 0.2, range: NSRange(location: 0, length: mutableString.length))
-                result.append(mutableString)
-            }
-            return result
-            
-        case .underline(let underlineNode):
-            let result = NSMutableAttributedString()
-            for child in underlineNode.children {
-                let childString = buildAttributedString(from: child, context: context)
-                let mutableString = NSMutableAttributedString(attributedString: childString)
-                mutableString.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: 0, length: mutableString.length))
-                result.append(mutableString)
-            }
-            return result
-            
-        case .strike(let strikeNode):
-            let font = context.currentFont ?? context.theme.font
-            let color = context.currentTextColor ?? context.theme.textColor
-            let result = NSMutableAttributedString()
-            for child in strikeNode.children {
-                let childString = buildAttributedString(from: child, context: context)
-                let mutableString = NSMutableAttributedString(attributedString: childString)
-                // 应用删除线：同时设置样式和颜色
-                mutableString.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: 0, length: mutableString.length))
-                mutableString.addAttribute(.strikethroughColor, value: color, range: NSRange(location: 0, length: mutableString.length))
-                result.append(mutableString)
-            }
-            return result
-            
-        case .link(let linkNode):
-            let result = NSMutableAttributedString()
-            for child in linkNode.children {
-                let childString = buildAttributedString(from: child, context: context)
-                let mutableString = NSMutableAttributedString(attributedString: childString)
-                mutableString.addAttribute(.foregroundColor, value: context.theme.linkColor, range: NSRange(location: 0, length: mutableString.length))
-                if let url = URL(string: linkNode.url) {
-                    mutableString.addAttribute(.link, value: url, range: NSRange(location: 0, length: mutableString.length))
-                }
-                result.append(mutableString)
-            }
-            return result
-            
-        case .code(let codeNode):
-            // 行内代码：使用等宽字体和背景色
-            let font = context.theme.codeFont
-            let color = context.theme.codeTextColor
-            let bgColor = context.theme.codeBackgroundColor
-            
-            let attributedString = NSMutableAttributedString(
-                string: codeNode.content,
-                attributes: [
-                    .font: font,
-                    .foregroundColor: color,
-                    .backgroundColor: bgColor
-                ]
-            )
-            return attributedString
-            
-        default:
-            // 对于其他类型（图片、数学公式、Mermaid、提及），返回空字符串
-            // 这些节点会在 renderParagraphWithSpecialNodes 中单独处理
-            return NSAttributedString()
-        }
-    }
-    
     /// 渲染标题
     private func renderHeading(_ node: HeadingNode, context: UIKitRenderContext) -> UIView {
         // 使用与 HTML 渲染器相同的相对大小计算
@@ -567,7 +278,6 @@ public class UIKitRenderer {
         headingContext.currentTextColor = color
         
         // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
-        // 行内代码现在可以嵌入到 NSAttributedString 中，不需要单独处理
         let hasSpecialNodes = node.children.contains { wrapper in
             switch wrapper {
             case .image, .math, .mermaid:
@@ -699,7 +409,6 @@ public class UIKitRenderer {
         for child in node.children {
             let childView = renderInlineNodeWrapper(child, context: context)
             // 应用斜体效果：对 UILabel 使用 NSAttributedString 的倾斜属性
-            // 对中英文都有效
             applyItalicToView(childView, context: context)
             stackView.addArrangedSubview(childView)
         }
@@ -708,7 +417,6 @@ public class UIKitRenderer {
     
     /// 对视图应用斜体效果
     private func applyItalicToView(_ view: UIView, context: UIKitRenderContext) {
-        // 递归处理视图树中的所有 UILabel
         applyItalicToLabels(in: view, context: context)
     }
     
@@ -720,18 +428,15 @@ public class UIKitRenderer {
             let font = context.currentFont ?? label.font ?? context.theme.font
             let color = context.currentTextColor ?? label.textColor ?? context.theme.textColor
             
-            // 如果 label 已经有 attributedText，需要合并属性
             var attributes: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: color,
-                .obliqueness: 0.2  // 倾斜属性，对中英文都有效
+                .obliqueness: 0.2
             ]
             
             if let attributedText = label.attributedText, attributedText.length > 0 {
-                // 合并现有属性（保留下划线、删除线等样式）
                 let existingAttrs = attributedText.attributes(at: 0, effectiveRange: nil)
                 for (key, value) in existingAttrs {
-                    // 保留除字体、颜色、倾斜之外的其他属性
                     if key != .font && key != .foregroundColor && key != .obliqueness {
                         attributes[key] = value
                     }
@@ -742,14 +447,12 @@ public class UIKitRenderer {
             return
         }
         
-        // 递归处理 UIStackView 的 arrangedSubviews
         if let stackView = view as? UIStackView {
             for arrangedSubview in stackView.arrangedSubviews {
                 applyItalicToLabels(in: arrangedSubview, context: context)
             }
         }
         
-        // 递归处理普通 subviews
         for subview in view.subviews {
             applyItalicToLabels(in: subview, context: context)
         }
@@ -823,7 +526,7 @@ public class UIKitRenderer {
     }
     
     /// 渲染代码块
-    func renderCodeBlock(_ node: CodeBlockNode, context: UIKitRenderContext) -> UIView {
+    internal func renderCodeBlock(_ node: CodeBlockNode, context: UIKitRenderContext) -> UIView {
         let containerView = UIView()
         containerView.backgroundColor = context.theme.codeBackgroundColor
         containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
@@ -847,12 +550,10 @@ public class UIKitRenderer {
         ])
         
         // 添加点击手势
-        if context.onCodeBlockTap != nil {
-            let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleCodeBlockTap(_:)))
-            containerView.addGestureRecognizer(tapGesture)
-            containerView.isUserInteractionEnabled = true
-            objc_setAssociatedObject(containerView, &AssociatedKeys.codeBlockNode, node, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-            objc_setAssociatedObject(containerView, &AssociatedKeys.context, context, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        if let onCodeBlockTap = context.onCodeBlockTap {
+            containerView.addTapAction {
+                onCodeBlockTap(node)
+            }
         }
         
         return containerView
@@ -876,86 +577,20 @@ public class UIKitRenderer {
         
         // 添加点击手势
         if let url = URL(string: node.url) {
-            let tapGesture = UITapGestureRecognizer(target: nil, action: nil)
-            tapGesture.addTarget(self, action: #selector(handleLinkTap(_:)))
-            stackView.addGestureRecognizer(tapGesture)
-            stackView.isUserInteractionEnabled = true
-            // 存储 URL 和 context
-            objc_setAssociatedObject(stackView, &AssociatedKeys.url, url, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-            objc_setAssociatedObject(stackView, &AssociatedKeys.context, context, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            stackView.addTapAction {
+                if let onLinkTap = context.onLinkTap {
+                    onLinkTap(url)
+                } else {
+                    UIApplication.shared.open(url)
+                }
+            }
         }
         
         return stackView
     }
     
-    @objc private func handleLinkTap(_ gesture: UITapGestureRecognizer) {
-        guard let view = gesture.view,
-              let url = objc_getAssociatedObject(view, &AssociatedKeys.url) as? URL,
-              let context = objc_getAssociatedObject(view, &AssociatedKeys.context) as? UIKitRenderContext else {
-            return
-        }
-        
-        // 优先使用回调，如果没有回调则使用默认行为
-        if let onLinkTap = context.onLinkTap {
-            onLinkTap(url)
-        } else {
-            // 兜底：如果没有设置回调，使用默认行为
-            UIApplication.shared.open(url)
-        }
-    }
-    
-    @objc private func handleImageTap(_ gesture: UITapGestureRecognizer) {
-        guard let view = gesture.view,
-              let node = objc_getAssociatedObject(view, &AssociatedKeys.imageNode) as? ImageNode,
-              let context = objc_getAssociatedObject(view, &AssociatedKeys.context) as? UIKitRenderContext else {
-            return
-        }
-        
-        context.onImageTap?(node)
-    }
-    
-    @objc private func handleMentionTap(_ gesture: UITapGestureRecognizer) {
-        guard let view = gesture.view,
-              let node = objc_getAssociatedObject(view, &AssociatedKeys.mentionNode) as? MentionNode,
-              let context = objc_getAssociatedObject(view, &AssociatedKeys.context) as? UIKitRenderContext else {
-            return
-        }
-        
-        context.onMentionTap?(node)
-    }
-    
-    @objc private func handleCodeBlockTap(_ gesture: UITapGestureRecognizer) {
-        guard let view = gesture.view,
-              let node = objc_getAssociatedObject(view, &AssociatedKeys.codeBlockNode) as? CodeBlockNode,
-              let context = objc_getAssociatedObject(view, &AssociatedKeys.context) as? UIKitRenderContext else {
-            return
-        }
-        
-        context.onCodeBlockTap?(node)
-    }
-    
-    @objc private func handleMathTap(_ gesture: UITapGestureRecognizer) {
-        guard let view = gesture.view,
-              let node = objc_getAssociatedObject(view, &AssociatedKeys.mathNode) as? MathNode,
-              let context = objc_getAssociatedObject(view, &AssociatedKeys.context) as? UIKitRenderContext else {
-            return
-        }
-        
-        context.onMathTap?(node)
-    }
-    
-    @objc private func handleMermaidTap(_ gesture: UITapGestureRecognizer) {
-        guard let view = gesture.view,
-              let node = objc_getAssociatedObject(view, &AssociatedKeys.mermaidNode) as? MermaidNode,
-              let context = objc_getAssociatedObject(view, &AssociatedKeys.context) as? UIKitRenderContext else {
-            return
-        }
-        
-        context.onMermaidTap?(node)
-    }
-    
     /// 渲染图片
-    func renderImage(_ node: ImageNode, context: UIKitRenderContext) -> UIView {
+    internal func renderImage(_ node: ImageNode, context: UIKitRenderContext) -> UIView {
         let containerView = UIView()
         containerView.translatesAutoresizingMaskIntoConstraints = false
         
@@ -965,7 +600,6 @@ public class UIKitRenderer {
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.backgroundColor = UIColor.systemGray6
         
-        // 添加加载指示器
         let activityIndicator = UIActivityIndicatorView(style: .medium)
         activityIndicator.translatesAutoresizingMaskIntoConstraints = false
         activityIndicator.startAnimating()
@@ -973,13 +607,11 @@ public class UIKitRenderer {
         containerView.addSubview(imageView)
         containerView.addSubview(activityIndicator)
         
-        // 设置加载指示器约束
         NSLayoutConstraint.activate([
             activityIndicator.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
             activityIndicator.centerYAnchor.constraint(equalTo: containerView.centerYAnchor)
         ])
         
-        // 设置图片约束
         NSLayoutConstraint.activate([
             imageView.topAnchor.constraint(equalTo: containerView.topAnchor),
             imageView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
@@ -987,35 +619,25 @@ public class UIKitRenderer {
             imageView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
         ])
         
-        // 设置容器约束
         if let width = node.width, let height = node.height {
-            // 如果指定了尺寸，使用固定尺寸
             containerView.widthAnchor.constraint(equalToConstant: CGFloat(width)).isActive = true
             containerView.heightAnchor.constraint(equalToConstant: CGFloat(height)).isActive = true
         } else {
-            // 如果没有指定尺寸，设置最大宽度，高度根据宽高比自适应
             containerView.widthAnchor.constraint(lessThanOrEqualToConstant: context.width).isActive = true
-            // 设置默认宽高比约束（4:3），图片加载后会更新
             let defaultAspectRatio = imageView.widthAnchor.constraint(equalTo: imageView.heightAnchor, multiplier: 4.0/3.0)
             defaultAspectRatio.priority = UILayoutPriority(750)
             defaultAspectRatio.isActive = true
-            
-            // 设置最小高度，避免容器高度为0
             containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 100).isActive = true
         }
         
         // 添加点击手势
-        if context.onImageTap != nil {
-            let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleImageTap(_:)))
-            containerView.addGestureRecognizer(tapGesture)
-            containerView.isUserInteractionEnabled = true
-            objc_setAssociatedObject(containerView, &AssociatedKeys.imageNode, node, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-            objc_setAssociatedObject(containerView, &AssociatedKeys.context, context, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        if let onImageTap = context.onImageTap {
+            containerView.addTapAction {
+                onImageTap(node)
+            }
         }
         
-        // 加载图片
         guard let url = URL(string: node.url) else {
-            // URL 无效，显示错误
             DispatchQueue.main.async {
                 activityIndicator.stopAnimating()
                 activityIndicator.removeFromSuperview()
@@ -1024,6 +646,14 @@ public class UIKitRenderer {
             return containerView
         }
         
+        // 加载图片... (此处省略重复的加载逻辑，实际代码中应保留)
+        // 为简化，调用辅助方法或保留原有逻辑
+        loadImage(url: url, into: imageView, containerView: containerView, activityIndicator: activityIndicator, node: node, context: context)
+        
+        return containerView
+    }
+    
+    private func loadImage(url: URL, into imageView: UIImageView, containerView: UIView, activityIndicator: UIActivityIndicatorView, node: ImageNode, context: UIKitRenderContext) {
         // 优先使用代理加载图片
         if let delegate = context.imageLoaderDelegate {
             delegate.loadImage(url: url, into: imageView) { [weak imageView, weak containerView, weak activityIndicator] image, error in
@@ -1046,44 +676,11 @@ public class UIKitRenderer {
                         return
                     }
                     
-                    // 图片加载成功
                     imageView.image = image
-                    
-                    // 如果图片加载成功且没有指定尺寸，更新宽高比约束
-                    if node.width == nil || node.height == nil {
-                        let imageAspectRatio = image.size.width / image.size.height
-                        guard imageAspectRatio > 0 && imageAspectRatio.isFinite else {
-                            return
-                        }
-                        
-                        // 移除旧的宽高比约束
-                        imageView.constraints.forEach { constraint in
-                            if constraint.firstAttribute == .width && 
-                               constraint.secondAttribute == .height &&
-                               constraint.priority.rawValue < 1000 {
-                                constraint.isActive = false
-                            }
-                        }
-                        
-                        // 添加新的宽高比约束
-                        let aspectRatioConstraint = imageView.widthAnchor.constraint(equalTo: imageView.heightAnchor, multiplier: imageAspectRatio)
-                        aspectRatioConstraint.priority = UILayoutPriority(750)
-                        aspectRatioConstraint.isActive = true
-                        
-                        // 触发布局更新
-                        containerView.setNeedsLayout()
-                        containerView.layoutIfNeeded()
-                        
-                        // 通知上层布局变化（如果有回调）
-                        if let onHeightChanged = context.onLayoutHeightChanged {
-                            let newHeight = containerView.bounds.height
-                            onHeightChanged(newHeight)
-                        }
-                    }
+                    self.updateImageAspectRatio(image: image, node: node, imageView: imageView, containerView: containerView, context: context)
                 }
             }
         } else {
-            // 兜底方案：使用 URLSession 加载图片
             let task = URLSession.shared.dataTask(with: url) { [weak imageView, weak containerView, weak activityIndicator] data, response, error in
                 DispatchQueue.main.async {
                     activityIndicator?.stopAnimating()
@@ -1104,55 +701,45 @@ public class UIKitRenderer {
                         return
                     }
                     
-                    // 图片加载成功
                     imageView.image = image
-                    
-                    // 如果图片加载成功且没有指定尺寸，更新宽高比约束
-                    if node.width == nil || node.height == nil {
-                        let imageAspectRatio = image.size.width / image.size.height
-                        guard imageAspectRatio > 0 && imageAspectRatio.isFinite else {
-                            return
-                        }
-                        
-                        // 移除旧的宽高比约束
-                        imageView.constraints.forEach { constraint in
-                            if constraint.firstAttribute == .width && 
-                               constraint.secondAttribute == .height &&
-                               constraint.priority.rawValue < 1000 {
-                                constraint.isActive = false
-                            }
-                        }
-                        
-                        // 添加新的宽高比约束
-                        let aspectRatioConstraint = imageView.widthAnchor.constraint(equalTo: imageView.heightAnchor, multiplier: imageAspectRatio)
-                        aspectRatioConstraint.priority = UILayoutPriority(750)
-                        aspectRatioConstraint.isActive = true
-                        
-                        // 触发布局更新
-                        containerView.setNeedsLayout()
-                        containerView.layoutIfNeeded()
-                        
-                        // 通知上层布局变化（如果有回调）
-                        if let onHeightChanged = context.onLayoutHeightChanged {
-                            let newHeight = containerView.bounds.height
-                            onHeightChanged(newHeight)
-                        }
-                    }
+                    self.updateImageAspectRatio(image: image, node: node, imageView: imageView, containerView: containerView, context: context)
                 }
             }
             task.resume()
         }
-        
-        return containerView
+    }
+    
+    private func updateImageAspectRatio(image: UIImage, node: ImageNode, imageView: UIImageView, containerView: UIView, context: UIKitRenderContext) {
+        if node.width == nil || node.height == nil {
+            let imageAspectRatio = image.size.width / image.size.height
+            guard imageAspectRatio > 0 && imageAspectRatio.isFinite else { return }
+            
+            imageView.constraints.forEach { constraint in
+                if constraint.firstAttribute == .width &&
+                    constraint.secondAttribute == .height &&
+                    constraint.priority.rawValue < 1000 {
+                    constraint.isActive = false
+                }
+            }
+            
+            let aspectRatioConstraint = imageView.widthAnchor.constraint(equalTo: imageView.heightAnchor, multiplier: imageAspectRatio)
+            aspectRatioConstraint.priority = UILayoutPriority(750)
+            aspectRatioConstraint.isActive = true
+            
+            containerView.setNeedsLayout()
+            containerView.layoutIfNeeded()
+            
+            if let onHeightChanged = context.onLayoutHeightChanged {
+                let newHeight = containerView.bounds.height
+                onHeightChanged(newHeight)
+            }
+        }
     }
     
     /// 显示图片错误
     private func showImageError(in containerView: UIView, message: String) {
-        // 清除可能存在的旧错误视图
         containerView.subviews.forEach { subview in
-            if subview is UILabel {
-                subview.removeFromSuperview()
-            }
+            if subview is UILabel { subview.removeFromSuperview() }
         }
         
         let errorLabel = UILabel()
@@ -1171,7 +758,6 @@ public class UIKitRenderer {
             errorLabel.trailingAnchor.constraint(lessThanOrEqualTo: containerView.trailingAnchor, constant: -8)
         ])
         
-        // 设置容器最小高度
         containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 60).isActive = true
     }
     
@@ -1202,9 +788,7 @@ public class UIKitRenderer {
         // 列表标记
         let markerView: UIView
         if case .bullet = listType {
-            // 嵌套无序列表使用空心圈，第一层使用实心圆
             if nestingLevel > 0 {
-                // 空心圆
                 let circle = UIView()
                 circle.layer.borderColor = context.theme.textColor.cgColor
                 circle.layer.borderWidth = 1.5
@@ -1216,7 +800,6 @@ public class UIKitRenderer {
                 ])
                 markerView = circle
             } else {
-                // 实心圆
                 let circle = UIView()
                 circle.backgroundColor = context.theme.textColor
                 circle.layer.cornerRadius = 3
@@ -1228,7 +811,6 @@ public class UIKitRenderer {
                 markerView = circle
             }
         } else {
-            // 嵌套有序列表使用小写罗马数字，第一层使用数字
             let label = UILabel()
             if nestingLevel > 0 {
                 label.text = "\(toRomanNumeral(index + 1))."
@@ -1242,16 +824,12 @@ public class UIKitRenderer {
         
         stackView.addArrangedSubview(markerView)
         
-        // 列表项内容：检查是否包含嵌套列表
         let hasNestedList = item.children.contains { wrapper in
-            if case .list = wrapper {
-                return true
-            }
+            if case .list = wrapper { return true }
             return false
         }
         
         if hasNestedList {
-            // 如果包含嵌套列表，需要特殊处理：换行+缩进
             let containerView = UIView()
             let contentStackView = UIStackView()
             contentStackView.axis = .vertical
@@ -1268,11 +846,8 @@ public class UIKitRenderer {
                 contentStackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
             ])
             
-            // 先渲染非列表节点
             let nonListNodes = item.children.filter { wrapper in
-                if case .list = wrapper {
-                    return false
-                }
+                if case .list = wrapper { return false }
                 return true
             }
             
@@ -1281,15 +856,12 @@ public class UIKitRenderer {
                 contentStackView.addArrangedSubview(inlineContentView)
             }
             
-            // 然后渲染嵌套列表（换行+缩进）
             for child in item.children {
                 if case .list(let nestedListNode) = child {
-                    // 嵌套列表：换行并缩进
                     let nestedListView = renderList(nestedListNode, context: context, nestingLevel: nestingLevel + 1)
                     nestedListView.translatesAutoresizingMaskIntoConstraints = false
                     contentStackView.addArrangedSubview(nestedListView)
                     
-                    // 添加缩进约束
                     NSLayoutConstraint.activate([
                         nestedListView.leadingAnchor.constraint(equalTo: contentStackView.leadingAnchor, constant: 20)
                     ])
@@ -1298,7 +870,6 @@ public class UIKitRenderer {
             
             stackView.addArrangedSubview(containerView)
         } else {
-            // 没有嵌套列表，正常渲染行内节点
             let inlineContentView = renderListItemInlineContent(nodes: item.children, context: context)
             stackView.addArrangedSubview(inlineContentView)
         }
@@ -1308,8 +879,6 @@ public class UIKitRenderer {
     
     /// 渲染列表项的行内内容
     private func renderListItemInlineContent(nodes: [ASTNodeWrapper], context: UIKitRenderContext) -> UIView {
-        // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
-        // 行内代码现在可以嵌入到 NSAttributedString 中，不需要单独处理
         let hasSpecialNodes = nodes.contains { wrapper in
             switch wrapper {
             case .image, .math, .mermaid:
@@ -1320,7 +889,6 @@ public class UIKitRenderer {
         }
         
         if hasSpecialNodes {
-            // 如果包含特殊节点，使用混合布局
             let containerView = UIView()
             let contentStackView = UIStackView()
             contentStackView.axis = .vertical
@@ -1337,7 +905,6 @@ public class UIKitRenderer {
                 contentStackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
             ])
             
-            // 将行内节点分组：连续的文本节点合并，特殊节点单独处理
             var currentTextNodes: [ASTNodeWrapper] = []
             
             func flushTextNodes() {
@@ -1359,7 +926,6 @@ public class UIKitRenderer {
                     let childView = renderInlineNodeWrapper(child, context: context)
                     contentStackView.addArrangedSubview(childView)
                 default:
-                    // 包括 .code，因为行内代码现在可以嵌入到 NSAttributedString 中
                     currentTextNodes.append(child)
                 }
             }
@@ -1367,7 +933,6 @@ public class UIKitRenderer {
             
             return containerView
         } else {
-            // 否则使用 NSAttributedString 渲染，支持正确换行
             let attributedString = buildAttributedString(from: nodes, context: context)
             let label = UILabel()
             label.attributedText = attributedString
@@ -1438,7 +1003,6 @@ public class UIKitRenderer {
         let containerView = UIView()
         containerView.backgroundColor = isHeader ? context.theme.tableHeaderBackground : .clear
         
-        // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
         let hasSpecialNodes = cell.children.contains { wrapper in
             switch wrapper {
             case .image, .math, .mermaid:
@@ -1451,7 +1015,6 @@ public class UIKitRenderer {
         let padding = context.theme.tableCellPadding
         
         if hasSpecialNodes {
-            // 如果包含特殊节点，使用混合布局
             let contentStackView = UIStackView()
             contentStackView.axis = .vertical
             contentStackView.alignment = cell.align?.uiAlignment ?? .leading
@@ -1461,7 +1024,6 @@ public class UIKitRenderer {
             
             containerView.addSubview(contentStackView)
             
-            // 将行内节点分组：连续的文本节点合并，特殊节点单独处理
             var currentTextNodes: [ASTNodeWrapper] = []
             
             func flushTextNodes() {
@@ -1484,7 +1046,6 @@ public class UIKitRenderer {
                     let childView = renderInlineNodeWrapper(child, context: context)
                     contentStackView.addArrangedSubview(childView)
                 default:
-                    // 包括 .code，因为行内代码现在可以嵌入到 NSAttributedString 中
                     currentTextNodes.append(child)
                 }
             }
@@ -1497,7 +1058,6 @@ public class UIKitRenderer {
                 contentStackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -padding)
             ])
         } else {
-            // 否则使用 NSAttributedString 渲染，支持正确换行
             let attributedString = buildAttributedString(from: cell.children, context: context)
             let label = UILabel()
             label.attributedText = attributedString
@@ -1519,13 +1079,12 @@ public class UIKitRenderer {
     }
     
     /// 渲染数学公式
-    func renderMath(_ node: MathNode, context: UIKitRenderContext) -> UIView {
+    internal func renderMath(_ node: MathNode, context: UIKitRenderContext) -> UIView {
         let containerView = UIView()
         containerView.backgroundColor = context.theme.codeBackgroundColor
         containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
         containerView.clipsToBounds = true
         
-        // 从 Rust Core 获取 KaTeX HTML
         let result = IMParseCore.mathToHTML(node.content, display: node.display)
         
         guard result.success, let html = result.astJSON else {
@@ -1533,21 +1092,18 @@ public class UIKitRenderer {
             return containerView
         }
         
-        // 获取文本颜色
         let textColor = context.theme.textColor
         let components = textColor.cgColor.components ?? [0, 0, 0, 1]
         let colorHex = String(format: "#%02X%02X%02X",
-            Int(components[0] * 255),
-            Int(components[1] * 255),
-            Int(components[2] * 255)
+                              Int(components[0] * 255),
+                              Int(components[1] * 255),
+                              Int(components[2] * 255)
         )
         
-        // 创建图片视图
         let imageView = UIImageView()
         imageView.contentMode = .scaleAspectFit
         imageView.translatesAutoresizingMaskIntoConstraints = false
         
-        // 添加加载指示器
         let activityIndicator = UIActivityIndicatorView(style: .medium)
         activityIndicator.translatesAutoresizingMaskIntoConstraints = false
         activityIndicator.startAnimating()
@@ -1566,15 +1122,12 @@ public class UIKitRenderer {
         ])
         
         // 添加点击手势
-        if context.onMathTap != nil {
-            let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleMathTap(_:)))
-            containerView.addGestureRecognizer(tapGesture)
-            containerView.isUserInteractionEnabled = true
-            objc_setAssociatedObject(containerView, &AssociatedKeys.mathNode, node, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-            objc_setAssociatedObject(containerView, &AssociatedKeys.context, context, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        if let onMathTap = context.onMathTap {
+            containerView.addTapAction {
+                onMathTap(node)
+            }
         }
         
-        // 使用 MathHTMLRenderer 渲染为图片
         let fontSize = node.display ? 16.0 : 14.0
         MathHTMLRenderer.shared.render(
             html: html,
@@ -1589,7 +1142,6 @@ public class UIKitRenderer {
                 if let image = image {
                     imageView.image = image
                 } else {
-                    // 渲染失败，显示错误
                     self.showMathError(in: containerView, message: "数学公式渲染失败")
                     imageView.removeFromSuperview()
                 }
@@ -1620,18 +1172,16 @@ public class UIKitRenderer {
     }
     
     /// 渲染 Mermaid 图表
-    func renderMermaid(_ node: MermaidNode, context: UIKitRenderContext) -> UIView {
+    internal func renderMermaid(_ node: MermaidNode, context: UIKitRenderContext) -> UIView {
         let containerView = UIView()
         containerView.backgroundColor = context.theme.codeBackgroundColor
         containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
         containerView.clipsToBounds = true
         
-        // 创建图片视图
         let imageView = UIImageView()
         imageView.contentMode = .scaleAspectFit
         imageView.translatesAutoresizingMaskIntoConstraints = false
         
-        // 添加加载指示器
         let activityIndicator = UIActivityIndicatorView(style: .medium)
         activityIndicator.translatesAutoresizingMaskIntoConstraints = false
         activityIndicator.startAnimating()
@@ -1651,33 +1201,29 @@ public class UIKitRenderer {
         ])
         
         // 添加点击手势
-        if context.onMermaidTap != nil {
-            let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleMermaidTap(_:)))
-            containerView.addGestureRecognizer(tapGesture)
-            containerView.isUserInteractionEnabled = true
-            objc_setAssociatedObject(containerView, &AssociatedKeys.mermaidNode, node, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-            objc_setAssociatedObject(containerView, &AssociatedKeys.context, context, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        if let onMermaidTap = context.onMermaidTap {
+            containerView.addTapAction {
+                onMermaidTap(node)
+            }
         }
         
-        // 获取文本颜色和背景颜色
         let textColor = context.theme.textColor
         let backgroundColor = context.theme.codeBackgroundColor
         
         let textComponents = textColor.cgColor.components ?? [0, 0, 0, 1]
         let textColorHex = String(format: "#%02X%02X%02X",
-            Int(textComponents[0] * 255),
-            Int(textComponents[1] * 255),
-            Int(textComponents[2] * 255)
+                                  Int(textComponents[0] * 255),
+                                  Int(textComponents[1] * 255),
+                                  Int(textComponents[2] * 255)
         )
         
         let bgComponents = backgroundColor.cgColor.components ?? [1, 1, 1, 1]
         let backgroundColorHex = String(format: "#%02X%02X%02X",
-            Int(bgComponents[0] * 255),
-            Int(bgComponents[1] * 255),
-            Int(bgComponents[2] * 255)
+                                        Int(bgComponents[0] * 255),
+                                        Int(bgComponents[1] * 255),
+                                        Int(bgComponents[2] * 255)
         )
         
-        // 使用 MermaidHTMLRenderer 渲染为图片
         MermaidHTMLRenderer.shared.render(
             mermaidCode: node.content,
             textColor: textColorHex,
@@ -1690,7 +1236,6 @@ public class UIKitRenderer {
                 if let image = image {
                     imageView.image = image
                 } else {
-                    // 渲染失败，显示错误
                     self.showMermaidError(in: containerView, message: "Mermaid 图表渲染失败")
                     imageView.removeFromSuperview()
                 }
@@ -1721,7 +1266,7 @@ public class UIKitRenderer {
     }
     
     /// 渲染提及
-    func renderMention(_ node: MentionNode, context: UIKitRenderContext) -> UIView {
+    internal func renderMention(_ node: MentionNode, context: UIKitRenderContext) -> UIView {
         let containerView = UIView()
         containerView.backgroundColor = context.theme.mentionBackground
         containerView.layer.cornerRadius = 4
@@ -1742,12 +1287,10 @@ public class UIKitRenderer {
         ])
         
         // 添加点击手势
-        if context.onMentionTap != nil {
-            let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleMentionTap(_:)))
-            containerView.addGestureRecognizer(tapGesture)
-            containerView.isUserInteractionEnabled = true
-            objc_setAssociatedObject(containerView, &AssociatedKeys.mentionNode, node, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-            objc_setAssociatedObject(containerView, &AssociatedKeys.context, context, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        if let onMentionTap = context.onMentionTap {
+            containerView.addTapAction {
+                onMentionTap(node)
+            }
         }
         
         return containerView
@@ -1765,14 +1308,11 @@ public class UIKitRenderer {
     
     /// 渲染颜色节点
     private func renderColor(_ node: ColorNode, context: UIKitRenderContext) -> UIView {
-        // 解析颜色
         let color = parseUIColor(from: node.color) ?? (context.currentTextColor ?? context.theme.textColor)
         
-        // 创建颜色上下文
         var colorContext = context
         colorContext.currentTextColor = color
         
-        // 渲染子节点
         let containerView = UIView()
         containerView.translatesAutoresizingMaskIntoConstraints = false
         
@@ -1809,23 +1349,13 @@ public class UIKitRenderer {
         return containerView
     }
     
-    /// 解析颜色字符串（支持十六进制和 CSS 颜色）
     private func parseUIColor(from colorString: String) -> UIColor? {
         let trimmed = colorString.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        // 尝试解析十六进制颜色（UIColor(hex:) 会自动处理 # 前缀）
         if trimmed.hasPrefix("#") {
             return UIColor(hex: trimmed)
         }
         
-        // 尝试解析 rgb/rgba
-        if trimmed.hasPrefix("rgb") {
-            // 简化处理：这里可以扩展支持 rgb/rgba 解析
-            // 暂时返回 nil，使用默认颜色
-            return nil
-        }
-        
-        // 尝试使用系统颜色名称
         switch trimmed.lowercased() {
         case "red": return .systemRed
         case "blue": return .systemBlue
@@ -1837,8 +1367,7 @@ public class UIKitRenderer {
         case "black": return .black
         case "white": return .white
         case "gray", "grey": return .gray
-        default:
-            return nil
+        default: return nil
         }
     }
     
@@ -1850,7 +1379,6 @@ public class UIKitRenderer {
         stackView.spacing = 8
         stackView.distribution = .fill
         
-        // 左侧竖线
         let lineView = UIView()
         lineView.backgroundColor = context.theme.blockquoteBorderColor
         lineView.translatesAutoresizingMaskIntoConstraints = false
@@ -1859,11 +1387,9 @@ public class UIKitRenderer {
         ])
         stackView.addArrangedSubview(lineView)
         
-        // 创建带引用块文本颜色的上下文
         var blockquoteContext = context
         blockquoteContext.currentTextColor = context.theme.blockquoteTextColor
         
-        // 检查是否包含块级节点（段落、列表、代码块、标题等）
         let hasBlockLevelNodes = node.children.contains { wrapper in
             switch wrapper {
             case .paragraph, .heading, .codeBlock, .list, .table, .blockquote, .horizontalRule:
@@ -1874,7 +1400,6 @@ public class UIKitRenderer {
         }
         
         if hasBlockLevelNodes {
-            // 如果包含块级节点，使用块级渲染
             let containerView = UIView()
             let contentStackView = UIStackView()
             contentStackView.axis = .vertical
@@ -1898,8 +1423,6 @@ public class UIKitRenderer {
             
             stackView.addArrangedSubview(containerView)
         } else {
-            // 否则作为行内内容处理
-            // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
             let hasSpecialNodes = node.children.contains { wrapper in
                 switch wrapper {
                 case .image, .math, .mermaid:
@@ -1910,7 +1433,6 @@ public class UIKitRenderer {
             }
             
             if hasSpecialNodes {
-                // 如果包含特殊节点，使用混合布局
                 let containerView = UIView()
                 let contentStackView = UIStackView()
                 contentStackView.axis = .vertical
@@ -1927,7 +1449,6 @@ public class UIKitRenderer {
                     contentStackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
                 ])
                 
-                // 将行内节点分组：连续的文本节点合并，特殊节点单独处理
                 var currentTextNodes: [ASTNodeWrapper] = []
                 
                 func flushTextNodes() {
@@ -1949,7 +1470,6 @@ public class UIKitRenderer {
                         let childView = renderInlineNodeWrapper(child, context: blockquoteContext)
                         contentStackView.addArrangedSubview(childView)
                     default:
-                        // 包括 .code，因为行内代码现在可以嵌入到 NSAttributedString 中
                         currentTextNodes.append(child)
                     }
                 }
@@ -1957,7 +1477,6 @@ public class UIKitRenderer {
                 
                 stackView.addArrangedSubview(containerView)
             } else {
-                // 否则使用 NSAttributedString 渲染，支持正确换行
                 let attributedString = buildAttributedString(from: node.children, context: blockquoteContext)
                 let label = UILabel()
                 label.attributedText = attributedString
@@ -2017,7 +1536,6 @@ public class UIKitRenderer {
     
     /// 将数字转换为小写罗马数字
     private func toRomanNumeral(_ number: Int) -> String {
-        // 超出范围直接返回数字
         guard number > 0 && number < 4000 else {
             return "\(number)"
         }
@@ -2040,95 +1558,22 @@ public class UIKitRenderer {
     }
 }
 
-// MARK: - Math HTML Cache
-
-/// HTML 渲染图片缓存管理器（与 SwiftUIRenderer 共享）
-/// 注意：MathSVGCache 是旧名称，实际用于缓存 HTML 渲染的图片
-extension MathSVGCache {
-    // 已在 SwiftUIRenderer.swift 中定义
-}
-
 // MARK: - 辅助扩展
 
 extension TextAlign {
     var uiAlignment: UIStackView.Alignment {
         switch self {
-        case .left:
-            return .leading
-        case .center:
-            return .center
-        case .right:
-            return .trailing
+        case .left: return .leading
+        case .center: return .center
+        case .right: return .trailing
         }
     }
     
     var textAlignment: NSTextAlignment {
         switch self {
-        case .left:
-            return .left
-        case .center:
-            return .center
-        case .right:
-            return .right
+        case .left: return .left
+        case .center: return .center
+        case .right: return .right
         }
     }
 }
-
-// MARK: - 关联对象键
-
-private struct AssociatedKeys {
-    static var url = "url"
-    static var context = "context"
-    static var imageNode = "imageNode"
-    static var mentionNode = "mentionNode"
-    static var codeBlockNode = "codeBlockNode"
-    static var mathNode = "mathNode"
-    static var mermaidNode = "mermaidNode"
-}
-
-// MARK: - UILabel 扩展（用于内边距）
-
-class PaddedLabel: UILabel {
-    var padding: UIEdgeInsets = .zero
-    
-    override func drawText(in rect: CGRect) {
-        super.drawText(in: rect.inset(by: padding))
-    }
-    
-    override var intrinsicContentSize: CGSize {
-        let size = super.intrinsicContentSize
-        return CGSize(
-            width: size.width + padding.left + padding.right,
-            height: size.height + padding.top + padding.bottom
-        )
-    }
-}
-
-// MARK: - UIColor 扩展（用于解析十六进制颜色）
-
-extension UIColor {
-    /// 从十六进制字符串创建 UIColor
-    convenience init?(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let a, r, g, b: UInt64
-        switch hex.count {
-        case 3: // RGB (12-bit)
-            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
-        case 6: // RGB (24-bit)
-            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
-        case 8: // ARGB (32-bit)
-            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
-        default:
-            return nil
-        }
-        self.init(
-            red: CGFloat(r) / 255,
-            green: CGFloat(g) / 255,
-            blue: CGFloat(b) / 255,
-            alpha: CGFloat(a) / 255
-        )
-    }
-}
-

@@ -7,6 +7,30 @@
 
 import UIKit
 
+// MARK: - 辅助类
+
+fileprivate struct AssociatedKeys {
+    static var linkHandler = "linkHandler"
+}
+
+/// 用于处理 UITextView 链接点击的代理
+private class LinkHandler: NSObject, UITextViewDelegate {
+    let onLinkTap: ((URL) -> Void)?
+    
+    init(onLinkTap: ((URL) -> Void)?) {
+        self.onLinkTap = onLinkTap
+        super.init()
+    }
+    
+    func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
+        if let onLinkTap = onLinkTap {
+            onLinkTap(URL)
+            return false // 我们自己处理了，系统不用再处理
+        }
+        return true // 使用系统默认行为（打开 Safari）
+    }
+}
+
 /// 布局节点（保存异步计算的结果）
 public class NodeLayout {
     public let frame: CGRect
@@ -48,11 +72,40 @@ public class NodeLayout {
         // 根据内容类型创建视图
         if let attributedString = content as? NSAttributedString {
             // 文本节点
-            let label = UILabel()
-            label.attributedText = attributedString
-            label.numberOfLines = 0
-            label.frame = CGRect(origin: .zero, size: frame.size)
-            view = label
+            // 检查是否包含链接
+            var hasLink = false
+            attributedString.enumerateAttribute(.link, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
+                if value != nil {
+                    hasLink = true
+                    stop.pointee = true
+                }
+            }
+            
+            if hasLink {
+                // 如果包含链接，使用 UITextView 以支持点击
+                let textView = UITextView()
+                textView.attributedText = attributedString
+                textView.isEditable = false
+                textView.isScrollEnabled = false
+                textView.textContainerInset = .zero
+                textView.textContainer.lineFragmentPadding = 0
+                textView.backgroundColor = .clear
+                textView.frame = CGRect(origin: .zero, size: frame.size)
+                
+                // 设置代理以处理链接点击
+                let linkHandler = LinkHandler(onLinkTap: context.onLinkTap)
+                textView.delegate = linkHandler
+                objc_setAssociatedObject(textView, &AssociatedKeys.linkHandler, linkHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                
+                view = textView
+            } else {
+                // 纯文本，使用 UILabel 性能更好
+                let label = UILabel()
+                label.attributedText = attributedString
+                label.numberOfLines = 0
+                label.frame = CGRect(origin: .zero, size: frame.size)
+                view = label
+            }
         } else if let nodeWrapper = node {
             switch nodeWrapper {
             case .image(let imgNode):

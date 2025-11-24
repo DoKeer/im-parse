@@ -37,9 +37,4 @@ fastlane/test_output
 #
 iOSInjectionProject/
 
-# Rust 构建产物
-#
-IMParseSDK/Libraries/*.a
-IMParseSDK/Libraries/*.xcframework
-IMParseSDK/Libraries/libim_parse_core_*.a
 

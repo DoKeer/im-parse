@@ -63,7 +63,7 @@ class UIKitMessageListViewController: UIViewController {
         
         // 在后台线程生成消息
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let generatedMessages = MessageDataGenerator.generateMessages(count: 100)
+            let generatedMessages = MessageDataGenerator.generateMessages(count: 1)
             
             // 解析消息并计算布局
             var parsedMessages = generatedMessages
@@ -220,17 +220,15 @@ class MessageTableViewCell: UITableViewCell {
             }
         }
         
+        // 创建渲染上下文（包含所有点击事件处理）
+        let context = createRenderContext(
+            width: width,
+            viewController: viewController,
+            onHeightChanged: onHeightChanged
+        )
+        
         // 优先使用预计算的布局
         if let layout = message.layout {
-            let context = UIKitRenderContext(
-                theme: .default,
-                width: width,
-                onLinkTap: { url in UIApplication.shared.open(url) },
-                onImageTap: nil,
-                onMentionTap: nil,
-                imageLoaderDelegate: viewController as? UIKitImageLoaderDelegate,
-                onLayoutHeightChanged: onHeightChanged
-            )
             
             let astView = layout.render(context: context)
             // 使用 frame 布局，不使用 Auto Layout
@@ -257,16 +255,14 @@ class MessageTableViewCell: UITableViewCell {
                     let decoder = JSONDecoder()
                     let rootNode = try decoder.decode(RootNode.self, from: jsonData)
                     
-                    // 计算布局
-                    let context = UIKitRenderContext(
-                        theme: .default,
+                    // 创建渲染上下文（包含所有点击事件处理）
+                    let context = self?.createRenderContext(
                         width: width,
-                        onLinkTap: { url in UIApplication.shared.open(url) },
-                        onImageTap: nil,
-                        onMentionTap: nil,
-                        imageLoaderDelegate: viewController as? UIKitImageLoaderDelegate,
-                        onLayoutHeightChanged: onHeightChanged
+                        viewController: viewController,
+                        onHeightChanged: onHeightChanged
                     )
+                    
+                    guard let context = context else { return }
                     
                     // 使用 UIKitRenderer 的 frame 渲染方法
                     let renderer = UIKitRenderer()
@@ -371,6 +367,64 @@ class MessageTableViewCell: UITableViewCell {
             label.bottomAnchor.constraint(equalTo: contentView_wrapper.bottomAnchor)
         ])
     }
+    
+    /// 创建渲染上下文，包含所有点击事件处理
+    private func createRenderContext(
+        width: CGFloat,
+        viewController: UIViewController?,
+        onHeightChanged: ((CGFloat) -> Void)?
+    ) -> UIKitRenderContext {
+        return UIKitRenderContext(
+            theme: .default,
+            width: width,
+            onLinkTap: { url in
+                // URL 打开浏览器
+                UIApplication.shared.open(url)
+            },
+            onImageTap: { [weak viewController] imageNode in
+                // 图片弹出图片预览页面
+                guard let viewController = viewController else { return }
+                MessageTableViewCell.showImagePreview(imageNode: imageNode, from: viewController)
+            },
+            onMentionTap: { mentionNode in
+                // Mention 打印 log
+                print("Mention 被点击: @\(mentionNode.name)")
+            },
+            onCodeBlockTap: { codeBlockNode in
+                // 代码块点击：打印 log
+                print("代码块被点击，内容长度: \(codeBlockNode.content.count) 字符")
+            },
+            onMathTap: { mathNode in
+                // 数学公式点击：打印 log
+                print("数学公式被点击: \(mathNode.display ? "块级" : "行内") - \(mathNode.content)")
+            },
+            onMermaidTap: { mermaidNode in
+                // Mermaid 图表点击：打印 log
+                print("Mermaid 图表被点击，内容长度: \(mermaidNode.content.count) 字符")
+            },
+            imageLoaderDelegate: viewController as? UIKitImageLoaderDelegate,
+            onLayoutHeightChanged: onHeightChanged
+        )
+    }
+    
+    /// 显示图片预览
+    private static func showImagePreview(imageNode: ImageNode, from viewController: UIViewController) {
+        guard let url = URL(string: imageNode.url) else {
+            let alert = UIAlertController(
+                title: "错误",
+                message: "无效的图片 URL",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "确定", style: .default))
+            viewController.present(alert, animated: true)
+            return
+        }
+        
+        // 创建图片预览视图控制器
+        let imagePreviewVC = ImagePreviewViewController(imageURL: url, imageNode: imageNode)
+        let navigationController = UINavigationController(rootViewController: imagePreviewVC)
+        viewController.present(navigationController, animated: true)
+    }
 }
 
 // MARK: - UIKitImageLoaderDelegate
@@ -394,5 +448,223 @@ extension UIKitMessageListViewController: UIKitImageLoaderDelegate {
                 }
             }
         )
+    }
+}
+
+// MARK: - Image Preview View Controller
+
+/// 图片预览视图控制器
+class ImagePreviewViewController: UIViewController {
+    private let imageURL: URL
+    private let imageNode: ImageNode
+    private let scrollView = UIScrollView()
+    private let imageView = UIImageView()
+    private let activityIndicator = UIActivityIndicatorView(style: .large)
+    
+    init(imageURL: URL, imageNode: ImageNode) {
+        self.imageURL = imageURL
+        self.imageNode = imageNode
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        view.backgroundColor = .black
+        
+        setupUI()
+        loadImage()
+        setupNavigationBar()
+    }
+    
+    private func setupUI() {
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.delegate = self
+        scrollView.minimumZoomScale = 1.0
+        scrollView.maximumZoomScale = 3.0
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.showsVerticalScrollIndicator = false
+        
+        imageView.contentMode = .scaleAspectFit
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.isUserInteractionEnabled = true
+        
+        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+        activityIndicator.hidesWhenStopped = true
+        
+        scrollView.addSubview(imageView)
+        view.addSubview(scrollView)
+        view.addSubview(activityIndicator)
+        
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            
+            imageView.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            imageView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            imageView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+            imageView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+            imageView.heightAnchor.constraint(equalTo: scrollView.heightAnchor),
+            
+            activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        ])
+        
+        // 添加双击手势放大/缩小
+        let doubleTapGesture = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
+        doubleTapGesture.numberOfTapsRequired = 2
+        imageView.addGestureRecognizer(doubleTapGesture)
+        
+        // 添加单击手势关闭
+        let singleTapGesture = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap))
+        singleTapGesture.numberOfTapsRequired = 1
+        singleTapGesture.require(toFail: doubleTapGesture)
+        view.addGestureRecognizer(singleTapGesture)
+    }
+    
+    private func setupNavigationBar() {
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .close,
+            target: self,
+            action: #selector(closePreview)
+        )
+        
+        // 设置导航栏样式为深色，以便在黑色背景上可见
+        navigationController?.navigationBar.barStyle = .black
+        navigationController?.navigationBar.tintColor = .white
+    }
+    
+    private func loadImage() {
+        activityIndicator.startAnimating()
+        
+        // 使用 Kingfisher 加载图片
+        imageView.kf.setImage(
+            with: imageURL,
+            placeholder: nil,
+            options: [
+                .transition(.fade(0.3)),
+                .cacheOriginalImage
+            ],
+            completionHandler: { [weak self] result in
+                DispatchQueue.main.async {
+                    self?.activityIndicator.stopAnimating()
+                    switch result {
+                    case .success(let value):
+                        self?.imageView.image = value.image
+                        // 调整图片大小以适应屏幕
+                        self?.updateImageViewSize(image: value.image)
+                    case .failure(let error):
+                        self?.showError(message: "图片加载失败: \(error.localizedDescription)")
+                    }
+                }
+            }
+        )
+    }
+    
+    private func updateImageViewSize(image: UIImage) {
+        let imageSize = image.size
+        let viewSize = scrollView.bounds.size
+        
+        guard imageSize.width > 0 && imageSize.height > 0 && viewSize.width > 0 && viewSize.height > 0 else {
+            return
+        }
+        
+        let imageAspectRatio = imageSize.width / imageSize.height
+        let viewAspectRatio = viewSize.width / viewSize.height
+        
+        var newSize: CGSize
+        if imageAspectRatio > viewAspectRatio {
+            // 图片更宽，以宽度为准
+            newSize = CGSize(width: viewSize.width, height: viewSize.width / imageAspectRatio)
+        } else {
+            // 图片更高，以高度为准
+            newSize = CGSize(width: viewSize.height * imageAspectRatio, height: viewSize.height)
+        }
+        
+        imageView.frame = CGRect(origin: .zero, size: newSize)
+        scrollView.contentSize = newSize
+        
+        // 居中显示
+        let offsetX = max(0, (viewSize.width - newSize.width) / 2)
+        let offsetY = max(0, (viewSize.height - newSize.height) / 2)
+        scrollView.contentInset = UIEdgeInsets(top: offsetY, left: offsetX, bottom: offsetY, right: offsetX)
+    }
+    
+    private func showError(message: String) {
+        let alert = UIAlertController(
+            title: "错误",
+            message: message,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "确定", style: .default) { [weak self] _ in
+            self?.closePreview()
+        })
+        present(alert, animated: true)
+    }
+    
+    @objc private func handleSingleTap() {
+        closePreview()
+    }
+    
+    @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+        if scrollView.zoomScale > scrollView.minimumZoomScale {
+            // 缩小
+            scrollView.setZoomScale(scrollView.minimumZoomScale, animated: true)
+        } else {
+            // 放大到点击位置
+            let point = gesture.location(in: imageView)
+            let zoomScale = scrollView.maximumZoomScale
+            let zoomRect = CGRect(
+                x: point.x - scrollView.bounds.width / (2 * zoomScale),
+                y: point.y - scrollView.bounds.height / (2 * zoomScale),
+                width: scrollView.bounds.width / zoomScale,
+                height: scrollView.bounds.height / zoomScale
+            )
+            scrollView.zoom(to: zoomRect, animated: true)
+        }
+    }
+    
+    @objc private func closePreview() {
+        dismiss(animated: true)
+    }
+    
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if let image = imageView.image {
+            updateImageViewSize(image: image)
+        }
+    }
+}
+
+extension ImagePreviewViewController: UIScrollViewDelegate {
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+        return imageView
+    }
+    
+    func scrollViewDidZoom(_ scrollView: UIScrollView) {
+        // 保持图片居中
+        let boundsSize = scrollView.bounds.size
+        var frameToCenter = imageView.frame
+        
+        if frameToCenter.size.width < boundsSize.width {
+            frameToCenter.origin.x = (boundsSize.width - frameToCenter.size.width) / 2
+        } else {
+            frameToCenter.origin.x = 0
+        }
+        
+        if frameToCenter.size.height < boundsSize.height {
+            frameToCenter.origin.y = (boundsSize.height - frameToCenter.size.height) / 2
+        } else {
+            frameToCenter.origin.y = 0
+        }
+        
+        imageView.frame = frameToCenter
     }
 }

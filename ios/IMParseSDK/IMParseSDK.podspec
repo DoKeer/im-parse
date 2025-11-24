@@ -68,12 +68,15 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
   # UIKit 渲染器版本
   s.subspec 'UIKit' do |uikit|
     uikit.dependency 'IMParseSDK/Core'
-    
     uikit.source_files = 'IMParseSDK/Classes/Renderers/UIKitRenderer.swift',
                          'IMParseSDK/Classes/Renderers/UIKitLayoutCalculator.swift',
                          'IMParseSDK/Classes/Renderers/MathHTMLRenderer.swift',
                          'IMParseSDK/Classes/Renderers/MermaidHTMLRenderer.swift',
-                         'IMParseSDK/Classes/Utils/SharedWebViewPool.swift'
+                         'IMParseSDK/Classes/Utils/SharedWebViewPool.swift',
+                         'IMParseSDK/Classes/Renderers/UIKitAttributedStringBuilder.swift',
+                         'IMParseSDK/Classes/Renderers/UIKitRenderContext.swift',
+                         'IMParseSDK/Classes/Renderers/UIKitTheme.swift',
+                         'IMParseSDK/Classes/Renderers/UIKitGestureHandler.swift'
     
     uikit.frameworks = 'UIKit', 'WebKit'
   end
