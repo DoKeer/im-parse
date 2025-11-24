@@ -112,14 +112,16 @@ public class NodeLayout {
                 // 图片：使用 UIKitRenderer 渲染（已包含点击事件处理）
                 let renderer = UIKitRenderer()
                 let imageView = renderer.renderImage(imgNode, context: context)
-                imageView.frame = CGRect(origin: .zero, size: frame.size)
+                // 移除 Auto Layout 约束，转换为 frame 布局
+                convertToFrameLayout(imageView, size: frame.size)
                 view = imageView
                 
             case .codeBlock(let codeBlockNode):
                 // 代码块：使用 UIKitRenderer 渲染（已包含点击事件处理）
                 let renderer = UIKitRenderer()
                 let codeBlockView = renderer.renderCodeBlock(codeBlockNode, context: context)
-                codeBlockView.frame = CGRect(origin: .zero, size: frame.size)
+                // 移除 Auto Layout 约束，转换为 frame 布局
+                convertToFrameLayout(codeBlockView, size: frame.size)
                 view = codeBlockView
                 
             case .table(_):
@@ -133,21 +135,24 @@ public class NodeLayout {
                 // 数学公式：使用 UIKitRenderer 渲染（已包含点击事件处理）
                 let renderer = UIKitRenderer()
                 let mathView = renderer.renderMath(mathNode, context: context)
-                mathView.frame = CGRect(origin: .zero, size: frame.size)
+                // 移除 Auto Layout 约束，转换为 frame 布局
+                convertToFrameLayout(mathView, size: frame.size)
                 view = mathView
                 
             case .mermaid(let mermaidNode):
                 // Mermaid 图表：使用 UIKitRenderer 渲染（已包含点击事件处理）
                 let renderer = UIKitRenderer()
                 let mermaidView = renderer.renderMermaid(mermaidNode, context: context)
-                mermaidView.frame = CGRect(origin: .zero, size: frame.size)
+                // 移除 Auto Layout 约束，转换为 frame 布局
+                convertToFrameLayout(mermaidView, size: frame.size)
                 view = mermaidView
                 
             case .mention(let mentionNode):
                 // 提及：使用 UIKitRenderer 渲染（已包含点击事件处理）
                 let renderer = UIKitRenderer()
                 let mentionView = renderer.renderMention(mentionNode, context: context)
-                mentionView.frame = CGRect(origin: .zero, size: frame.size)
+                // 移除 Auto Layout 约束，转换为 frame 布局
+                convertToFrameLayout(mentionView, size: frame.size)
                 view = mentionView
                 
             default:
@@ -181,12 +186,55 @@ public class NodeLayout {
                 let childView = childLayout.render(context: context)
                 // 直接设置 frame，相对于父视图
                 // childLayout.frame 的 origin 已经是相对于父视图的，所以直接使用
+                // 注意：如果子视图使用了 Auto Layout，需要确保已经转换为 frame 布局
+                // 对于使用 Auto Layout 的视图，convertToFrameLayout 已经设置了 frame.origin = .zero
+                // 这里我们需要使用 childLayout.frame 的 origin（相对于父视图）
                 childView.frame = childLayout.frame
                 view.addSubview(childView)
             }
         }
         
         return view
+    }
+    
+    /// 将使用 Auto Layout 的视图转换为 frame 布局
+    /// - Parameters:
+    ///   - view: 要转换的视图
+    ///   - size: 目标尺寸
+    private func convertToFrameLayout(_ view: UIView, size: CGSize) {
+        // 移除视图及其所有子视图的约束
+        removeAllConstraints(from: view)
+        
+        // 启用 frame 布局
+        view.translatesAutoresizingMaskIntoConstraints = true
+        
+        // 设置 frame（origin 设为 .zero，因为会在父视图中设置正确的 origin）
+        view.frame = CGRect(origin: .zero, size: size)
+        
+        // 对于子视图，也需要启用 frame 布局并设置 frame
+        // 注意：子视图的 frame 是相对于父视图的
+        for subview in view.subviews {
+            subview.translatesAutoresizingMaskIntoConstraints = true
+            // 子视图的 frame 需要根据父视图的 bounds 来设置
+            // 这里我们假设子视图应该填满父视图（对于图片、代码块等通常是这样的）
+            // 注意：需要在设置 view.frame 之后设置，因为 view.bounds 依赖于 view.frame
+            subview.frame = view.bounds
+        }
+    }
+    
+    /// 递归移除视图及其所有子视图的约束
+    /// 注意：这个方法会移除视图自身的约束，但不会移除父视图对子视图的约束
+    /// 父视图的约束需要在父视图的 removeConstraints 中移除
+    private func removeAllConstraints(from view: UIView) {
+        // 移除视图自身的约束（视图自己定义的约束）
+        // 注意：需要先保存 constraints 的副本，因为在遍历时修改会出问题
+        let constraintsToRemove = view.constraints
+        view.removeConstraints(constraintsToRemove)
+        
+        // 递归处理子视图
+        for subview in view.subviews {
+            removeAllConstraints(from: subview)
+        }
     }
     
     private func loadAsyncImage(url: URL, into imageView: UIImageView, context: UIKitRenderContext) {
