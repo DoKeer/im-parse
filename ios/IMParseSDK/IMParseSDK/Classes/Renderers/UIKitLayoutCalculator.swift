@@ -56,20 +56,18 @@ public class NodeLayout {
         } else if let nodeWrapper = node {
             switch nodeWrapper {
             case .image(let imgNode):
-                let imageView = UIImageView()
-                imageView.contentMode = .scaleAspectFit
-                imageView.backgroundColor = .systemGray6
-                imageView.clipsToBounds = true
+                // 图片：使用 UIKitRenderer 渲染（已包含点击事件处理）
+                let renderer = UIKitRenderer()
+                let imageView = renderer.renderImage(imgNode, context: context)
                 imageView.frame = CGRect(origin: .zero, size: frame.size)
-                if let url = URL(string: imgNode.url) {
-                    loadAsyncImage(url: url, into: imageView, context: context)
-                }
                 view = imageView
                 
-            case .codeBlock(_):
-                 // 代码块容器
-                view = UIView()
-                view.frame = CGRect(origin: .zero, size: frame.size)
+            case .codeBlock(let codeBlockNode):
+                // 代码块：使用 UIKitRenderer 渲染（已包含点击事件处理）
+                let renderer = UIKitRenderer()
+                let codeBlockView = renderer.renderCodeBlock(codeBlockNode, context: context)
+                codeBlockView.frame = CGRect(origin: .zero, size: frame.size)
+                view = codeBlockView
                 
             case .table(_):
                 view = UIView()
@@ -79,18 +77,25 @@ public class NodeLayout {
                 view.layer.borderColor = context.theme.tableBorderColor.cgColor
                 
             case .math(let mathNode):
-                // 数学公式：使用 UIKitRenderer 渲染
+                // 数学公式：使用 UIKitRenderer 渲染（已包含点击事件处理）
                 let renderer = UIKitRenderer()
                 let mathView = renderer.renderMath(mathNode, context: context)
                 mathView.frame = CGRect(origin: .zero, size: frame.size)
                 view = mathView
                 
             case .mermaid(let mermaidNode):
-                // Mermaid 图表：使用 UIKitRenderer 渲染
+                // Mermaid 图表：使用 UIKitRenderer 渲染（已包含点击事件处理）
                 let renderer = UIKitRenderer()
                 let mermaidView = renderer.renderMermaid(mermaidNode, context: context)
                 mermaidView.frame = CGRect(origin: .zero, size: frame.size)
                 view = mermaidView
+                
+            case .mention(let mentionNode):
+                // 提及：使用 UIKitRenderer 渲染（已包含点击事件处理）
+                let renderer = UIKitRenderer()
+                let mentionView = renderer.renderMention(mentionNode, context: context)
+                mentionView.frame = CGRect(origin: .zero, size: frame.size)
+                view = mentionView
                 
             default:
                 view = UIView()
@@ -115,12 +120,17 @@ public class NodeLayout {
         }
         
         // 递归添加子视图，使用精确的 frame
-        for childLayout in children {
-            let childView = childLayout.render(context: context)
-            // 直接设置 frame，相对于父视图
-            // childLayout.frame 的 origin 已经是相对于父视图的，所以直接使用
-            childView.frame = childLayout.frame
-            view.addSubview(childView)
+        // 注意：对于代码块，renderCodeBlock 已经创建了完整的视图（包括文本），所以跳过 children 处理
+        if let nodeWrapper = node, case .codeBlock = nodeWrapper {
+            // 代码块已经通过 renderCodeBlock 创建了完整视图，不需要再处理 children
+        } else {
+            for childLayout in children {
+                let childView = childLayout.render(context: context)
+                // 直接设置 frame，相对于父视图
+                // childLayout.frame 的 origin 已经是相对于父视图的，所以直接使用
+                childView.frame = childLayout.frame
+                view.addSubview(childView)
+            }
         }
         
         return view

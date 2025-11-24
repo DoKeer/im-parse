@@ -24,6 +24,9 @@ public struct UIKitRenderContext {
     public var onLinkTap: ((URL) -> Void)?
     public var onImageTap: ((ImageNode) -> Void)?
     public var onMentionTap: ((MentionNode) -> Void)?
+    public var onCodeBlockTap: ((CodeBlockNode) -> Void)?
+    public var onMathTap: ((MathNode) -> Void)?
+    public var onMermaidTap: ((MermaidNode) -> Void)?
     // 当前文本样式（用于标题等需要特殊样式的场景）
     public var currentFont: UIFont?
     public var currentTextColor: UIColor?
@@ -37,6 +40,9 @@ public struct UIKitRenderContext {
                 onLinkTap: ((URL) -> Void)? = nil,
                 onImageTap: ((ImageNode) -> Void)? = nil,
                 onMentionTap: ((MentionNode) -> Void)? = nil,
+                onCodeBlockTap: ((CodeBlockNode) -> Void)? = nil,
+                onMathTap: ((MathNode) -> Void)? = nil,
+                onMermaidTap: ((MermaidNode) -> Void)? = nil,
                 currentFont: UIFont? = nil,
                 currentTextColor: UIColor? = nil,
                 imageLoaderDelegate: UIKitImageLoaderDelegate? = nil,
@@ -46,6 +52,9 @@ public struct UIKitRenderContext {
         self.onLinkTap = onLinkTap
         self.onImageTap = onImageTap
         self.onMentionTap = onMentionTap
+        self.onCodeBlockTap = onCodeBlockTap
+        self.onMathTap = onMathTap
+        self.onMermaidTap = onMermaidTap
         self.currentFont = currentFont
         self.currentTextColor = currentTextColor
         self.imageLoaderDelegate = imageLoaderDelegate
@@ -814,7 +823,7 @@ public class UIKitRenderer {
     }
     
     /// 渲染代码块
-    private func renderCodeBlock(_ node: CodeBlockNode, context: UIKitRenderContext) -> UIView {
+    func renderCodeBlock(_ node: CodeBlockNode, context: UIKitRenderContext) -> UIView {
         let containerView = UIView()
         containerView.backgroundColor = context.theme.codeBackgroundColor
         containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
@@ -836,6 +845,15 @@ public class UIKitRenderer {
             label.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -padding),
             label.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -padding)
         ])
+        
+        // 添加点击手势
+        if context.onCodeBlockTap != nil {
+            let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleCodeBlockTap(_:)))
+            containerView.addGestureRecognizer(tapGesture)
+            containerView.isUserInteractionEnabled = true
+            objc_setAssociatedObject(containerView, &AssociatedKeys.codeBlockNode, node, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            objc_setAssociatedObject(containerView, &AssociatedKeys.context, context, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
         
         return containerView
     }
@@ -862,7 +880,9 @@ public class UIKitRenderer {
             tapGesture.addTarget(self, action: #selector(handleLinkTap(_:)))
             stackView.addGestureRecognizer(tapGesture)
             stackView.isUserInteractionEnabled = true
+            // 存储 URL 和 context
             objc_setAssociatedObject(stackView, &AssociatedKeys.url, url, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            objc_setAssociatedObject(stackView, &AssociatedKeys.context, context, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         }
         
         return stackView
@@ -870,14 +890,72 @@ public class UIKitRenderer {
     
     @objc private func handleLinkTap(_ gesture: UITapGestureRecognizer) {
         guard let view = gesture.view,
-              let url = objc_getAssociatedObject(view, &AssociatedKeys.url) as? URL else {
+              let url = objc_getAssociatedObject(view, &AssociatedKeys.url) as? URL,
+              let context = objc_getAssociatedObject(view, &AssociatedKeys.context) as? UIKitRenderContext else {
             return
         }
-        UIApplication.shared.open(url)
+        
+        // 优先使用回调，如果没有回调则使用默认行为
+        if let onLinkTap = context.onLinkTap {
+            onLinkTap(url)
+        } else {
+            // 兜底：如果没有设置回调，使用默认行为
+            UIApplication.shared.open(url)
+        }
+    }
+    
+    @objc private func handleImageTap(_ gesture: UITapGestureRecognizer) {
+        guard let view = gesture.view,
+              let node = objc_getAssociatedObject(view, &AssociatedKeys.imageNode) as? ImageNode,
+              let context = objc_getAssociatedObject(view, &AssociatedKeys.context) as? UIKitRenderContext else {
+            return
+        }
+        
+        context.onImageTap?(node)
+    }
+    
+    @objc private func handleMentionTap(_ gesture: UITapGestureRecognizer) {
+        guard let view = gesture.view,
+              let node = objc_getAssociatedObject(view, &AssociatedKeys.mentionNode) as? MentionNode,
+              let context = objc_getAssociatedObject(view, &AssociatedKeys.context) as? UIKitRenderContext else {
+            return
+        }
+        
+        context.onMentionTap?(node)
+    }
+    
+    @objc private func handleCodeBlockTap(_ gesture: UITapGestureRecognizer) {
+        guard let view = gesture.view,
+              let node = objc_getAssociatedObject(view, &AssociatedKeys.codeBlockNode) as? CodeBlockNode,
+              let context = objc_getAssociatedObject(view, &AssociatedKeys.context) as? UIKitRenderContext else {
+            return
+        }
+        
+        context.onCodeBlockTap?(node)
+    }
+    
+    @objc private func handleMathTap(_ gesture: UITapGestureRecognizer) {
+        guard let view = gesture.view,
+              let node = objc_getAssociatedObject(view, &AssociatedKeys.mathNode) as? MathNode,
+              let context = objc_getAssociatedObject(view, &AssociatedKeys.context) as? UIKitRenderContext else {
+            return
+        }
+        
+        context.onMathTap?(node)
+    }
+    
+    @objc private func handleMermaidTap(_ gesture: UITapGestureRecognizer) {
+        guard let view = gesture.view,
+              let node = objc_getAssociatedObject(view, &AssociatedKeys.mermaidNode) as? MermaidNode,
+              let context = objc_getAssociatedObject(view, &AssociatedKeys.context) as? UIKitRenderContext else {
+            return
+        }
+        
+        context.onMermaidTap?(node)
     }
     
     /// 渲染图片
-    private func renderImage(_ node: ImageNode, context: UIKitRenderContext) -> UIView {
+    func renderImage(_ node: ImageNode, context: UIKitRenderContext) -> UIView {
         let containerView = UIView()
         containerView.translatesAutoresizingMaskIntoConstraints = false
         
@@ -924,6 +1002,15 @@ public class UIKitRenderer {
             
             // 设置最小高度，避免容器高度为0
             containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 100).isActive = true
+        }
+        
+        // 添加点击手势
+        if context.onImageTap != nil {
+            let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleImageTap(_:)))
+            containerView.addGestureRecognizer(tapGesture)
+            containerView.isUserInteractionEnabled = true
+            objc_setAssociatedObject(containerView, &AssociatedKeys.imageNode, node, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            objc_setAssociatedObject(containerView, &AssociatedKeys.context, context, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         }
         
         // 加载图片
@@ -1478,6 +1565,15 @@ public class UIKitRenderer {
             activityIndicator.centerYAnchor.constraint(equalTo: containerView.centerYAnchor)
         ])
         
+        // 添加点击手势
+        if context.onMathTap != nil {
+            let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleMathTap(_:)))
+            containerView.addGestureRecognizer(tapGesture)
+            containerView.isUserInteractionEnabled = true
+            objc_setAssociatedObject(containerView, &AssociatedKeys.mathNode, node, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            objc_setAssociatedObject(containerView, &AssociatedKeys.context, context, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
+        
         // 使用 MathHTMLRenderer 渲染为图片
         let fontSize = node.display ? 16.0 : 14.0
         MathHTMLRenderer.shared.render(
@@ -1554,6 +1650,15 @@ public class UIKitRenderer {
             activityIndicator.centerYAnchor.constraint(equalTo: containerView.centerYAnchor)
         ])
         
+        // 添加点击手势
+        if context.onMermaidTap != nil {
+            let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleMermaidTap(_:)))
+            containerView.addGestureRecognizer(tapGesture)
+            containerView.isUserInteractionEnabled = true
+            objc_setAssociatedObject(containerView, &AssociatedKeys.mermaidNode, node, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            objc_setAssociatedObject(containerView, &AssociatedKeys.context, context, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
+        
         // 获取文本颜色和背景颜色
         let textColor = context.theme.textColor
         let backgroundColor = context.theme.codeBackgroundColor
@@ -1616,7 +1721,7 @@ public class UIKitRenderer {
     }
     
     /// 渲染提及
-    private func renderMention(_ node: MentionNode, context: UIKitRenderContext) -> UIView {
+    func renderMention(_ node: MentionNode, context: UIKitRenderContext) -> UIView {
         let containerView = UIView()
         containerView.backgroundColor = context.theme.mentionBackground
         containerView.layer.cornerRadius = 4
@@ -1635,6 +1740,15 @@ public class UIKitRenderer {
             label.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -6),
             label.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -2)
         ])
+        
+        // 添加点击手势
+        if context.onMentionTap != nil {
+            let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleMentionTap(_:)))
+            containerView.addGestureRecognizer(tapGesture)
+            containerView.isUserInteractionEnabled = true
+            objc_setAssociatedObject(containerView, &AssociatedKeys.mentionNode, node, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            objc_setAssociatedObject(containerView, &AssociatedKeys.context, context, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
         
         return containerView
     }
@@ -1964,6 +2078,12 @@ extension TextAlign {
 
 private struct AssociatedKeys {
     static var url = "url"
+    static var context = "context"
+    static var imageNode = "imageNode"
+    static var mentionNode = "mentionNode"
+    static var codeBlockNode = "codeBlockNode"
+    static var mathNode = "mathNode"
+    static var mermaidNode = "mermaidNode"
 }
 
 // MARK: - UILabel 扩展（用于内边距）
