@@ -979,11 +979,9 @@ private class FrameRenderer {
     static func render(layout: NodeLayout, context: UIKitRenderContext) -> UIView {
         let view: UIView
         
-        // 根据内容类型创建视图
-        if let attributedString = layout.content as? NSAttributedString {
-            // 文本节点
-            view = renderAttributedString(attributedString, frame: layout.frame, context: context)
-        } else if let nodeWrapper = layout.node {
+        // 优先检查 node 类型，确保需要特殊处理的节点（如 mention、emoji）能正确渲染
+        // 这些节点需要支持点击事件等特殊功能，不能使用通用的 renderAttributedString
+        if let nodeWrapper = layout.node {
             switch nodeWrapper {
             case .paragraph(let pNode):
                 view = renderParagraph(pNode, layout: layout, context: context)
@@ -1012,9 +1010,17 @@ private class FrameRenderer {
             case .mention(let mNode):
                 view = renderMention(mNode, frame: layout.frame, context: context)
             default:
-                view = UIView()
-                view.frame = CGRect(origin: .zero, size: layout.frame.size)
+                // 对于其他节点类型，如果有 content，使用 content 渲染
+                if let attributedString = layout.content as? NSAttributedString {
+                    view = renderAttributedString(attributedString, frame: layout.frame, context: context)
+                } else {
+                    view = UIView()
+                    view.frame = CGRect(origin: .zero, size: layout.frame.size)
+                }
             }
+        } else if let attributedString = layout.content as? NSAttributedString {
+            // 没有 node 类型，但有 content，使用 content 渲染（纯文本节点）
+            view = renderAttributedString(attributedString, frame: layout.frame, context: context)
         } else {
             view = UIView()
             view.frame = CGRect(origin: .zero, size: layout.frame.size)
@@ -1113,10 +1119,15 @@ private class FrameRenderer {
     
     /// 渲染段落
     private static func renderParagraph(_ node: ParagraphNode, layout: NodeLayout, context: UIKitRenderContext) -> UIView {
+        // 如果有 content（纯文本段落），直接使用 content 渲染
+        if let attributedString = layout.content as? NSAttributedString {
+            return renderAttributedString(attributedString, frame: layout.frame, context: context)
+        }
+        
+        // 如果有 children（包含特殊节点的段落），递归渲染子视图
         let containerView = UIView()
         containerView.frame = CGRect(origin: .zero, size: layout.frame.size)
         
-        // 递归渲染子视图
         for childLayout in layout.children {
             let childView = render(layout: childLayout, context: context)
             childView.frame = childLayout.frame
@@ -1128,10 +1139,15 @@ private class FrameRenderer {
     
     /// 渲染标题
     private static func renderHeading(_ node: HeadingNode, layout: NodeLayout, context: UIKitRenderContext) -> UIView {
+        // 如果有 content（纯文本标题），直接使用 content 渲染
+        if let attributedString = layout.content as? NSAttributedString {
+            return renderAttributedString(attributedString, frame: layout.frame, context: context)
+        }
+        
+        // 如果有 children（包含特殊节点的标题），递归渲染子视图
         let containerView = UIView()
         containerView.frame = CGRect(origin: .zero, size: layout.frame.size)
         
-        // 递归渲染子视图
         for childLayout in layout.children {
             let childView = render(layout: childLayout, context: context)
             childView.frame = childLayout.frame
