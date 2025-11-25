@@ -116,11 +116,12 @@ public class UIKitLayoutCalculator {
         
         // 确保宽度不超过 maxContentWidth（如果传入的 width 已经考虑了内边距，这里不需要再次限制）
         let effectiveWidth = min(width, context.theme.maxContentWidth)
-        
+        var finalWidth = effectiveWidth
         for child in children {
             let childLayout = calculateNodeLayout(child, context: context, origin: CGPoint(x: 0, y: currentY), width: effectiveWidth)
             childLayouts.append(childLayout)
             currentY += childLayout.frame.height + spacing
+            finalWidth = max(finalWidth, childLayout.frame.width)
         }
         
         // 去掉最后一个多余的间距
@@ -132,7 +133,7 @@ public class UIKitLayoutCalculator {
         let totalHeight = max(0, currentY)
         
         return NodeLayout(
-            frame: CGRect(origin: origin, size: CGSize(width: effectiveWidth, height: totalHeight)),
+            frame: CGRect(origin: origin, size: CGSize(width: finalWidth, height: totalHeight)),
             children: childLayouts
         )
     }

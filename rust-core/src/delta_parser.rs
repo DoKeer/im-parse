@@ -119,17 +119,18 @@ impl DeltaParser {
                             if text == "\n" {
                                 // 普通换行（没有列表属性），结束当前列表或段落
                                 if in_list {
-                                    // 在列表中遇到普通换行，结束列表
+                                    // 在列表中遇到普通换行，先结束当前列表项（如果有内容）
                                     if !current_paragraph_children.is_empty() {
                                         builder.add_list_item(
                                             std::mem::take(&mut current_paragraph_children),
                                             None,
                                         );
                                     }
+                                    // 结束列表
                                     builder.end_list();
                                     in_list = false;
-                                } else {
-                                    // 不在列表中，结束当前段落
+                                }
+                                // 处理段落（无论是否在列表中，换行后都可能是新段落）
                                 if !current_paragraph_children.is_empty() {
                                     builder.start_paragraph();
                                     if let Some(para) = &mut builder.current_paragraph {
@@ -140,12 +141,27 @@ impl DeltaParser {
                                     // 空行，创建空段落
                                     builder.start_paragraph();
                                     builder.end_paragraph();
-                                    }
                                 }
                             } else if text.starts_with('\n') {
                                 // 文本以换行符开头（如 "\n有序"）
-                                // 先结束当前段落或列表项
-                                if in_list {
+                                // 检查换行符是否有列表属性
+                                let is_list_item = attributes.as_ref()
+                                    .and_then(|attrs| attrs.get("list"))
+                                    .and_then(|v| v.as_str())
+                                    .is_some();
+                                
+                                if in_list && !is_list_item {
+                                    // 在列表中，但换行符没有列表属性，结束列表
+                                    if !current_paragraph_children.is_empty() {
+                                        builder.add_list_item(
+                                            std::mem::take(&mut current_paragraph_children),
+                                            None,
+                                        );
+                                    }
+                                    builder.end_list();
+                                    in_list = false;
+                                } else if in_list && is_list_item {
+                                    // 在列表中，且换行符有列表属性，结束当前列表项
                                     if !current_paragraph_children.is_empty() {
                                         builder.add_list_item(
                                             std::mem::take(&mut current_paragraph_children),
@@ -154,7 +170,8 @@ impl DeltaParser {
                                     } else {
                                         builder.add_list_item(Vec::new(), None);
                                     }
-                                } else {
+                                } else if !in_list {
+                                    // 不在列表中，结束当前段落
                                     if !current_paragraph_children.is_empty() {
                                         builder.start_paragraph();
                                         if let Some(para) = &mut builder.current_paragraph {
@@ -182,30 +199,6 @@ impl DeltaParser {
                         InsertValue::Object(obj) => {
                             // 检查是否是图片
                             if obj.contains_key("imageContainer") || obj.contains_key("image") {
-                                // 结束当前段落或列表项
-                            if !current_paragraph_children.is_empty() {
-                                    if in_list {
-                                        // 在列表中，先结束当前列表项
-                                        builder.add_list_item(
-                                            std::mem::take(&mut current_paragraph_children),
-                                            None,
-                                        );
-                                    } else {
-                                        // 不在列表中，结束当前段落
-                                builder.start_paragraph();
-                                if let Some(para) = &mut builder.current_paragraph {
-                                    para.children = std::mem::take(&mut current_paragraph_children);
-                                }
-                                builder.end_paragraph();
-                            }
-                                }
- 
-                                // 图片是块级元素，需要结束当前列表
-                                if in_list {
-                                    builder.end_list();
-                                    in_list = false;
-                                }
- 
                                 // 尝试从 imageContainer 或 image 字段获取 URL
                                 let image_url = obj.get("image")
                                     .and_then(|v| v.as_str())
@@ -220,8 +213,72 @@ impl DeltaParser {
                                     .unwrap_or_default();
  
                                 if !image_url.is_empty() {
-                                    // 图片作为块级元素，总是单独处理
-                                    builder.add_image(image_url, None, None, None);
+                                    // 检查下一个操作是否是列表项结束（换行符 + 列表属性）
+                                    let next_op_is_list_item = delta.ops.get(idx + 1)
+                                        .map(|next_op| {
+                                            if let DeltaOp::Insert { insert: next_insert, attributes: next_attrs } = next_op {
+                                                if matches!(next_insert, InsertValue::Text(ref text) if text == "\n") {
+                                                    next_attrs.as_ref()
+                                                        .and_then(|attrs| attrs.get("list"))
+                                                        .and_then(|v| v.as_str())
+                                                        .is_some()
+                                                } else {
+                                                    false
+                                                }
+                                            } else {
+                                                false
+                                            }
+                                        })
+                                        .unwrap_or(false);
+                                    
+                                    // 解析图片的宽高（从 imageContainer）
+                                    let image_width = obj.get("imageContainer")
+                                        .and_then(|v| v.as_object())
+                                        .and_then(|ic| ic.get("width"))
+                                        .and_then(|v| v.as_str())
+                                        .and_then(|s| s.parse::<f32>().ok());
+                                    let image_height = obj.get("imageContainer")
+                                        .and_then(|v| v.as_object())
+                                        .and_then(|ic| ic.get("height"))
+                                        .and_then(|v| v.as_str())
+                                        .and_then(|s| s.parse::<f32>().ok());
+                                    
+                                    // 如果下一个操作是列表项，或者当前在列表中，图片应该作为行内元素
+                                    if next_op_is_list_item || in_list {
+                                        // 图片作为行内元素添加到当前段落/列表项
+                                        let image_node = ASTNode::Image(ImageNode {
+                                            url: image_url,
+                                            width: image_width,
+                                            height: image_height,
+                                            alt: None,
+                                        });
+                                        current_paragraph_children.push(image_node);
+                                    } else {
+                                        // 图片作为块级元素，需要结束当前段落和列表
+                                        if !current_paragraph_children.is_empty() {
+                                            if in_list {
+                                                builder.add_list_item(
+                                                    std::mem::take(&mut current_paragraph_children),
+                                                    None,
+                                                );
+                                            } else {
+                                                builder.start_paragraph();
+                                                if let Some(para) = &mut builder.current_paragraph {
+                                                    para.children = std::mem::take(&mut current_paragraph_children);
+                                                }
+                                                builder.end_paragraph();
+                                            }
+                                        }
+                                        
+                                        // 结束当前列表（如果有）
+                                        if in_list {
+                                            builder.end_list();
+                                            in_list = false;
+                                        }
+                                        
+                                        // 图片作为块级元素
+                                        builder.add_image(image_url, image_width, image_height, None);
+                                    }
                                 }
                             }
                             // 检查是否是提及
