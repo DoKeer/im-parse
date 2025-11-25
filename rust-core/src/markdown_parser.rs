@@ -483,10 +483,13 @@ impl MarkdownParser {
                     events.next();
                     children.push(ASTNode::HorizontalRule(HorizontalRuleNode {}));
                 }
+                Event::End(TagEnd::Paragraph) => {
+                    // 跳过段落结束事件，继续处理下一个块
+                    events.next();
+                }
                 _ => {
-                    // 其他内联内容
-                    self.collect_inline_content(events, children, &mut current_styles);
-                    break;
+                    // 跳过未处理的事件
+                    events.next();
                 }
             }
         }

@@ -75,6 +75,8 @@ class MessageDataGenerator {
     private static func generateMarkdownTemplates() -> [String] {
         return [
             """
+            >这是一条引用
+            
             # 完整的 Markdown 排版测试文档
             
             这是一篇完整的 Markdown 测试文档，用于全面测试 UIKitRenderer 和 SwiftUIRenderer 的排版效果。本文档包含了所有常见的 Markdown 元素，以确保渲染器能够正确处理各种复杂场景。
