@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::ast_builder::ASTBuilder;
 use crate::ParseError;
-use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag};
+use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd, HeadingLevel};
 
 /// Markdown 解析器
 pub struct MarkdownParser {
@@ -37,13 +37,13 @@ impl MarkdownParser {
                             builder.start_paragraph();
                             in_paragraph = true;
                         }
-                        Tag::Heading(level, _, _) => {
+                        Tag::Heading { level, .. } => {
                             // 收集标题内容
                             let mut children = Vec::new();
                             self.collect_inline_content(&mut events, &mut children, &mut current_inline_styles);
-                            builder.add_heading(level as u8, children);
+                            builder.add_heading(self.heading_level_to_u8(level), children);
                         }
-                        Tag::BlockQuote => {
+                        Tag::BlockQuote(_) => {
                             // 收集引用块内容
                             let mut children = Vec::new();
                             self.collect_block_content(&mut events, &mut children);
@@ -80,6 +80,11 @@ impl MarkdownParser {
                         Tag::List(None) => {
                             builder.start_list(ListType::Bullet);
                         }
+                        Tag::List(_) => {
+                            // 处理其他可能的列表情况（例如 start != 1 的有序列表）
+                            // 这里简单处理为有序列表
+                            builder.start_list(ListType::Ordered);
+                        }
                         Tag::Item => {
                             let mut children = Vec::new();
                             let checked = self.collect_list_item_content(&mut events, &mut children, &mut current_inline_styles);
@@ -105,15 +110,15 @@ impl MarkdownParser {
                         Tag::Emphasis => {
                             current_inline_styles.push(InlineStyle::Em);
                         }
-                        Tag::Link(_link_type, url, _title) => {
-                            current_inline_styles.push(InlineStyle::Link(url.to_string()));
+                        Tag::Link { dest_url, .. } => {
+                            current_inline_styles.push(InlineStyle::Link(dest_url.to_string()));
                         }
-                        Tag::Image(_link_type, url, title) => {
+                        Tag::Image { dest_url, title, .. } => {
                             // 收集图片的 Alt 文本
                             let mut alt_text = String::new();
                             while let Some(event) = events.peek() {
                                 match event {
-                                    Event::End(Tag::Image(_, _, _)) => {
+                                    Event::End(TagEnd::Image) => {
                                         events.next(); // 消费 End 事件
                                         break;
                                     }
@@ -129,7 +134,7 @@ impl MarkdownParser {
                             let alt = if alt_text.is_empty() { None } else { Some(alt_text) };
                             // add_image 的签名是 (url, width, height, alt)，这里用 title 作为 alt
                             let alt_or_title = alt.or_else(|| if title.is_empty() { None } else { Some(title.to_string()) });
-                            builder.add_image(url.to_string(), None, None, alt_or_title);
+                            builder.add_image(dest_url.to_string(), None, None, alt_or_title);
                         }
                         Tag::Strikethrough => {
                             current_inline_styles.push(InlineStyle::Strike);
@@ -139,7 +144,7 @@ impl MarkdownParser {
                 }
                 Event::End(tag) => {
                     match tag {
-                        Tag::Paragraph => {
+                        TagEnd::Paragraph => {
                             // 检查当前段落是否只包含块级公式
                             // 需要收集所有文本节点的内容，因为 pulldown-cmark 可能会将公式拆分成多个节点
                             // 注意：pulldown-cmark 可能会将 LaTeX 中的某些内容误解析为 Markdown 格式（如斜体）
@@ -178,35 +183,35 @@ impl MarkdownParser {
                                 in_paragraph = false;
                             }
                         }
-                        Tag::Heading(_, _, _) => {
+                        TagEnd::Heading(_) => {
                             // 已经在 Start 时处理
                         }
-                        Tag::List(_) => {
+                        TagEnd::List(_) => {
                             builder.end_list();
                         }
-                        Tag::Table(_) => {
+                        TagEnd::Table => {
                             builder.end_table();
                         }
-                        Tag::TableHead | Tag::TableRow => {
+                        TagEnd::TableHead | TagEnd::TableRow => {
                             builder.end_table_row();
                         }
-                        Tag::Strong => {
+                        TagEnd::Strong => {
                             // 从栈顶弹出对应的样式
                             if let Some(pos) = current_inline_styles.iter().rposition(|s| matches!(s, InlineStyle::Strong)) {
                                 current_inline_styles.remove(pos);
                             }
                         }
-                        Tag::Emphasis => {
+                        TagEnd::Emphasis => {
                             if let Some(pos) = current_inline_styles.iter().rposition(|s| matches!(s, InlineStyle::Em)) {
                                 current_inline_styles.remove(pos);
                             }
                         }
-                        Tag::Link(_, _, _) => {
+                        TagEnd::Link => {
                             if let Some(pos) = current_inline_styles.iter().rposition(|s| matches!(s, InlineStyle::Link(_))) {
                                 current_inline_styles.remove(pos);
                             }
                         }
-                        Tag::Strikethrough => {
+                        TagEnd::Strikethrough => {
                             if let Some(pos) = current_inline_styles.iter().rposition(|s| matches!(s, InlineStyle::Strike)) {
                                 current_inline_styles.remove(pos);
                             }
@@ -249,6 +254,17 @@ impl MarkdownParser {
         Ok(builder.end_document())
     }
 
+    fn heading_level_to_u8(&self, level: HeadingLevel) -> u8 {
+        match level {
+            HeadingLevel::H1 => 1,
+            HeadingLevel::H2 => 2,
+            HeadingLevel::H3 => 3,
+            HeadingLevel::H4 => 4,
+            HeadingLevel::H5 => 5,
+            HeadingLevel::H6 => 6,
+        }
+    }
+
     fn collect_inline_content<'a>(
         &self,
         events: &mut std::iter::Peekable<impl Iterator<Item = Event<'a>>>,
@@ -257,10 +273,10 @@ impl MarkdownParser {
     ) {
         while let Some(event) = events.peek() {
             match event {
-                Event::End(Tag::Heading(_, _, _))
-                | Event::End(Tag::Paragraph)
-                | Event::End(Tag::TableCell)
-                | Event::End(Tag::Item) => {
+                Event::End(TagEnd::Heading(_))
+                | Event::End(TagEnd::Paragraph)
+                | Event::End(TagEnd::TableCell)
+                | Event::End(TagEnd::Item) => {
                     break;
                 }
                 _ => {
@@ -292,7 +308,7 @@ impl MarkdownParser {
                             Event::Start(Tag::Strong) => {
                                 current_styles.push(InlineStyle::Strong);
                             }
-                            Event::End(Tag::Strong) => {
+                            Event::End(TagEnd::Strong) => {
                                 if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, InlineStyle::Strong)) {
                                     current_styles.remove(pos);
                                 }
@@ -300,15 +316,15 @@ impl MarkdownParser {
                             Event::Start(Tag::Emphasis) => {
                                 current_styles.push(InlineStyle::Em);
                             }
-                            Event::End(Tag::Emphasis) => {
+                            Event::End(TagEnd::Emphasis) => {
                                 if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, InlineStyle::Em)) {
                                     current_styles.remove(pos);
                                 }
                             }
-                            Event::Start(Tag::Link(_, url, _)) => {
-                                current_styles.push(InlineStyle::Link(url.to_string()));
+                            Event::Start(Tag::Link { dest_url, .. }) => {
+                                current_styles.push(InlineStyle::Link(dest_url.to_string()));
                             }
-                            Event::End(Tag::Link(_, _, _)) => {
+                            Event::End(TagEnd::Link) => {
                                 if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, InlineStyle::Link(_))) {
                                     current_styles.remove(pos);
                                 }
@@ -316,7 +332,7 @@ impl MarkdownParser {
                             Event::Start(Tag::Strikethrough) => {
                                 current_styles.push(InlineStyle::Strike);
                             }
-                            Event::End(Tag::Strikethrough) => {
+                            Event::End(TagEnd::Strikethrough) => {
                                 if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, InlineStyle::Strike)) {
                                     current_styles.remove(pos);
                                 }
@@ -338,7 +354,7 @@ impl MarkdownParser {
         
         while let Some(event) = events.peek() {
             match event {
-                Event::End(Tag::BlockQuote) => {
+                Event::End(TagEnd::BlockQuote(_)) => {
                     events.next(); // 消费 End 事件
                     break;
                 }
@@ -375,7 +391,7 @@ impl MarkdownParser {
                     
                     while let Some(event) = events.peek() {
                         match event {
-                            Event::End(Tag::List(_)) => {
+                            Event::End(TagEnd::List(_)) => {
                                 events.next();
                                 break;
                             }
@@ -402,7 +418,7 @@ impl MarkdownParser {
                     
                     while let Some(event) = events.peek() {
                         match event {
-                            Event::End(Tag::List(_)) => {
+                            Event::End(TagEnd::List(_)) => {
                                 events.next();
                                 break;
                             }
@@ -447,8 +463,8 @@ impl MarkdownParser {
                         children.push(ASTNode::CodeBlock(CodeBlockNode { language, content }));
                     }
                 }
-                Event::Start(Tag::Heading(level, _, _)) => {
-                    let heading_level = *level as u8; // 先复制 level 的值
+                Event::Start(Tag::Heading { level, .. }) => {
+                    let heading_level = self.heading_level_to_u8(*level);
                     events.next();
                     let mut heading_children = Vec::new();
                     self.collect_inline_content(events, &mut heading_children, &mut current_styles);
@@ -457,11 +473,11 @@ impl MarkdownParser {
                         children: heading_children,
                     }));
                 }
-                Event::Start(Tag::BlockQuote) => {
+                Event::Start(Tag::BlockQuote(_)) => {
                     events.next();
-                    let mut nested_children = Vec::new();
-                    self.collect_block_content(events, &mut nested_children);
-                    children.push(ASTNode::Blockquote(BlockquoteNode { children: nested_children }));
+                    let mut blockquote_children = Vec::new();
+                    self.collect_block_content(events, &mut blockquote_children);
+                    children.push(ASTNode::Blockquote(BlockquoteNode { children: blockquote_children }));
                 }
                 Event::Rule => {
                     events.next();
@@ -486,7 +502,7 @@ impl MarkdownParser {
         
         while let Some(event) = events.peek() {
             match event {
-                Event::End(Tag::Item) => {
+                Event::End(TagEnd::Item) => {
                     events.next(); // 消费 End 事件
                     break;
                 }
@@ -502,7 +518,7 @@ impl MarkdownParser {
                     // 收集段落内容直到段落结束
                     while let Some(event) = events.peek() {
                         match event {
-                            Event::End(Tag::Paragraph) => {
+                            Event::End(TagEnd::Paragraph) => {
                                 events.next();
                                 break;
                             }
@@ -541,7 +557,7 @@ impl MarkdownParser {
                     // 收集所有嵌套列表项，直到列表结束
                     while let Some(event) = events.peek() {
                         match event {
-                            Event::End(Tag::List(_)) => {
+                            Event::End(TagEnd::List(_)) => {
                                 events.next();
                                 break;
                             }
@@ -570,7 +586,7 @@ impl MarkdownParser {
                     // 收集所有嵌套列表项，直到列表结束
                     while let Some(event) = events.peek() {
                         match event {
-                            Event::End(Tag::List(_)) => {
+                            Event::End(TagEnd::List(_)) => {
                                 events.next();
                                 break;
                             }
@@ -616,7 +632,7 @@ impl MarkdownParser {
                         children.push(ASTNode::CodeBlock(CodeBlockNode { language, content }));
                     }
                 }
-                Event::Start(Tag::BlockQuote) => {
+                Event::Start(Tag::BlockQuote(_)) => {
                     events.next();
                     let mut blockquote_children = Vec::new();
                     self.collect_block_content(events, &mut blockquote_children);
@@ -637,7 +653,7 @@ impl MarkdownParser {
         
         while let Some(event) = events.peek() {
             match event {
-                Event::End(Tag::CodeBlock(_)) => {
+                Event::End(TagEnd::CodeBlock) => {
                     events.next(); // 消费 End 事件
                     break;
                 }
