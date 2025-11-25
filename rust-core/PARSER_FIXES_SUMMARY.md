@@ -41,9 +41,11 @@ Event::Html(html) => {
 - 添加了 Table 处理
 - 添加了 Image 处理
 - 添加了 HorizontalRule 处理
-- 添加了调试日志（debug 模式）
+- **重要修复**: default 分支收集行内内容（Text, Code, Strong, Em, Link 等）
 
-**效果**: 代码逻辑更清晰，行为更可预测
+**效果**: 
+- 代码逻辑更清晰，行为更可预测
+- **列表项内容正确收集**（修复了列表项 children 为空的问题）
 
 ### 5. ✅ 嵌套列表解析问题
 **修复**: 
@@ -91,10 +93,34 @@ Event::Html(html) => {
 - ✅ 所有现有功能保持兼容
 - ✅ 新增功能：嵌套表格、改进的列表解析
 
+## 关键修复：列表项内容收集
+
+**问题**: 列表项的 `children` 为空，虽然嵌套结构正确，但文本内容丢失。
+
+**根本原因**: 在 `collect_list_item_content` 的 default 分支中，只跳过事件而不收集行内内容（Text, Code等）。
+
+**解决方案**:
+```rust
+_ => {
+    // 其他事件作为行内内容处理
+    let mut inline_children = Vec::new();
+    self.collect_inline_content(events, &mut inline_children, current_styles);
+    
+    if !inline_children.is_empty() {
+        children.push(ASTNode::Paragraph(ParagraphNode { 
+            children: inline_children 
+        }));
+    }
+}
+```
+
+**效果**: 列表项内容（包括粗体、斜体、代码、链接等）全部正确收集。
+
 ## 版本记录
 
 - **修复日期**: 2025-11-25
 - **修复版本**: v1.0.0+fixes
 - **修改文件**: `rust-core/src/markdown_parser.rs`
 - **总行数变化**: +约200行
+- **最后修复**: 列表项内容收集（2025-11-25）
 

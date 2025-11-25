@@ -856,12 +856,17 @@ impl MarkdownParser {
                     }
                 }
                 _ => {
-                    #[cfg(debug_assertions)]
-                    {
-                        // 在调试模式下记录未处理的事件
-                        eprintln!("collect_list_item_content: 未处理的事件: {:?}", event);
+                    // 其他事件作为行内内容处理
+                    // 这包括 Text, Code, Strong, Em, Link 等
+                    // 创建一个段落来包含这些行内内容
+                    let mut inline_children = Vec::new();
+                    self.collect_inline_content(events, &mut inline_children, current_styles);
+                    
+                    if !inline_children.is_empty() {
+                        children.push(ASTNode::Paragraph(ParagraphNode { 
+                            children: inline_children 
+                        }));
                     }
-                    events.next();
                 }
             }
         }
