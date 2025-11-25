@@ -143,9 +143,10 @@ public class UIKitLayoutCalculator {
         switch node {
         case .paragraph(let pNode):
             // 段落布局：检查是否包含特殊节点
+            // 注意：mention 和 emoji 也需要单独处理，因为它们需要支持点击事件或特殊样式
             let hasSpecialNodes = pNode.children.contains { wrapper in
                 switch wrapper {
-                case .image, .math, .mermaid:
+                case .image, .math, .mermaid, .mention, .emoji:
                     return true
                 default:
                     return false
@@ -179,9 +180,10 @@ public class UIKitLayoutCalculator {
             
         case .heading(let hNode):
             // 检查是否包含特殊节点
+            // 注意：mention 和 emoji 也需要单独处理
             let hasSpecialNodes = hNode.children.contains { wrapper in
                 switch wrapper {
-                case .image, .math, .mermaid:
+                case .image, .math, .mermaid, .mention, .emoji:
                     return true
                 default:
                     return false
@@ -335,6 +337,62 @@ public class UIKitLayoutCalculator {
             return NodeLayout(
                 frame: CGRect(origin: origin, size: estimatedSize),
                 node: node
+            )
+            
+        case .emoji(let eNode):
+            // Emoji 布局：计算文本大小
+            let font = context.currentFont ?? context.theme.font
+            let color = context.currentTextColor ?? context.theme.textColor
+            let attrString = NSAttributedString(
+                string: eNode.content,
+                attributes: [.font: font, .foregroundColor: color]
+            )
+            
+            let size = attrString.boundingRect(
+                with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).size
+            
+            let height = ceil(size.height)
+            let actualWidth = min(ceil(size.width), width)
+            
+            return NodeLayout(
+                frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: height)),
+                node: node,
+                content: attrString
+            )
+            
+        case .mention(let mNode):
+            // Mention 布局：计算文本大小 + padding
+            let font = context.theme.font
+            let text = "@\(mNode.name)"
+            let attrString = NSAttributedString(
+                string: text,
+                attributes: [
+                    .font: font,
+                    .foregroundColor: context.theme.mentionTextColor
+                ]
+            )
+            
+            let size = attrString.boundingRect(
+                with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).size
+            
+            // Mention 有内边距：上下 2，左右 6
+            let padding: CGFloat = 2
+            let horizontalPadding: CGFloat = 6
+            let height = ceil(size.height) + padding * 2
+            let actualWidth = min(ceil(size.width) + horizontalPadding * 2, width)
+            
+            return NodeLayout(
+                frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: height)),
+                node: node,
+                content: attrString,
+                backgroundColor: context.theme.mentionBackground,
+                cornerRadius: 4
             )
             
         default:
@@ -528,6 +586,18 @@ public class UIKitLayoutCalculator {
                 childLayouts.append(mermaidLayout)
                 currentY += mermaidLayout.frame.height
                 
+            case .mention(let mentionNode):
+                flushTextNodes()
+                let mentionLayout = calculateNodeLayout(.mention(mentionNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(mentionLayout)
+                currentY += mentionLayout.frame.height
+                
+            case .emoji(let emojiNode):
+                flushTextNodes()
+                let emojiLayout = calculateNodeLayout(.emoji(emojiNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(emojiLayout)
+                currentY += emojiLayout.frame.height
+                
             default:
                 currentTextNodes.append(child)
             }
@@ -594,6 +664,18 @@ public class UIKitLayoutCalculator {
                 let mermaidLayout = calculateNodeLayout(.mermaid(mermaidNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
                 childLayouts.append(mermaidLayout)
                 currentY += mermaidLayout.frame.height
+                
+            case .mention(let mentionNode):
+                flushTextNodes()
+                let mentionLayout = calculateNodeLayout(.mention(mentionNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(mentionLayout)
+                currentY += mentionLayout.frame.height
+                
+            case .emoji(let emojiNode):
+                flushTextNodes()
+                let emojiLayout = calculateNodeLayout(.emoji(emojiNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(emojiLayout)
+                currentY += emojiLayout.frame.height
                 
             default:
                 currentTextNodes.append(child)
@@ -859,6 +941,18 @@ public class UIKitLayoutCalculator {
                 childLayouts.append(mermaidLayout)
                 currentY += mermaidLayout.frame.height
                 
+            case .mention(let mentionNode):
+                flushTextNodes()
+                let mentionLayout = calculateNodeLayout(.mention(mentionNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(mentionLayout)
+                currentY += mentionLayout.frame.height
+                
+            case .emoji(let emojiNode):
+                flushTextNodes()
+                let emojiLayout = calculateNodeLayout(.emoji(emojiNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(emojiLayout)
+                currentY += emojiLayout.frame.height
+                
             default:
                 currentTextNodes.append(child)
             }
@@ -913,6 +1007,10 @@ private class FrameRenderer {
                 view = renderMermaid(mNode, frame: layout.frame, context: context)
             case .html(let hNode):
                 view = renderHtml(hNode, frame: layout.frame, context: context)
+            case .emoji(let eNode):
+                view = renderEmoji(eNode, frame: layout.frame, context: context)
+            case .mention(let mNode):
+                view = renderMention(mNode, frame: layout.frame, context: context)
             default:
                 view = UIView()
                 view.frame = CGRect(origin: .zero, size: layout.frame.size)
@@ -936,14 +1034,18 @@ private class FrameRenderer {
         }
         
         // 递归添加子视图，使用精确的 frame
+        // 注意：某些节点类型已经在其 render 方法内部处理了 children，需要跳过通用渲染逻辑
         if let nodeWrapper = layout.node {
             switch nodeWrapper {
-            case .codeBlock:
-                // 代码块已经通过 renderCodeBlock 创建了完整视图，不需要再处理 children
+            case .codeBlock, .image, .math, .mermaid, .html, .emoji, .mention, .horizontalRule:
+                // 这些节点已经在各自的 render 方法中创建了完整视图，不需要再处理 children
                 break
             case .table:
                 // 表格：需要特殊处理，渲染行、单元格分隔线和单元格内容
                 renderTableChildren(children: layout.children, into: view, context: context)
+            case .paragraph, .heading, .list, .blockquote:
+                // 这些节点已经在各自的 render 方法内部递归渲染了 children，不需要再次渲染
+                break
             default:
                 // 其他节点：递归渲染子视图
                 for childLayout in layout.children {
@@ -953,7 +1055,7 @@ private class FrameRenderer {
                 }
             }
         } else {
-            // 没有节点类型，直接渲染子视图
+            // 没有节点类型，直接渲染子视图（例如 rootNode 或中间容器节点）
             for childLayout in layout.children {
                 let childView = render(layout: childLayout, context: context)
                 childView.frame = childLayout.frame
@@ -1708,6 +1810,54 @@ private class FrameRenderer {
             let verticalInset = (containerHeight - textHeight) / 2.0
             textView.textContainerInset = UIEdgeInsets(top: verticalInset, left: 0, bottom: verticalInset, right: 0)
         }
+    }
+    
+    // MARK: - Emoji & Mention 渲染
+    
+    /// 渲染 Emoji
+    private static func renderEmoji(_ node: EmojiNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
+        let label = UILabel()
+        label.text = node.content
+        label.font = context.currentFont ?? context.theme.font
+        label.textColor = context.currentTextColor ?? context.theme.textColor
+        label.frame = CGRect(origin: .zero, size: frame.size)
+        return label
+    }
+    
+    /// 渲染 Mention
+    private static func renderMention(_ node: MentionNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
+        let containerView = UIView()
+        containerView.frame = CGRect(origin: .zero, size: frame.size)
+        containerView.backgroundColor = context.theme.mentionBackground
+        containerView.layer.cornerRadius = 4
+        containerView.clipsToBounds = true
+        
+        let label = UILabel()
+        label.text = "@\(node.name)"
+        label.font = context.theme.font
+        label.textColor = context.theme.mentionTextColor
+        label.numberOfLines = 1
+        
+        // Mention 有内边距：上下 2，左右 6
+        let padding: CGFloat = 2
+        let horizontalPadding: CGFloat = 6
+        label.frame = CGRect(
+            x: horizontalPadding,
+            y: padding,
+            width: frame.size.width - horizontalPadding * 2,
+            height: frame.size.height - padding * 2
+        )
+        
+        containerView.addSubview(label)
+        
+        // 添加点击手势
+        if let onMentionTap = context.onMentionTap {
+            containerView.addTapAction {
+                onMentionTap(node)
+            }
+        }
+        
+        return containerView
     }
 }
 

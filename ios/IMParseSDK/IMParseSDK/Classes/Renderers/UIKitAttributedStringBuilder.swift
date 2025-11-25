@@ -28,7 +28,7 @@ public class UIKitAttributedStringBuilder {
         // 应用行高配置
         if result.length > 0 {
             let paragraphStyle = NSMutableParagraphStyle()
-            paragraphStyle.lineHeightMultiple = context.theme.lineHeight
+            paragraphStyle.lineSpacing =  context.theme.lineHeight
             result.addAttribute(.paragraphStyle, value: paragraphStyle, range: NSRange(location: 0, length: result.length))
         }
         
