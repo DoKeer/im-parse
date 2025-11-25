@@ -198,6 +198,16 @@ public class UIKitRenderer {
     
     /// 渲染段落
     private func renderParagraph(_ node: ParagraphNode, context: UIKitRenderContext) -> UIView {
+        // 防御性检查：如果段落为空，返回一个空的 UIView（高度为0）
+        if node.children.isEmpty {
+            let emptyView = UIView()
+            emptyView.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                emptyView.heightAnchor.constraint(equalToConstant: 0)
+            ])
+            return emptyView
+        }
+        
         // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
         // 行内代码现在可以嵌入到 NSAttributedString 中，不需要单独处理
         let hasSpecialNodes = node.children.contains { wrapper in

@@ -35,9 +35,11 @@ impl ASTBuilder {
 
     /// 结束构建文档，返回根节点
     pub fn end_document(&mut self) -> RootNode {
-        // 结束当前段落
+        // 结束当前段落（只有当段落不为空时才添加）
         if let Some(para) = self.current_paragraph.take() {
-            self.root.children.push(ASTNode::Paragraph(para));
+            if !para.children.is_empty() {
+                self.root.children.push(ASTNode::Paragraph(para));
+            }
         }
 
         // 结束当前列表
@@ -56,7 +58,10 @@ impl ASTBuilder {
     /// 开始段落
     pub fn start_paragraph(&mut self) {
         if let Some(para) = self.current_paragraph.take() {
-            self.root.children.push(ASTNode::Paragraph(para));
+            // 只有当段落不为空时才添加到 AST
+            if !para.children.is_empty() {
+                self.root.children.push(ASTNode::Paragraph(para));
+            }
         }
         self.current_paragraph = Some(ParagraphNode {
             children: Vec::new(),
@@ -66,7 +71,10 @@ impl ASTBuilder {
     /// 结束段落
     pub fn end_paragraph(&mut self) {
         if let Some(para) = self.current_paragraph.take() {
-            self.root.children.push(ASTNode::Paragraph(para));
+            // 只有当段落不为空时才添加到 AST
+            if !para.children.is_empty() {
+                self.root.children.push(ASTNode::Paragraph(para));
+            }
         }
     }
 
