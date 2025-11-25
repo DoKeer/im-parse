@@ -73,6 +73,8 @@ public struct SwiftUIRenderer {
             return AnyView(renderBlockquote(node, context: context))
         case .horizontalRule(_):
             return AnyView(renderHorizontalRule(context: context))
+        case .html(let node):
+            return AnyView(renderHtml(node, context: context))
         }
     }
     
@@ -209,7 +211,7 @@ public struct SwiftUIRenderer {
                     }
                 }
                 
-                // 应用粗体字体
+                // 应用粗体字体（使用 bold weight）
                 childString.font = .system(size: fontSize, weight: .bold)
                 
                 // 如果有斜体属性，需要重新应用（因为设置 font 可能会覆盖）
@@ -232,8 +234,33 @@ public struct SwiftUIRenderer {
                 var childString = buildAttributedString(from: child, context: context)
                 // 应用斜体：使用 obliqueness 属性实现斜体效果
                 let fontSize = getFontSize(from: font, context: context)
-                childString.font = .system(size: fontSize)
-                // 使用 obliqueness 属性实现斜体效果
+                
+                // 检查子节点是否是 strong 节点（嵌套的粗体+斜体）
+                let isStrongNode: Bool
+                if case .strong = child {
+                    isStrongNode = true
+                } else {
+                    isStrongNode = false
+                }
+                
+                // 如果子节点不是 strong 节点，需要设置字体大小
+                // 如果子节点是 strong 节点，它已经设置了粗体字体，我们保留它
+                if !isStrongNode {
+                    // 检查子节点是否已经有字体设置（来自嵌套的 strong）
+                    // 如果没有，设置基础字体
+                    var hasFont = false
+                    for run in childString.runs {
+                        if run.font != nil {
+                            hasFont = true
+                            break
+                        }
+                    }
+                    if !hasFont {
+                        childString.font = .system(size: fontSize)
+                    }
+                }
+                
+                // 使用 obliqueness 属性实现斜体效果（这会叠加在已有的粗体上）
                 var attributes = AttributeContainer()
                 attributes.obliqueness = 0.2
                 childString.mergeAttributes(attributes)
@@ -624,8 +651,8 @@ public struct SwiftUIRenderer {
                 HStack(alignment: .top, spacing: 0) {
                     ForEach(Array(row.cells.enumerated()), id: \.offset) { cellIndex, cell in
                         // 表格单元格内容：使用 AttributedString 组合所有行内节点
-                        renderTableCellContent(cell: cell, context: context)
-                        .frame(maxWidth: .infinity, alignment: cell.align?.alignment ?? .leading)
+                        renderTableCellContent(cell: cell, context: context, alignment: cell.align?.alignment ?? .leading)
+                        .frame(maxWidth: .infinity)
                         .padding(context.theme.tableCellPadding)
                         .background(rowIndex == 0 ? context.theme.tableHeaderBackground : Color.clear)
                     }
@@ -642,7 +669,7 @@ public struct SwiftUIRenderer {
     
     /// 渲染表格单元格内容
     @ViewBuilder
-    private func renderTableCellContent(cell: TableCell, context: RenderContext) -> some View {
+    private func renderTableCellContent(cell: TableCell, context: RenderContext, alignment: Alignment) -> some View {
         // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
         // 行内代码现在可以嵌入到 AttributedString 中，不需要单独处理
         let hasSpecialNodes = cell.children.contains { wrapper in
@@ -657,12 +684,13 @@ public struct SwiftUIRenderer {
         if hasSpecialNodes {
             // 如果包含特殊节点，使用混合布局
             let groupedNodes = groupInlineNodes(cell.children)
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: alignment == .center ? .center : (alignment == .trailing ? .trailing : .leading), spacing: 0) {
                 ForEach(Array(groupedNodes.enumerated()), id: \.offset) { index, group in
                     switch group {
                     case .textNodes(let nodes):
                         buildText(from: nodes, context: context)
                             .fixedSize(horizontal: false, vertical: true)
+                            .multilineTextAlignment(alignment == .center ? .center : (alignment == .trailing ? .trailing : .leading))
                     case .specialNode(let node):
                         renderInlineNodeWrapper(node, context: context)
                     }
@@ -672,6 +700,7 @@ public struct SwiftUIRenderer {
             // 否则使用 AttributedString 渲染，支持正确换行
             buildText(from: cell.children, context: context)
                 .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(alignment == .center ? .center : (alignment == .trailing ? .trailing : .leading))
         }
     }
     
@@ -694,8 +723,8 @@ public struct SwiftUIRenderer {
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: node.width != nil ? CGFloat(node.width!) : context.width,
-                               maxHeight: node.height != nil ? CGFloat(node.height!) : nil)
+                        .frame(width: node.width != nil ? CGFloat(node.width!) : nil,
+                               height: node.height != nil ? CGFloat(node.height!) : nil)
                         .cornerRadius(context.theme.imageBorderRadius)
                         .padding(.vertical, context.theme.imageMargin)
                         .onTapGesture {
@@ -742,19 +771,25 @@ public struct SwiftUIRenderer {
     @ViewBuilder
     private func renderMath(_ node: MathNode, context: RenderContext) -> some View {
         // 使用 HTML 渲染数学公式（从 Rust Core 获取 HTML，然后渲染为图片）
-        MathSVGView(mathContent: node.content, display: node.display, context: context)
+        MathSVGView(mathContent: node.content, display: node.display, context: context, node: node)
             .padding(context.theme.codeBlockPadding)
             .background(context.theme.codeBackgroundColor)
             .cornerRadius(context.theme.codeBlockBorderRadius)
+            .onTapGesture {
+                context.onMathTap?(node)
+            }
     }
     
     @ViewBuilder
     private func renderMermaid(_ node: MermaidNode, context: RenderContext) -> some View {
         // 使用 HTML 渲染 Mermaid 图表（使用 MermaidHTMLRenderer 渲染为图片）
-        MermaidSVGView(mermaidContent: node.content, context: context)
+        MermaidSVGView(mermaidContent: node.content, context: context, node: node)
             .padding(context.theme.codeBlockPadding)
             .background(context.theme.codeBackgroundColor)
             .cornerRadius(context.theme.codeBlockBorderRadius)
+            .onTapGesture {
+                context.onMermaidTap?(node)
+            }
     }
     
     @ViewBuilder
@@ -934,6 +969,40 @@ public struct SwiftUIRenderer {
     }
     
     @ViewBuilder
+    private func renderHtml(_ node: HtmlNode, context: RenderContext) -> some View {
+        // 在 SwiftUI 中，我们不直接渲染 HTML，而是将其转换为纯文本显示
+        // 如果需要完整的 HTML 渲染，可以使用 WKWebView
+        let textContent = stripHtmlTags(from: node.content)
+        
+        if textContent.isEmpty {
+            EmptyView()
+        } else {
+            Text(textContent)
+                .font(context.currentFont ?? context.theme.font)
+                .foregroundColor(context.currentTextColor ?? context.theme.textColor)
+        }
+    }
+    
+    /// 移除 HTML 标签，提取纯文本内容
+    private func stripHtmlTags(from html: String) -> String {
+        // 简单的 HTML 标签移除（使用正则表达式）
+        // 注意：这不是完整的 HTML 解析，但对于大多数情况足够
+        let pattern = "<[^>]+>"
+        let regex = try? NSRegularExpression(pattern: pattern, options: [])
+        let range = NSRange(location: 0, length: html.utf16.count)
+        let text = regex?.stringByReplacingMatches(in: html, options: [], range: range, withTemplate: "") ?? html
+        
+        // 解码 HTML 实体
+        return text
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    @ViewBuilder
     private func renderText(_ node: TextNode, context: RenderContext) -> some View {
         Text(node.content)
             .font(context.currentFont ?? context.theme.font)
@@ -942,34 +1011,41 @@ public struct SwiftUIRenderer {
     
     @ViewBuilder
     private func renderStrong(_ node: StrongNode, context: RenderContext) -> some View {
-        if #available(iOS 16.0, *) {
+        // 使用 AttributedString 来支持嵌套样式（粗体中的斜体）
+        if #available(iOS 15.0, *) {
+            let attributedString = buildAttributedString(from: .strong(node), context: context)
+            Text(attributedString)
+        } else {
+            // Fallback on earlier versions
             HStack(spacing: 0) {
                 ForEach(Array(node.children.enumerated()), id: \.offset) { _, child in
                     renderInlineNodeWrapper(child, context: context)
                 }
             }
             .fontWeight(.bold)
-            // 如果当前有自定义字体，保持字体大小但应用粗体
-            .font(context.currentFont != nil ? context.currentFont : nil)
+            .font(context.currentFont)
             .foregroundColor(context.currentTextColor)
-        } else {
-            // Fallback on earlier versions
         }
     }
     
     @ViewBuilder
     private func renderEm(_ node: EmNode, context: RenderContext) -> some View {
-        HStack(spacing: 0) {
-            ForEach(Array(node.children.enumerated()), id: \.offset) { _, child in
-                renderInlineNodeWrapper(child, context: context)
+        // 使用 AttributedString 来支持嵌套样式（斜体中的粗体）
+        if #available(iOS 15.0, *) {
+            let attributedString = buildAttributedString(from: .em(node), context: context)
+            Text(attributedString)
+        } else {
+            // Fallback on earlier versions
+            HStack(spacing: 0) {
+                ForEach(Array(node.children.enumerated()), id: \.offset) { _, child in
+                    renderInlineNodeWrapper(child, context: context)
+                }
             }
+            .font(context.currentFont)
+            .foregroundColor(context.currentTextColor)
+            // 使用仿射变换实现斜体效果，对中英文都有效
+            .transformEffect(CGAffineTransform(a: 1, b: 0, c: -0.21, d: 1, tx: 2.5, ty: 0))
         }
-        .font(context.currentFont != nil ? context.currentFont : nil)
-        .foregroundColor(context.currentTextColor)
-        // 使用仿射变换实现斜体效果，对中英文都有效
-        // 倾斜角度约为 -12 度（约 -0.21 弧度），这是标准的斜体倾斜角度
-        // 在变换中添加水平偏移补偿，避免与后续文本重叠
-        .transformEffect(CGAffineTransform(a: 1, b: 0, c: -0.21, d: 1, tx: 2.5, ty: 0))
     }
     
     @ViewBuilder
@@ -1071,6 +1147,7 @@ struct MathSVGView: View {
     let mathContent: String
     let display: Bool
     let context: RenderContext
+    let node: MathNode
     @State private var renderedImage: UIImage?
     @State private var isLoading = true
     
@@ -1080,7 +1157,7 @@ struct MathSVGView: View {
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: context.width, alignment: display ? .center : .leading)
+                    .frame(width: image.size.width, height: image.size.height)
             } else if isLoading {
                 ProgressView()
                     .frame(height: display ? 60 : 30)
@@ -1089,7 +1166,6 @@ struct MathSVGView: View {
                 Text(mathContent)
                     .font(.system(size: display ? 16 : 14, design: .monospaced))
                     .foregroundColor(.secondary)
-                    .frame(maxWidth: context.width, alignment: display ? .center : .leading)
             }
         }
         .onAppear {
@@ -1137,6 +1213,7 @@ struct MathSVGView: View {
 struct MermaidSVGView: View {
     let mermaidContent: String
     let context: RenderContext
+    let node: MermaidNode
     @State private var renderedImage: UIImage?
     @State private var isLoading = true
     
@@ -1146,7 +1223,7 @@ struct MermaidSVGView: View {
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: context.width, alignment: .center)
+                    .frame(width: image.size.width, height: image.size.height)
             } else if isLoading {
                 ProgressView()
                     .frame(height: 300)
@@ -1155,7 +1232,6 @@ struct MermaidSVGView: View {
                 Text(mermaidContent)
                     .font(.system(size: 14, design: .monospaced))
                     .foregroundColor(.secondary)
-                    .frame(maxWidth: context.width, alignment: .center)
             }
         }
         .onAppear {

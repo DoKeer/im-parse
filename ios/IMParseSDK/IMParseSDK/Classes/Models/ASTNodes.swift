@@ -628,6 +628,33 @@ public struct ColorNode: Codable {
     }
 }
 
+public struct HtmlNode: Codable {
+    public var content: String
+    
+    enum CodingKeys: String, CodingKey {
+        case type
+        case content
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let typeString = try container.decode(String.self, forKey: .type)
+        guard typeString == "html" else {
+            throw DecodingError.dataCorrupted(DecodingError.Context(
+                codingPath: decoder.codingPath,
+                debugDescription: "Expected type 'html', got '\(typeString)'"
+            ))
+        }
+        content = try container.decode(String.self, forKey: .content)
+    }
+    
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode("html", forKey: .type)
+        try container.encode(content, forKey: .content)
+    }
+}
+
 public struct BlockquoteNode: Codable {
     public var children: [ASTNodeWrapper]
     
@@ -706,6 +733,7 @@ public enum ASTNodeWrapper: Codable {
     case color(ColorNode)
     case blockquote(BlockquoteNode)
     case horizontalRule(HorizontalRuleNode)
+    case html(HtmlNode)
     
     enum CodingKeys: String, CodingKey {
         case type
@@ -764,6 +792,8 @@ public enum ASTNodeWrapper: Codable {
             self = .blockquote(try BlockquoteNode(from: decoder))
         case "horizontalRule":
             self = .horizontalRule(try HorizontalRuleNode(from: decoder))
+        case "html":
+            self = .html(try HtmlNode(from: decoder))
         default:
             throw DecodingError.dataCorrupted(DecodingError.Context(
                 codingPath: decoder.codingPath,
@@ -822,6 +852,8 @@ public enum ASTNodeWrapper: Codable {
             try node.encode(to: encoder)
         case .horizontalRule(let node):
             try node.encode(to: encoder)
+        case .html(let node):
+            try node.encode(to: encoder)
         }
     }
     
@@ -878,6 +910,9 @@ public enum ASTNodeWrapper: Codable {
             return node
         case .horizontalRule(let node):
             return node
+        case .html(let node):
+            // html 不是 ASTNode
+            fatalError("html cannot be converted to ASTNode")
         }
     }
 }

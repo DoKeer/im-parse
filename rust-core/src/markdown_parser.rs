@@ -225,8 +225,10 @@ impl MarkdownParser {
                 Event::Code(text) => {
                     builder.add_code(text.to_string());
                 }
-                Event::Html(_) => {
-                    // 忽略 HTML 标签（安全考虑）
+                Event::Html(html) => {
+                    // 添加 HTML 内容到 AST
+                    // 注意：渲染器需要负责安全处理（转义或过滤）
+                    builder.add_html(html.to_string());
                 }
                 Event::SoftBreak => {
                     builder.add_text("\n".to_string());
@@ -282,8 +284,10 @@ impl MarkdownParser {
                                 // 硬换行：添加换行符文本节点
                                 self.process_inline_text_with_math(children, "\n".to_string(), current_styles);
                             }
-                            Event::Html(_) => {
-                                // 忽略 HTML
+                            Event::Html(html) => {
+                                // 在行内上下文中，HTML 作为块级节点处理
+                                // 这里先忽略，因为行内 HTML 应该很少见
+                                // 如果需要支持，可以添加到 children 中
                             }
                             Event::Start(Tag::Strong) => {
                                 current_styles.push(InlineStyle::Strong);

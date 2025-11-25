@@ -193,6 +193,8 @@ public class UIKitRenderer {
             return renderBlockquote(node, context: context)
         case .horizontalRule(_):
             return renderHorizontalRule(context: context)
+        case .html(let node):
+            return renderHtml(node, context: context)
         }
     }
     
@@ -1619,6 +1621,46 @@ public class UIKitRenderer {
             view.heightAnchor.constraint(equalToConstant: 1)
         ])
         return view
+    }
+    
+    /// 渲染 HTML 内容
+    /// 注意：在 UIKit 中，我们不直接渲染 HTML，而是将其转换为纯文本显示
+    /// 如果需要完整的 HTML 渲染，可以使用 WKWebView 或 NSAttributedString 的 HTML 支持
+    private func renderHtml(_ node: HtmlNode, context: UIKitRenderContext) -> UIView {
+        // 将 HTML 标签移除，只显示纯文本内容
+        let textContent = stripHtmlTags(from: node.content)
+        
+        if textContent.isEmpty {
+            return UIView()
+        }
+        
+        let label = UILabel()
+        label.text = textContent
+        label.font = context.theme.font
+        label.textColor = context.theme.textColor
+        label.numberOfLines = 0
+        label.lineBreakMode = .byWordWrapping
+        
+        return label
+    }
+    
+    /// 移除 HTML 标签，提取纯文本内容
+    private func stripHtmlTags(from html: String) -> String {
+        // 简单的 HTML 标签移除（使用正则表达式）
+        // 注意：这不是完整的 HTML 解析，但对于大多数情况足够
+        let pattern = "<[^>]+>"
+        let regex = try? NSRegularExpression(pattern: pattern, options: [])
+        let range = NSRange(location: 0, length: html.utf16.count)
+        let text = regex?.stringByReplacingMatches(in: html, options: [], range: range, withTemplate: "") ?? html
+        
+        // 解码 HTML 实体
+        return text
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     /// 渲染行内节点包装器

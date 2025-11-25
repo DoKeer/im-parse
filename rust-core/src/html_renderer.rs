@@ -416,6 +416,12 @@ hr {{
                     .collect();
                 format!("<blockquote>{}</blockquote>\n", content)
             }
+            ASTNode::Html(html) => {
+                // 直接输出 HTML 内容（已经是 HTML 格式）
+                // 注意：这里假设 HTML 内容是安全的，如果需要更严格的安全控制，
+                // 可以在这里添加 HTML 过滤/清理逻辑
+                html.content.clone()
+            }
         }
     }
 

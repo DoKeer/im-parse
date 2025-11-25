@@ -55,6 +55,8 @@ pub enum ASTNode {
     HorizontalRule(HorizontalRuleNode),
     #[serde(rename = "blockquote")]
     Blockquote(BlockquoteNode),
+    #[serde(rename = "html")]
+    Html(HtmlNode),
 }
 
 /// 根节点
@@ -235,6 +237,12 @@ pub struct HorizontalRuleNode;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockquoteNode {
     pub children: Vec<ASTNode>,
+}
+
+/// HTML 节点（原始 HTML 内容）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HtmlNode {
+    pub content: String,
 }
 
 impl RootNode {

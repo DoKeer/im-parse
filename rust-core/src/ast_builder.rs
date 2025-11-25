@@ -298,6 +298,12 @@ impl ASTBuilder {
         self.root.children.push(ASTNode::Blockquote(BlockquoteNode { children }));
     }
 
+    /// 添加 HTML 内容
+    pub fn add_html(&mut self, content: String) {
+        self.end_paragraph(); // 结束当前段落
+        self.root.children.push(ASTNode::Html(HtmlNode { content }));
+    }
+
     /// 添加内联节点到当前段落
     fn add_inline_node(&mut self, node: ASTNode) {
         if let Some(para) = &mut self.current_paragraph {

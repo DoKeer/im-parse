@@ -12,6 +12,8 @@ public struct RenderContext {
     public var onLinkTap: ((URL) -> Void)?
     public var onImageTap: ((ImageNode) -> Void)?
     public var onMentionTap: ((MentionNode) -> Void)?
+    public var onMathTap: ((MathNode) -> Void)?
+    public var onMermaidTap: ((MermaidNode) -> Void)?
     // 当前文本样式（用于标题等需要特殊样式的场景）
     public var currentFont: Font?
     public var currentTextColor: Color?
@@ -21,6 +23,8 @@ public struct RenderContext {
                 onLinkTap: ((URL) -> Void)? = nil,
                 onImageTap: ((ImageNode) -> Void)? = nil,
                 onMentionTap: ((MentionNode) -> Void)? = nil,
+                onMathTap: ((MathNode) -> Void)? = nil,
+                onMermaidTap: ((MermaidNode) -> Void)? = nil,
                 currentFont: Font? = nil,
                 currentTextColor: Color? = nil) {
         self.theme = theme
@@ -28,6 +32,8 @@ public struct RenderContext {
         self.onLinkTap = onLinkTap
         self.onImageTap = onImageTap
         self.onMentionTap = onMentionTap
+        self.onMathTap = onMathTap
+        self.onMermaidTap = onMermaidTap
         self.currentFont = currentFont
         self.currentTextColor = currentTextColor
     }
