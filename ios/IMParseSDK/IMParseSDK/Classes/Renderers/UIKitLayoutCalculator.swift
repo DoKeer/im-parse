@@ -166,9 +166,11 @@ public class UIKitLayoutCalculator {
                 ).size
                 
                 let height = ceil(size.height)
+                // 使用实际宽度，但不超过最大宽度
+                let actualWidth = min(ceil(size.width), width)
                 
                 return NodeLayout(
-                    frame: CGRect(origin: origin, size: CGSize(width: width, height: height)),
+                    frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: height)),
                     node: node,
                     content: attrString
                 )
@@ -211,8 +213,10 @@ public class UIKitLayoutCalculator {
                 ).size
                 
                 let height = ceil(size.height)
+                // 使用实际宽度，但不超过最大宽度
+                let actualWidth = min(ceil(size.width), width)
                 return NodeLayout(
-                    frame: CGRect(origin: origin, size: CGSize(width: width, height: height)),
+                    frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: height)),
                     node: node,
                     content: attrString
                 )
@@ -489,9 +493,11 @@ public class UIKitLayoutCalculator {
                     context: nil
                 ).size
                 let height = ceil(size.height)
+                // 使用实际宽度，但不超过最大宽度
+                let actualWidth = min(ceil(size.width), width)
                 
                 let textLayout = NodeLayout(
-                    frame: CGRect(x: 0, y: currentY, width: width, height: height),
+                    frame: CGRect(x: 0, y: currentY, width: actualWidth, height: height),
                     content: attrString
                 )
                 childLayouts.append(textLayout)
@@ -527,8 +533,10 @@ public class UIKitLayoutCalculator {
         }
         flushTextNodes()
         
+        // 计算实际宽度：取所有子布局的最大宽度
+        let actualWidth = childLayouts.map { $0.frame.width }.max() ?? width
         return NodeLayout(
-            frame: CGRect(origin: origin, size: CGSize(width: width, height: currentY)),
+            frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: currentY)),
             children: childLayouts,
             node: .paragraph(node)
         )
@@ -552,9 +560,11 @@ public class UIKitLayoutCalculator {
                     context: nil
                 ).size
                 let height = ceil(size.height)
+                // 使用实际宽度，但不超过最大宽度
+                let actualWidth = min(ceil(size.width), width)
                 
                 let textLayout = NodeLayout(
-                    frame: CGRect(x: 0, y: currentY, width: width, height: height),
+                    frame: CGRect(x: 0, y: currentY, width: actualWidth, height: height),
                     content: attrString
                 )
                 childLayouts.append(textLayout)
@@ -590,8 +600,10 @@ public class UIKitLayoutCalculator {
         }
         flushTextNodes()
         
+        // 计算实际宽度：取所有子布局的最大宽度
+        let actualWidth = childLayouts.map { $0.frame.width }.max() ?? width
         return NodeLayout(
-            frame: CGRect(origin: origin, size: CGSize(width: width, height: currentY)),
+            frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: currentY)),
             children: childLayouts,
             node: .heading(node)
         )
@@ -747,9 +759,11 @@ public class UIKitLayoutCalculator {
                     ).size
                     
                     let height = ceil(size.height)
+                    // 使用实际宽度，但不超过最大宽度
+                    let actualContentWidth = min(ceil(size.width), contentWidth)
                     
                     contentLayout = NodeLayout(
-                        frame: CGRect(x: markerWidth + 8, y: currentY, width: contentWidth, height: height),
+                        frame: CGRect(x: markerWidth + 8, y: currentY, width: actualContentWidth, height: height),
                         content: attrString
                     )
                 }
@@ -782,8 +796,11 @@ public class UIKitLayoutCalculator {
             currentY -= spacing
         }
         
+        // 计算实际宽度：取所有列表项的最大宽度（marker + content）
+        let actualWidth = itemLayouts.map { $0.frame.maxX }.max() ?? width
+        
         return NodeLayout(
-            frame: CGRect(origin: origin, size: CGSize(width: width, height: currentY)),
+            frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: currentY)),
             children: itemLayouts,
             node: .list(node)
         )
@@ -807,9 +824,11 @@ public class UIKitLayoutCalculator {
                     context: nil
                 ).size
                 let height = ceil(size.height)
+                // 使用实际宽度，但不超过最大宽度
+                let actualWidth = min(ceil(size.width), width)
                 
                 let textLayout = NodeLayout(
-                    frame: CGRect(x: 0, y: currentY, width: width, height: height),
+                    frame: CGRect(x: 0, y: currentY, width: actualWidth, height: height),
                     content: attrString
                 )
                 childLayouts.append(textLayout)
@@ -845,8 +864,10 @@ public class UIKitLayoutCalculator {
         }
         flushTextNodes()
         
+        // 计算实际宽度：取所有子布局的最大宽度
+        let actualWidth = childLayouts.map { $0.frame.width }.max() ?? width
         return NodeLayout(
-            frame: CGRect(origin: origin, size: CGSize(width: width, height: currentY)),
+            frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: currentY)),
             children: childLayouts
         )
     }
