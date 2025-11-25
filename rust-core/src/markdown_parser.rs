@@ -273,10 +273,25 @@ impl MarkdownParser {
     ) {
         while let Some(event) = events.peek() {
             match event {
+                // 终止条件：遇到这些结束标记时退出
                 Event::End(TagEnd::Heading(_))
                 | Event::End(TagEnd::Paragraph)
                 | Event::End(TagEnd::TableCell)
-                | Event::End(TagEnd::Item) => {
+                | Event::End(TagEnd::Item)
+                | Event::End(TagEnd::BlockQuote(_))
+                | Event::End(TagEnd::List(_))
+                | Event::End(TagEnd::TableHead)
+                | Event::End(TagEnd::TableRow)
+                | Event::End(TagEnd::Table) => {
+                    break;
+                }
+                // 处理块级标签的开始（这些不应该在行内内容中出现）
+                Event::Start(Tag::Paragraph)
+                | Event::Start(Tag::Heading { .. })
+                | Event::Start(Tag::BlockQuote(_))
+                | Event::Start(Tag::List(_))
+                | Event::Start(Tag::CodeBlock(_))
+                | Event::Start(Tag::Table(_)) => {
                     break;
                 }
                 _ => {
@@ -301,9 +316,10 @@ impl MarkdownParser {
                                 self.process_inline_text_with_math(children, "\n".to_string(), current_styles);
                             }
                             Event::Html(html) => {
-                                // 在行内上下文中，HTML 作为块级节点处理
-                                // 这里先忽略，因为行内 HTML 应该很少见
-                                // 如果需要支持，可以添加到 children 中
+                                // 在行内上下文中添加 HTML 节点
+                                children.push(ASTNode::Html(HtmlNode {
+                                    content: html.to_string(),
+                                }));
                             }
                             Event::Start(Tag::Strong) => {
                                 current_styles.push(InlineStyle::Strong);
@@ -439,6 +455,34 @@ impl MarkdownParser {
                         items: nested_items,
                     }));
                 }
+                Event::Start(Tag::List(_)) => {
+                    // 其他有序列表（start != 1）
+                    events.next();
+                    let mut nested_items = Vec::new();
+                    
+                    while let Some(event) = events.peek() {
+                        match event {
+                            Event::End(TagEnd::List(_)) => {
+                                events.next();
+                                break;
+                            }
+                            Event::Start(Tag::Item) => {
+                                events.next();
+                                let mut item_children = Vec::new();
+                                let item_checked = self.collect_list_item_content(events, &mut item_children, &mut current_styles);
+                                nested_items.push(ListItemNode { children: item_children, checked: item_checked });
+                            }
+                            _ => {
+                                events.next();
+                            }
+                        }
+                    }
+                    
+                    children.push(ASTNode::List(ListNode {
+                        list_type: ListType::Ordered,
+                        items: nested_items,
+                    }));
+                }
                 Event::Start(Tag::CodeBlock(kind)) => {
                     let language = match kind {
                         CodeBlockKind::Fenced(lang) => {
@@ -479,6 +523,52 @@ impl MarkdownParser {
                     self.collect_block_content(events, &mut blockquote_children);
                     children.push(ASTNode::Blockquote(BlockquoteNode { children: blockquote_children }));
                 }
+                Event::Start(Tag::Table(_alignments)) => {
+                    events.next();
+                    let mut rows = Vec::new();
+                    
+                    // 收集表格的所有行
+                    while let Some(event) = events.peek() {
+                        match event {
+                            Event::End(TagEnd::Table) => {
+                                events.next();
+                                break;
+                            }
+                            Event::Start(Tag::TableHead) | Event::Start(Tag::TableRow) => {
+                                events.next();
+                                let mut cells = Vec::new();
+                                
+                                // 收集行中的所有单元格
+                                while let Some(event) = events.peek() {
+                                    match event {
+                                        Event::End(TagEnd::TableHead) | Event::End(TagEnd::TableRow) => {
+                                            events.next();
+                                            break;
+                                        }
+                                        Event::Start(Tag::TableCell) => {
+                                            events.next();
+                                            let mut cell_children = Vec::new();
+                                            self.collect_inline_content(events, &mut cell_children, &mut current_styles);
+                                            cells.push(TableCell { children: cell_children, align: None });
+                                        }
+                                        _ => {
+                                            events.next();
+                                        }
+                                    }
+                                }
+                                
+                                if !cells.is_empty() {
+                                    rows.push(TableRow { cells });
+                                }
+                            }
+                            _ => {
+                                events.next();
+                            }
+                        }
+                    }
+                    
+                    children.push(ASTNode::Table(TableNode { rows }));
+                }
                 Event::Rule => {
                     events.next();
                     children.push(ASTNode::HorizontalRule(HorizontalRuleNode {}));
@@ -489,6 +579,11 @@ impl MarkdownParser {
                 }
                 _ => {
                     // 跳过未处理的事件
+                    #[cfg(debug_assertions)]
+                    {
+                        // 在调试模式下记录未处理的事件
+                        eprintln!("collect_block_content: 未处理的事件: {:?}", event);
+                    }
                     events.next();
                 }
             }
@@ -610,6 +705,34 @@ impl MarkdownParser {
                         items: nested_items,
                     }));
                 }
+                Event::Start(Tag::List(_)) => {
+                    // 其他有序列表（start != 1）
+                    events.next();
+                    let mut nested_items = Vec::new();
+                    
+                    while let Some(event) = events.peek() {
+                        match event {
+                            Event::End(TagEnd::List(_)) => {
+                                events.next();
+                                break;
+                            }
+                            Event::Start(Tag::Item) => {
+                                events.next();
+                                let mut item_children = Vec::new();
+                                let item_checked = self.collect_list_item_content(events, &mut item_children, current_styles);
+                                nested_items.push(ListItemNode { children: item_children, checked: item_checked });
+                            }
+                            _ => {
+                                events.next();
+                            }
+                        }
+                    }
+                    
+                    children.push(ASTNode::List(ListNode {
+                        list_type: ListType::Ordered,
+                        items: nested_items,
+                    }));
+                }
                 Event::Start(Tag::CodeBlock(kind)) => {
                     // 先保存 kind 的值，因为 events.next() 会消费事件
                     let language = match kind {
@@ -641,9 +764,104 @@ impl MarkdownParser {
                     self.collect_block_content(events, &mut blockquote_children);
                     children.push(ASTNode::Blockquote(BlockquoteNode { children: blockquote_children }));
                 }
+                Event::Start(Tag::Heading { level, .. }) => {
+                    let heading_level = self.heading_level_to_u8(*level);
+                    events.next();
+                    let mut heading_children = Vec::new();
+                    self.collect_inline_content(events, &mut heading_children, current_styles);
+                    children.push(ASTNode::Heading(HeadingNode {
+                        level: heading_level,
+                        children: heading_children,
+                    }));
+                }
+                Event::Start(Tag::Table(_alignments)) => {
+                    events.next();
+                    let mut rows = Vec::new();
+                    
+                    while let Some(event) = events.peek() {
+                        match event {
+                            Event::End(TagEnd::Table) => {
+                                events.next();
+                                break;
+                            }
+                            Event::Start(Tag::TableHead) | Event::Start(Tag::TableRow) => {
+                                events.next();
+                                let mut cells = Vec::new();
+                                
+                                while let Some(event) = events.peek() {
+                                    match event {
+                                        Event::End(TagEnd::TableHead) | Event::End(TagEnd::TableRow) => {
+                                            events.next();
+                                            break;
+                                        }
+                                        Event::Start(Tag::TableCell) => {
+                                            events.next();
+                                            let mut cell_children = Vec::new();
+                                            self.collect_inline_content(events, &mut cell_children, current_styles);
+                                            cells.push(TableCell { children: cell_children, align: None });
+                                        }
+                                        _ => {
+                                            events.next();
+                                        }
+                                    }
+                                }
+                                
+                                if !cells.is_empty() {
+                                    rows.push(TableRow { cells });
+                                }
+                            }
+                            _ => {
+                                events.next();
+                            }
+                        }
+                    }
+                    
+                    children.push(ASTNode::Table(TableNode { rows }));
+                }
+                Event::Rule => {
+                    events.next();
+                    children.push(ASTNode::HorizontalRule(HorizontalRuleNode {}));
+                }
+                Event::Start(Tag::Image { .. }) => {
+                    // 先从 events 中提取 Image tag 以避免借用检查问题
+                    if let Some(Event::Start(Tag::Image { dest_url, title, .. })) = events.next() {
+                        let url = dest_url.to_string();
+                        let title_str = title.to_string();
+                        
+                        // 收集图片的 Alt 文本
+                        let mut alt_text = String::new();
+                        while let Some(event) = events.peek() {
+                            match event {
+                                Event::End(TagEnd::Image) => {
+                                    events.next();
+                                    break;
+                                }
+                                Event::Text(text) => {
+                                    alt_text.push_str(&text);
+                                    events.next();
+                                }
+                                _ => {
+                                    events.next();
+                                }
+                            }
+                        }
+                        let alt = if alt_text.is_empty() { None } else { Some(alt_text) };
+                        let alt_or_title = alt.or_else(|| if title_str.is_empty() { None } else { Some(title_str) });
+                        children.push(ASTNode::Image(ImageNode {
+                            url,
+                            width: None,
+                            height: None,
+                            alt: alt_or_title,
+                        }));
+                    }
+                }
                 _ => {
-                    // 处理内联内容
-                    self.collect_inline_content(events, children, current_styles);
+                    #[cfg(debug_assertions)]
+                    {
+                        // 在调试模式下记录未处理的事件
+                        eprintln!("collect_list_item_content: 未处理的事件: {:?}", event);
+                    }
+                    events.next();
                 }
             }
         }
