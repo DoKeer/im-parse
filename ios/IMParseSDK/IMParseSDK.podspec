@@ -16,7 +16,7 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
   s.ios.deployment_target = '13.0'
 
   # 默认包含所有内容（完整版）
-  s.default_subspecs = 'Full'
+  s.default_subspecs = 'AutoLayout', 'Frame', 'SwiftUI'
   
   # Rust 核心库路径（所有 subspecs 共享）
   xcframework_path = 'IMParseSDK/Libraries/im_parse_core.xcframework'
@@ -64,21 +64,39 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
     }
   end
 
-  # ==================== UIKit Subspec ====================
-  # UIKit 渲染器版本
-  s.subspec 'UIKit' do |uikit|
-    uikit.dependency 'IMParseSDK/Core'
-    uikit.source_files = 'IMParseSDK/Classes/Renderers/UIKitRenderer.swift',
-                         'IMParseSDK/Classes/Renderers/UIKitLayoutCalculator.swift',
+  # ==================== AutoLayout Subspec ====================
+  # UIKit Auto Layout 渲染器版本（使用 UIStackView 和 Auto Layout）
+  s.subspec 'AutoLayout' do |autolayout|
+    autolayout.dependency 'IMParseSDK/Core'
+    autolayout.source_files = 'IMParseSDK/Classes/Renderers/UIKitAutoLayoutRender.swift',
+                              'IMParseSDK/Classes/Renderers/MathHTMLRenderer.swift',
+                              'IMParseSDK/Classes/Renderers/MermaidHTMLRenderer.swift',
+                              'IMParseSDK/Classes/Utils/SharedWebViewPool.swift',
+                              'IMParseSDK/Classes/Renderers/UIKitAttributedStringBuilder.swift',
+                              'IMParseSDK/Classes/Renderers/UIKitRenderContext.swift',
+                              'IMParseSDK/Classes/Renderers/UIKitTheme.swift',
+                              'IMParseSDK/Classes/Renderers/UIKitGestureHandler.swift',
+                              'IMParseSDK/Classes/Renderers/UIKitRenderHelpers.swift'
+    
+    autolayout.frameworks = 'UIKit', 'WebKit'
+  end
+
+  # ==================== Frame Subspec ====================
+  # UIKit Frame 布局渲染器版本（使用精确的 frame 布局）
+  s.subspec 'Frame' do |frame|
+    frame.dependency 'IMParseSDK/Core'
+    frame.source_files = 'IMParseSDK/Classes/Renderers/UIKitFrameAsyncCalculator.swift',
+                         'IMParseSDK/Classes/Renderers/UIKitFrameRender.swift',
                          'IMParseSDK/Classes/Renderers/MathHTMLRenderer.swift',
                          'IMParseSDK/Classes/Renderers/MermaidHTMLRenderer.swift',
                          'IMParseSDK/Classes/Utils/SharedWebViewPool.swift',
                          'IMParseSDK/Classes/Renderers/UIKitAttributedStringBuilder.swift',
                          'IMParseSDK/Classes/Renderers/UIKitRenderContext.swift',
                          'IMParseSDK/Classes/Renderers/UIKitTheme.swift',
-                         'IMParseSDK/Classes/Renderers/UIKitGestureHandler.swift'
+                         'IMParseSDK/Classes/Renderers/UIKitGestureHandler.swift',
+                         'IMParseSDK/Classes/Renderers/UIKitRenderHelpers.swift'
     
-    uikit.frameworks = 'UIKit', 'WebKit'
+    frame.frameworks = 'UIKit', 'WebKit'
   end
 
   # ==================== SwiftUI Subspec ====================
@@ -95,11 +113,13 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
     swiftui.frameworks = 'SwiftUI', 'UIKit', 'WebKit'
   end
 
-  # ==================== Full Subspec ====================
-  # 完整版本：包含所有功能（UIKit + SwiftUI，需要 iOS 15.0+）
+  # ==================== Full Subspec (Deprecated) ====================
+  # 完整版本：包含所有功能（AutoLayout + Frame + SwiftUI，需要 iOS 15.0+）
+  # 注意：此 subspec 已废弃，建议直接使用 AutoLayout、Frame 和 SwiftUI subspecs
   s.subspec 'Full' do |full|
     full.dependency 'IMParseSDK/Core'
-    full.dependency 'IMParseSDK/UIKit'
+    full.dependency 'IMParseSDK/AutoLayout'
+    full.dependency 'IMParseSDK/Frame'
     full.dependency 'IMParseSDK/SwiftUI'
   end
 end

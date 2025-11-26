@@ -107,7 +107,7 @@ public class MathHTMLRenderer {
         webView.backgroundColor = .clear
         
         // 使用关联对象存储处理状态，防止重复执行
-        objc_setAssociatedObject(webView, &AssociatedKeys.processing, false, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        objc_setAssociatedObject(webView, &MathAssociatedKeys.processing, false, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         
         // 加载 HTML
         webView.loadHTMLString(fullHTML, baseURL: nil)
@@ -118,16 +118,16 @@ public class MathHTMLRenderer {
             // WKNavigationDelegate 回调可能不在主线程，需要切换到主线程
             DispatchQueue.main.async {
                 // 检查是否已经处理过
-                if let hasProcessed = objc_getAssociatedObject(webView, &AssociatedKeys.processing) as? Bool, hasProcessed {
+                if let hasProcessed = objc_getAssociatedObject(webView, &MathAssociatedKeys.processing) as? Bool, hasProcessed {
                     return
                 }
                 
                 // 标记为已处理
-                objc_setAssociatedObject(webView, &AssociatedKeys.processing, true, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                objc_setAssociatedObject(webView, &MathAssociatedKeys.processing, true, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
                 
                 // 立即清除 delegate，防止再次触发
                 webView.navigationDelegate = nil
-                objc_setAssociatedObject(webView, &AssociatedKeys.delegate, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                objc_setAssociatedObject(webView, &MathAssociatedKeys.delegate, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
                 
                 guard let self = self else {
                     MathHTMLRenderer.shared.returnWebViewToPool(webView)
@@ -243,7 +243,7 @@ public class MathHTMLRenderer {
         }
         
         // 保存 delegate 引用（避免被释放）
-        objc_setAssociatedObject(webView, &AssociatedKeys.delegate, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        objc_setAssociatedObject(webView, &MathAssociatedKeys.delegate, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         webView.navigationDelegate = delegate
     }
     
@@ -452,7 +452,7 @@ private class MathWebViewDelegate: NSObject, WKNavigationDelegate {
 
 // MARK: - Associated Keys
 
-fileprivate struct AssociatedKeys {
+fileprivate struct MathAssociatedKeys {
     static var delegate = "mathWebViewDelegate"
     static var processing = "mathWebViewProcessing"
 }

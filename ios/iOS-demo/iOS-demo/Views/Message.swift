@@ -60,7 +60,7 @@ public struct Message: Identifiable, Codable {
     }
     
 
-    /// 异步计算布局（使用 UIKitRenderer）
+    /// 异步计算布局（使用 UIKitFrameAsyncCalculator）
     /// 这将在后台线程中执行完整的文本测量和布局计算
     public mutating func calculateLayout(width: CGFloat, delegate:AnyObject?) {
         // 确保 AST 已解析
@@ -80,11 +80,11 @@ public struct Message: Identifiable, Codable {
             width: width,
             imageLoaderDelegate: delegate as? UIKitImageLoaderDelegate,
             formulaSizeCacheDelegate:delegate as? UIKitFormulaSizeCacheDelegate,
-            emojiImageLoaderDelegate: delegate as? UIKitEmojiImageLoaderDelegate,
+            inlineImageLoaderDelegate: delegate as? UIKitInlineImageLoaderDelegate,
         )
         
         // 计算布局
-        self.layout = UIKitLayoutCalculator.calculateLayout(ast: rootNode, context: context)
+        self.layout = UIKitFrameAsyncCalculator.calculateLayout(ast: rootNode, context: context)
         self.estimatedHeight = self.layout?.frame.height
     }
     

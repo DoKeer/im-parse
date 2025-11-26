@@ -1,0 +1,1304 @@
+//
+//  UIKitFrameAsyncCalculator.swift
+//  IMParseSDK
+//
+//  UIKit 布局计算器 - 用于异步预计算布局
+//
+
+import UIKit
+
+/// 布局节点（保存异步计算的结果）
+public class NodeLayout {
+    public let frame: CGRect
+    public let children: [NodeLayout]
+    public let node: ASTNodeWrapper? // 关联的 AST 节点
+    
+    // 预计算的内容（如 NSAttributedString）
+    public let content: Any?
+    
+    // 额外的样式信息
+    public let backgroundColor: UIColor?
+    public let cornerRadius: CGFloat
+    public let borderColor: UIColor?
+    public let borderWidth: CGFloat
+    
+    public init(frame: CGRect, 
+         children: [NodeLayout] = [], 
+         node: ASTNodeWrapper? = nil, 
+         content: Any? = nil,
+         backgroundColor: UIColor? = nil,
+         cornerRadius: CGFloat = 0,
+         borderColor: UIColor? = nil,
+         borderWidth: CGFloat = 0) {
+        self.frame = frame
+        self.children = children
+        self.node = node
+        self.content = content
+        self.backgroundColor = backgroundColor
+        self.cornerRadius = cornerRadius
+        self.borderColor = borderColor
+        self.borderWidth = borderWidth
+    }
+    
+    /// 渲染为 UIView（在主线程调用）
+    /// 使用精确的 frame 计算，不使用 Auto Layout
+    public func render(context: UIKitRenderContext) -> UIView {
+        return UIKitFrameRender.render(layout: self, context: context)
+    }
+    
+}
+
+/// UIKit Frame 异步布局计算器
+/// 负责在后台线程预计算 AST 的布局信息（使用 frame 布局）
+public class UIKitFrameAsyncCalculator {
+    
+    /// 计算 AST 的布局
+    public static func calculateLayout(ast: RootNode, context: UIKitRenderContext) -> NodeLayout {
+        // 应用 maxContentWidth 限制内容宽度
+        let effectiveWidth = min(context.width, context.theme.maxContentWidth)
+        
+        // 应用 contentPadding，计算实际可用宽度
+        let contentWidth = effectiveWidth - context.theme.contentPadding * 2
+        
+        // 根节点是一个垂直堆栈，应用内边距
+        let innerLayout = calculateVerticalStackLayout(
+            children: ast.children,
+            context: context,
+            origin: CGPoint(x: context.theme.contentPadding, y: context.theme.contentPadding),
+            width: contentWidth,
+            spacing: context.theme.paragraphSpacing
+        )
+        
+        // 返回包含内边距的总布局
+        let totalWidth = effectiveWidth
+        let totalHeight = innerLayout.frame.height + context.theme.contentPadding * 2
+        
+        return NodeLayout(
+            frame: CGRect(origin: .zero, size: CGSize(width: totalWidth, height: totalHeight)),
+            children: [innerLayout]
+        )
+    }
+    
+    // MARK: - Private Layout Helpers
+    
+    /// 计算垂直堆栈布局
+    private static func calculateVerticalStackLayout(children: [ASTNodeWrapper], 
+                                                   context: UIKitRenderContext, 
+                                                   origin: CGPoint, 
+                                                   width: CGFloat,
+                                                   spacing: CGFloat) -> NodeLayout {
+        var currentY: CGFloat = 0
+        var childLayouts: [NodeLayout] = []
+        
+        // 确保宽度不超过 maxContentWidth（如果传入的 width 已经考虑了内边距，这里不需要再次限制）
+        let effectiveWidth = min(width, context.theme.maxContentWidth)
+        var finalWidth = effectiveWidth
+        for child in children {
+            let childLayout = calculateNodeLayout(child, context: context, origin: CGPoint(x: 0, y: currentY), width: effectiveWidth)
+            childLayouts.append(childLayout)
+            currentY += childLayout.frame.height + spacing
+            finalWidth = max(finalWidth, childLayout.frame.width)
+        }
+        
+        // 去掉最后一个多余的间距
+        if !children.isEmpty {
+            currentY -= spacing
+        }
+        
+        // 确保高度不为负
+        let totalHeight = max(0, currentY)
+        
+        return NodeLayout(
+            frame: CGRect(origin: origin, size: CGSize(width: finalWidth, height: totalHeight)),
+            children: childLayouts
+        )
+    }
+    
+    /// 计算单个节点的布局
+    private static func calculateNodeLayout(_ node: ASTNodeWrapper, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
+        switch node {
+        case .paragraph(let pNode):
+            // 段落布局：检查是否包含块级特殊节点（图片、数学公式、Mermaid）
+            // 注意：mention 和 emoji 应该作为行内元素，与文本在同一行显示
+            let hasBlockLevelSpecialNodes = pNode.children.contains { wrapper in
+                switch wrapper {
+                case .image, .math, .mermaid:
+                    return true
+                default:
+                    return false
+                }
+            }
+            
+            // 检查是否包含 mention 或 emoji（行内特殊节点）
+            let hasInlineSpecialNodes = pNode.children.contains { wrapper in
+                switch wrapper {
+                case .mention, .emoji:
+                    return true
+                default:
+                    return false
+                }
+            }
+            
+            if hasBlockLevelSpecialNodes {
+                // 包含块级特殊节点，需要混合布局计算
+                return calculateParagraphWithSpecialNodes(pNode, context: context, origin: origin, width: width)
+            } else if hasInlineSpecialNodes {
+                // 只包含行内特殊节点（mention、emoji），使用行内布局计算
+                return calculateParagraphWithInlineNodes(pNode, context: context, origin: origin, width: width)
+            } else {
+                // 纯文本段落，使用 NSAttributedString 计算
+                let attrString = context.stringBuilder.buildAttributedString(from: pNode.children, context: context)
+                
+                let size = attrString.boundingRect(
+                    with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    context: nil
+                ).size
+                
+                let height = ceil(size.height)
+                // 使用实际宽度，但不超过最大宽度
+                let actualWidth = min(ceil(size.width), width)
+                
+                return NodeLayout(
+                    frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: height)),
+                    node: node,
+                    content: attrString
+                )
+            }
+            
+        case .heading(let hNode):
+            // 检查是否包含块级特殊节点（图片、数学公式、Mermaid）
+            // 注意：mention 和 emoji 应该作为行内元素，与文本在同一行显示
+            let hasBlockLevelSpecialNodes = hNode.children.contains { wrapper in
+                switch wrapper {
+                case .image, .math, .mermaid:
+                    return true
+                default:
+                    return false
+                }
+            }
+            
+            // 检查是否包含 mention 或 emoji（行内特殊节点）
+            let hasInlineSpecialNodes = hNode.children.contains { wrapper in
+                switch wrapper {
+                case .mention, .emoji:
+                    return true
+                default:
+                    return false
+                }
+            }
+            
+            let baseFontSize = context.theme.fontSize
+            let headingMultipliers: [CGFloat] = [2.0, 1.5, 1.25, 1.1, 1.0, 0.9]
+            let multiplier = headingMultipliers[min(Int(hNode.level) - 1, headingMultipliers.count - 1)]
+            let fontSize = baseFontSize * multiplier
+            let font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
+            let color = context.theme.headingColors[min(Int(hNode.level) - 1, context.theme.headingColors.count - 1)]
+            
+            var headingContext = context
+            headingContext.currentFont = font
+            headingContext.currentTextColor = color
+            
+            if hasBlockLevelSpecialNodes {
+                // 包含块级特殊节点，需要混合布局计算
+                return calculateHeadingWithSpecialNodes(hNode, context: headingContext, origin: origin, width: width)
+            } else if hasInlineSpecialNodes {
+                // 只包含行内特殊节点（mention、emoji），使用行内布局计算
+                return calculateHeadingWithInlineNodes(hNode, context: headingContext, origin: origin, width: width)
+            } else {
+                // 纯文本标题
+                let attrString = context.stringBuilder.buildAttributedString(from: hNode.children, context: headingContext)
+                
+                let size = attrString.boundingRect(
+                    with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    context: nil
+                ).size
+                
+                let height = ceil(size.height)
+                // 使用实际宽度，但不超过最大宽度
+                let actualWidth = min(ceil(size.width), width)
+                return NodeLayout(
+                    frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: height)),
+                    node: node,
+                    content: attrString
+                )
+            }
+            
+        case .codeBlock(let cNode):
+            // 代码块布局
+            let padding = context.theme.codeBlockPadding
+            let contentWidth = width - padding * 2
+            
+            let font = context.theme.codeFont
+            let attrString = NSAttributedString(string: cNode.content, attributes: [.font: font])
+            
+            let size = attrString.boundingRect(
+                with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).size
+            
+            let height = ceil(size.height) + padding * 2
+            
+            // 创建内部文本的 layout
+            let textLayout = NodeLayout(
+                frame: CGRect(x: padding, y: padding, width: contentWidth, height: ceil(size.height)),
+                content: attrString
+            )
+            
+            return NodeLayout(
+                frame: CGRect(origin: origin, size: CGSize(width: width, height: height)),
+                children: [textLayout],
+                node: node,
+                backgroundColor: context.theme.codeBackgroundColor,
+                cornerRadius: context.theme.codeBlockBorderRadius
+            )
+            
+        case .image(let imgNode):
+            // 图片布局
+            // 应用 imageMargin，在图片上下添加边距
+            let imageMargin = context.theme.imageMargin
+            var imageHeight: CGFloat = 200 // 默认高度
+            
+            if let h = imgNode.height, let w = imgNode.width {
+                // 如果有尺寸，按比例计算
+                let ratio = CGFloat(h) / CGFloat(w)
+                imageHeight = width * ratio
+            } else {
+                // 默认 4:3
+                imageHeight = width * 0.75
+            }
+            
+            // 总高度 = 图片高度 + 上下边距
+            let totalHeight = imageHeight + imageMargin * 2
+            
+            return NodeLayout(
+                frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
+                node: node
+            )
+            
+        case .list(let listNode):
+            // 列表布局
+            return calculateListLayout(listNode, context: context, origin: origin, width: width)
+            
+        case .blockquote(let bNode):
+            // 引用块布局
+            let borderWidth = context.theme.blockquoteBorderWidth
+            let contentWidth = width - borderWidth - 16 // 16 padding
+            
+            var blockContext = context
+            blockContext.currentTextColor = context.theme.blockquoteTextColor
+            
+            // 递归计算内部布局
+            let innerLayout = calculateVerticalStackLayout(
+                children: bNode.children,
+                context: blockContext,
+                origin: CGPoint(x: borderWidth + 16, y: 0),
+                width: contentWidth,
+                spacing: context.theme.paragraphSpacing
+            )
+            
+            // 左侧边框
+            let borderLayout = NodeLayout(
+                frame: CGRect(x: 0, y: 0, width: borderWidth, height: innerLayout.frame.height),
+                backgroundColor: context.theme.blockquoteBorderColor
+            )
+            
+            return NodeLayout(
+                frame: CGRect(origin: origin, size: CGSize(width: width, height: innerLayout.frame.height)),
+                children: [borderLayout, innerLayout],
+                node: node
+            )
+            
+        case .horizontalRule(_):
+             return NodeLayout(
+                frame: CGRect(origin: origin, size: CGSize(width: width, height: 1)),
+                backgroundColor: context.theme.hrColor
+            )
+            
+        case .table(let tNode):
+            // 表格布局
+            return calculateTableLayout(tNode, context: context, origin: origin, width: width)
+            
+        case .math(let mNode):
+            // 数学公式布局
+            // 尝试从 MathHTMLRenderer 缓存中获取实际尺寸
+            let estimatedSize = estimateMathSize(node: mNode, context: context, width: width)
+            return NodeLayout(
+                frame: CGRect(origin: origin, size: estimatedSize),
+                node: node
+            )
+            
+        case .mermaid(let mNode):
+            // Mermaid 图表布局
+            // 尝试从 MermaidHTMLRenderer 缓存中获取实际尺寸
+            let estimatedSize = estimateMermaidSize(node: mNode, context: context, width: width)
+            return NodeLayout(
+                frame: CGRect(origin: origin, size: estimatedSize),
+                node: node
+            )
+            
+        case .emoji(let eNode):
+            // Emoji 布局：计算文本大小
+            let font = context.currentFont ?? context.theme.font
+            let color = context.currentTextColor ?? context.theme.textColor
+            let attrString = NSAttributedString(
+                string: eNode.content,
+                attributes: [.font: font, .foregroundColor: color]
+            )
+            
+            let size = attrString.boundingRect(
+                with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).size
+            
+            let height = ceil(size.height)
+            let actualWidth = min(ceil(size.width), width)
+            
+            return NodeLayout(
+                frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: height)),
+                node: node,
+                content: attrString
+            )
+            
+        case .mention(let mNode):
+            // Mention 布局：计算文本大小 + padding
+            let font = context.theme.font
+            let text = "@\(mNode.name)"
+            let attrString = NSAttributedString(
+                string: text,
+                attributes: [
+                    .font: font,
+                    .foregroundColor: context.theme.mentionTextColor
+                ]
+            )
+            
+            let size = attrString.boundingRect(
+                with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).size
+            
+            // Mention 有内边距：上下 2，左右 6
+            let padding: CGFloat = 2
+            let horizontalPadding: CGFloat = 6
+            let height = ceil(size.height) + padding * 2
+            let actualWidth = min(ceil(size.width) + horizontalPadding * 2, width)
+            
+            return NodeLayout(
+                frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: height)),
+                node: node,
+                content: attrString,
+                backgroundColor: context.theme.mentionBackground,
+                cornerRadius: 4
+            )
+            
+        default:
+            // 其他节点暂且返回固定高度或0，或者通用处理
+             return NodeLayout(
+                frame: CGRect(origin: origin, size: CGSize(width: width, height: 20)),
+                node: node
+            )
+        }
+    }
+    
+    // MARK: - Math & Mermaid Size Estimation
+    
+    /// 估算数学公式的尺寸
+    /// 根据 MathHTMLRenderer 的处理逻辑，尝试获取更精确的尺寸
+    private static func estimateMathSize(node: MathNode, context: UIKitRenderContext, width: CGFloat) -> CGSize {
+        // 生成缓存键（使用内容字符串作为key）
+        let cacheKey = "math:\(node.content):\(node.display)"
+        
+        // 优先从缓存获取尺寸
+        if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey) {
+            // 如果缓存中有尺寸，使用缓存的尺寸
+            // 注意：缓存的尺寸可能是图片的实际尺寸，需要加上padding
+            let padding = context.theme.codeBlockPadding
+            let totalHeight = cachedSize.height + padding * 2
+            // 宽度使用传入的width（限制最大宽度）
+            return CGSize(width: width, height: totalHeight)
+        }
+        
+        // 从 rust-core 获取 HTML（同步操作，可以在后台线程执行）
+        let result = IMParseCore.mathToHTML(node.content, display: node.display)
+        
+        guard result.success, let _ = result.astJSON else {
+            // 如果获取 HTML 失败，像代码块一样计算高度（基于文本内容）
+            let padding = context.theme.codeBlockPadding
+            let contentWidth = width - padding * 2
+            
+            let font = context.theme.codeFont
+            let attrString = NSAttributedString(string: node.content, attributes: [.font: font])
+            
+            let size = attrString.boundingRect(
+                with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).size
+            
+            let height = ceil(size.height) + padding * 2
+            return CGSize(width: width, height: height)
+        }
+        
+        // 根据 HTML 内容和 display 模式估算尺寸
+        // 块级公式通常更高，行内公式较矮
+        let baseHeight: CGFloat = node.display ? 60 : 30
+        
+        // 根据内容长度调整高度（粗略估算）
+        // 每增加约 50 个字符，高度增加约 20px（块级）或 10px（行内）
+        let contentLength = node.content.count
+        let lengthMultiplier: CGFloat = node.display ? 20.0 : 10.0
+        let additionalHeight = CGFloat(contentLength / 50) * lengthMultiplier
+        
+        // 限制最大高度（避免过度估算）
+        let maxHeight: CGFloat = node.display ? 300 : 100
+        let estimatedHeight = min(baseHeight + additionalHeight, maxHeight)
+        
+        // 宽度使用传入的 width（数学公式通常不会超出容器宽度）
+        return CGSize(width: width, height: estimatedHeight)
+    }
+    
+    /// 估算 Mermaid 图表的尺寸
+    /// 根据 MermaidHTMLRenderer 的处理逻辑，尝试获取更精确的尺寸
+    private static func estimateMermaidSize(node: MermaidNode, context: UIKitRenderContext, width: CGFloat) -> CGSize {
+        let padding = context.theme.codeBlockPadding
+        
+        // 生成缓存键（使用内容字符串作为key）
+        let cacheKey = "mermaid:\(node.content)"
+        
+        // 优先从缓存获取尺寸
+        if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey) {
+            // 如果缓存中有尺寸，使用缓存的尺寸
+            // 注意：缓存的尺寸可能是图片的实际尺寸，需要加上padding
+            let totalHeight = cachedSize.height + padding * 2
+            // 宽度使用传入的width（限制最大宽度）
+            return CGSize(width: width, height: totalHeight)
+        }
+        
+        // 从 rust-core 获取 HTML（同步操作，可以在后台线程执行）
+        let textColor = context.theme.textColor
+        let backgroundColor = context.theme.codeBackgroundColor
+        
+        // 转换颜色为十六进制
+        let textComponents = textColor.cgColor.components ?? [0, 0, 0, 1]
+        let textColorHex = String(format: "#%02X%02X%02X",
+            Int(textComponents[0] * 255),
+            Int(textComponents[1] * 255),
+            Int(textComponents[2] * 255)
+        )
+        
+        let bgComponents = backgroundColor.cgColor.components ?? [1, 1, 1, 1]
+        let backgroundColorHex = String(format: "#%02X%02X%02X",
+            Int(bgComponents[0] * 255),
+            Int(bgComponents[1] * 255),
+            Int(bgComponents[2] * 255)
+        )
+        
+        let result = IMParseCore.mermaidToHTML(node.content, textColor: textColorHex, backgroundColor: backgroundColorHex)
+        
+        guard result.success else {
+            // 如果获取 HTML 失败，像代码块一样计算高度（基于文本内容）
+            let contentWidth = width - padding * 2
+            
+            let font = context.theme.codeFont
+            let attrString = NSAttributedString(string: node.content, attributes: [.font: font])
+            
+            let size = attrString.boundingRect(
+                with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).size
+            
+            let height = ceil(size.height) + padding * 2
+            return CGSize(width: width, height: height)
+        }
+        
+        // 根据 Mermaid 代码长度和类型估算尺寸
+        // 不同类型的图表有不同的默认高度
+        let contentLength = node.content.count
+        
+        // 基础高度（根据常见图表类型）
+        var baseHeight: CGFloat = 300
+        
+        // 根据内容长度调整（粗略估算）
+        // 每增加约 100 个字符，高度增加约 50px
+        let additionalHeight = CGFloat(contentLength / 100) * 50
+        
+        // 限制最大高度（避免过度估算）
+        let maxHeight: CGFloat = 1000
+        let estimatedHeight = min(baseHeight + additionalHeight, maxHeight)
+        
+        return CGSize(width: width, height: estimatedHeight + padding * 2)
+    }
+    
+    /// 计算包含特殊节点的段落布局
+    private static func calculateParagraphWithSpecialNodes(_ node: ParagraphNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
+        var currentY: CGFloat = 0
+        var childLayouts: [NodeLayout] = []
+        
+        // 将行内节点分组：连续的文本节点合并，特殊节点单独处理
+        var currentTextNodes: [ASTNodeWrapper] = []
+        
+        func flushTextNodes() {
+            if !currentTextNodes.isEmpty {
+                let attrString = context.stringBuilder.buildAttributedString(from: currentTextNodes, context: context)
+                let size = attrString.boundingRect(
+                    with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    context: nil
+                ).size
+                let height = ceil(size.height)
+                // 使用实际宽度，但不超过最大宽度
+                let actualWidth = min(ceil(size.width), width)
+                
+                let textLayout = NodeLayout(
+                    frame: CGRect(x: 0, y: currentY, width: actualWidth, height: height),
+                    content: attrString
+                )
+                childLayouts.append(textLayout)
+                currentY += height
+                currentTextNodes.removeAll()
+            }
+        }
+        
+        for child in node.children {
+            switch child {
+            case .image(let imgNode):
+                flushTextNodes()
+                // 图片布局已经包含了 imageMargin，所以这里直接使用
+                let imgLayout = calculateNodeLayout(.image(imgNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(imgLayout)
+                currentY += imgLayout.frame.height
+                
+            case .math(let mathNode):
+                flushTextNodes()
+                let mathLayout = calculateNodeLayout(.math(mathNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(mathLayout)
+                currentY += mathLayout.frame.height
+                
+            case .mermaid(let mermaidNode):
+                flushTextNodes()
+                let mermaidLayout = calculateNodeLayout(.mermaid(mermaidNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(mermaidLayout)
+                currentY += mermaidLayout.frame.height
+                
+            case .mention(let mentionNode):
+                flushTextNodes()
+                let mentionLayout = calculateNodeLayout(.mention(mentionNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(mentionLayout)
+                currentY += mentionLayout.frame.height
+                
+            case .emoji(let emojiNode):
+                flushTextNodes()
+                let emojiLayout = calculateNodeLayout(.emoji(emojiNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(emojiLayout)
+                currentY += emojiLayout.frame.height
+                
+            default:
+                currentTextNodes.append(child)
+            }
+        }
+        flushTextNodes()
+        
+        // 计算实际宽度：取所有子布局的最大宽度
+        let actualWidth = childLayouts.map { $0.frame.width }.max() ?? width
+        return NodeLayout(
+            frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: currentY)),
+            children: childLayouts,
+            node: .paragraph(node)
+        )
+    }
+    
+    /// 计算包含行内特殊节点（mention、emoji）的段落布局
+    /// 这些节点应该与文本在同一行显示，使用水平布局
+    private static func calculateParagraphWithInlineNodes(_ node: ParagraphNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
+        // 使用 UITextView 的布局计算，将 mention 和 emoji 作为 NSTextAttachment 嵌入
+        // 但为了支持点击事件，我们需要使用自定义的布局方式
+        
+        // 将节点分组：连续的文本节点合并，mention 和 emoji 单独处理
+        var inlineNodeGroups: [(isText: Bool, nodes: [ASTNodeWrapper], mentionNode: MentionNode?, emojiNode: EmojiNode?)] = []
+        var currentTextNodes: [ASTNodeWrapper] = []
+        
+        func flushTextNodes() {
+            if !currentTextNodes.isEmpty {
+                inlineNodeGroups.append((isText: true, nodes: currentTextNodes, mentionNode: nil, emojiNode: nil))
+                currentTextNodes.removeAll()
+            }
+        }
+        
+        for child in node.children {
+            switch child {
+            case .mention(let mentionNode):
+                flushTextNodes()
+                inlineNodeGroups.append((isText: false, nodes: [], mentionNode: mentionNode, emojiNode: nil))
+            case .emoji(let emojiNode):
+                flushTextNodes()
+                inlineNodeGroups.append((isText: false, nodes: [], mentionNode: nil, emojiNode: emojiNode))
+            default:
+                currentTextNodes.append(child)
+            }
+        }
+        flushTextNodes()
+        
+        // 构建包含 mention 和 emoji 的 NSAttributedString
+        let mutableAttrString = NSMutableAttributedString()
+        
+        for group in inlineNodeGroups {
+            if group.isText {
+                // 文本节点组
+                let textAttrString = context.stringBuilder.buildAttributedString(from: group.nodes, context: context)
+                mutableAttrString.append(textAttrString)
+            } else if let mentionNode = group.mentionNode {
+                // Mention 节点：直接使用文本（不需要背景和圆角）
+                let font = context.currentFont ?? context.theme.font
+                let mentionString = NSMutableAttributedString(
+                    string: "@\(mentionNode.name)",
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: context.theme.mentionTextColor
+                    ]
+                )
+                mutableAttrString.append(mentionString)
+                
+                // 如果有代理，尝试加载状态图片并追加
+                if let inlineImageLoaderDelegate = context.inlineImageLoaderDelegate {
+                    // 使用信号量等待异步加载结果（最多等待 100ms）
+                    let semaphore = DispatchSemaphore(value: 0)
+                    var statusImage: UIImage?
+                    
+                    inlineImageLoaderDelegate.loadMentionStatusImage(mentionNode: mentionNode) { image in
+                        statusImage = image
+                        semaphore.signal()
+                    }
+                    
+                    let timeout = DispatchTime.now() + .milliseconds(100)
+                    if semaphore.wait(timeout: timeout) == .success, let image = statusImage {
+                        // 成功获取状态图片，添加一个空格和图片附件
+                        mutableAttrString.append(NSAttributedString(string: " "))
+                        let statusAttachment = MentionStatusImageAttachment(mentionNode: mentionNode, context: context)
+                        statusAttachment.image = image
+                        statusAttachment.cachedImage = image
+                        let attachmentString = NSAttributedString(attachment: statusAttachment)
+                        mutableAttrString.append(attachmentString)
+                    }
+                }
+            } else if let emojiNode = group.emojiNode {
+                // Emoji 节点：如果有代理，使用 NSTextAttachment；否则使用文本
+                if context.inlineImageLoaderDelegate != nil {
+                    let emojiAttachment = EmojiTextAttachment(emojiNode: emojiNode, context: context)
+                    let attachmentString = NSAttributedString(attachment: emojiAttachment)
+                    mutableAttrString.append(attachmentString)
+                } else {
+                    // 没有代理，直接添加文本
+                    let font = context.currentFont ?? context.theme.font
+                    let color = context.currentTextColor ?? context.theme.textColor
+                    let emojiString = NSAttributedString(
+                        string: emojiNode.content,
+                        attributes: [
+                            .font: font,
+                            .foregroundColor: color
+                        ]
+                    )
+                    mutableAttrString.append(emojiString)
+                }
+            }
+        }
+        
+        // 计算布局大小
+        let size = mutableAttrString.boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        ).size
+        
+        let height = ceil(size.height)
+        let actualWidth = min(ceil(size.width), width)
+        
+        return NodeLayout(
+            frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: height)),
+            node: .paragraph(node),
+            content: mutableAttrString
+        )
+    }
+    
+    /// 计算包含特殊节点的标题布局
+    private static func calculateHeadingWithSpecialNodes(_ node: HeadingNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
+        var currentY: CGFloat = 0
+        var childLayouts: [NodeLayout] = []
+        
+        // 将行内节点分组：连续的文本节点合并，特殊节点单独处理
+        var currentTextNodes: [ASTNodeWrapper] = []
+        
+        func flushTextNodes() {
+            if !currentTextNodes.isEmpty {
+                let attrString = context.stringBuilder.buildAttributedString(from: currentTextNodes, context: context)
+                let size = attrString.boundingRect(
+                    with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    context: nil
+                ).size
+                let height = ceil(size.height)
+                // 使用实际宽度，但不超过最大宽度
+                let actualWidth = min(ceil(size.width), width)
+                
+                let textLayout = NodeLayout(
+                    frame: CGRect(x: 0, y: currentY, width: actualWidth, height: height),
+                    content: attrString
+                )
+                childLayouts.append(textLayout)
+                currentY += height
+                currentTextNodes.removeAll()
+            }
+        }
+        
+        for child in node.children {
+            switch child {
+            case .image(let imgNode):
+                flushTextNodes()
+                // 图片布局已经包含了 imageMargin，所以这里直接使用
+                let imgLayout = calculateNodeLayout(.image(imgNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(imgLayout)
+                currentY += imgLayout.frame.height
+                
+            case .math(let mathNode):
+                flushTextNodes()
+                let mathLayout = calculateNodeLayout(.math(mathNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(mathLayout)
+                currentY += mathLayout.frame.height
+                
+            case .mermaid(let mermaidNode):
+                flushTextNodes()
+                let mermaidLayout = calculateNodeLayout(.mermaid(mermaidNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(mermaidLayout)
+                currentY += mermaidLayout.frame.height
+                
+            case .mention(let mentionNode):
+                flushTextNodes()
+                let mentionLayout = calculateNodeLayout(.mention(mentionNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(mentionLayout)
+                currentY += mentionLayout.frame.height
+                
+            case .emoji(let emojiNode):
+                flushTextNodes()
+                let emojiLayout = calculateNodeLayout(.emoji(emojiNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(emojiLayout)
+                currentY += emojiLayout.frame.height
+                
+            default:
+                currentTextNodes.append(child)
+            }
+        }
+        flushTextNodes()
+        
+        // 计算实际宽度：取所有子布局的最大宽度
+        let actualWidth = childLayouts.map { $0.frame.width }.max() ?? width
+        return NodeLayout(
+            frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: currentY)),
+            children: childLayouts,
+            node: .heading(node)
+        )
+    }
+    
+    /// 计算包含行内特殊节点（mention、emoji）的标题布局
+    /// 这些节点应该与文本在同一行显示，使用水平布局
+    private static func calculateHeadingWithInlineNodes(_ node: HeadingNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
+        // 将节点分组：连续的文本节点合并，mention 和 emoji 单独处理
+        var inlineNodeGroups: [(isText: Bool, nodes: [ASTNodeWrapper], mentionNode: MentionNode?, emojiNode: EmojiNode?)] = []
+        var currentTextNodes: [ASTNodeWrapper] = []
+        
+        func flushTextNodes() {
+            if !currentTextNodes.isEmpty {
+                inlineNodeGroups.append((isText: true, nodes: currentTextNodes, mentionNode: nil, emojiNode: nil))
+                currentTextNodes.removeAll()
+            }
+        }
+        
+        for child in node.children {
+            switch child {
+            case .mention(let mentionNode):
+                flushTextNodes()
+                inlineNodeGroups.append((isText: false, nodes: [], mentionNode: mentionNode, emojiNode: nil))
+            case .emoji(let emojiNode):
+                flushTextNodes()
+                inlineNodeGroups.append((isText: false, nodes: [], mentionNode: nil, emojiNode: emojiNode))
+            default:
+                currentTextNodes.append(child)
+            }
+        }
+        flushTextNodes()
+        
+        // 构建包含 mention 和 emoji 的 NSAttributedString
+        let mutableAttrString = NSMutableAttributedString()
+        
+        for group in inlineNodeGroups {
+            if group.isText {
+                // 文本节点组
+                let textAttrString = context.stringBuilder.buildAttributedString(from: group.nodes, context: context)
+                mutableAttrString.append(textAttrString)
+            } else if let mentionNode = group.mentionNode {
+                // Mention 节点：直接使用文本（不需要背景和圆角）
+                let font = context.currentFont ?? context.theme.font
+                let mentionString = NSMutableAttributedString(
+                    string: "@\(mentionNode.name)",
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: context.theme.mentionTextColor
+                    ]
+                )
+                mutableAttrString.append(mentionString)
+                
+                // 如果有代理，尝试加载状态图片并追加
+                if let inlineImageLoaderDelegate = context.inlineImageLoaderDelegate {
+                    // 使用信号量等待异步加载结果（最多等待 100ms）
+                    let semaphore = DispatchSemaphore(value: 0)
+                    var statusImage: UIImage?
+                    
+                    inlineImageLoaderDelegate.loadMentionStatusImage(mentionNode: mentionNode) { image in
+                        statusImage = image
+                        semaphore.signal()
+                    }
+                    
+                    let timeout = DispatchTime.now() + .milliseconds(100)
+                    if semaphore.wait(timeout: timeout) == .success, let image = statusImage {
+                        // 成功获取状态图片，添加一个空格和图片附件
+                        mutableAttrString.append(NSAttributedString(string: " "))
+                        let statusAttachment = MentionStatusImageAttachment(mentionNode: mentionNode, context: context)
+                        statusAttachment.image = image
+                        statusAttachment.cachedImage = image
+                        let attachmentString = NSAttributedString(attachment: statusAttachment)
+                        mutableAttrString.append(attachmentString)
+                    }
+                }
+            } else if let emojiNode = group.emojiNode {
+                // Emoji 节点：如果有代理，使用 NSTextAttachment；否则使用文本
+                if context.inlineImageLoaderDelegate != nil {
+                    let emojiAttachment = EmojiTextAttachment(emojiNode: emojiNode, context: context)
+                    let attachmentString = NSAttributedString(attachment: emojiAttachment)
+                    mutableAttrString.append(attachmentString)
+                } else {
+                    // 没有代理，直接添加文本
+                    let font = context.currentFont ?? context.theme.font
+                    let color = context.currentTextColor ?? context.theme.textColor
+                    let emojiString = NSAttributedString(
+                        string: emojiNode.content,
+                        attributes: [
+                            .font: font,
+                            .foregroundColor: color
+                        ]
+                    )
+                    mutableAttrString.append(emojiString)
+                }
+            }
+        }
+        
+        // 计算布局大小
+        let size = mutableAttrString.boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        ).size
+        
+        let height = ceil(size.height)
+        let actualWidth = min(ceil(size.width), width)
+        
+        return NodeLayout(
+            frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: height)),
+            node: .heading(node),
+            content: mutableAttrString
+        )
+    }
+    
+    /// 计算表格布局
+    private static func calculateTableLayout(_ node: TableNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
+        var currentY: CGFloat = 0
+        var rowLayouts: [NodeLayout] = []
+        let cellPadding = context.theme.tableCellPadding
+        
+        for (rowIndex, row) in node.rows.enumerated() {
+            var currentX: CGFloat = 0
+            var cellLayouts: [NodeLayout] = []
+            let cellWidth = width / CGFloat(row.cells.count)
+            
+            for cell in row.cells {
+                let cellContentWidth = cellWidth - cellPadding * 2
+                let attrString = context.stringBuilder.buildAttributedString(from: cell.children, context: context)
+                
+                let size = attrString.boundingRect(
+                    with: CGSize(width: cellContentWidth, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    context: nil
+                ).size
+                
+                let cellHeight = ceil(size.height) + cellPadding * 2
+                
+                let cellLayout = NodeLayout(
+                    frame: CGRect(x: currentX, y: 0, width: cellWidth, height: cellHeight),
+                    content: attrString
+                )
+                cellLayouts.append(cellLayout)
+                currentX += cellWidth
+            }
+            
+            // 行高度取所有单元格的最大高度
+            let rowHeight = cellLayouts.map { $0.frame.height }.max() ?? 0
+            
+            // 更新所有单元格的高度
+            for i in 0..<cellLayouts.count {
+                let oldFrame = cellLayouts[i].frame
+                cellLayouts[i] = NodeLayout(
+                    frame: CGRect(x: oldFrame.origin.x, y: 0, width: oldFrame.width, height: rowHeight),
+                    content: cellLayouts[i].content
+                )
+            }
+            
+            let rowLayout = NodeLayout(
+                frame: CGRect(x: 0, y: currentY, width: width, height: rowHeight),
+                children: cellLayouts,
+                backgroundColor: rowIndex == 0 ? context.theme.tableHeaderBackground : nil
+            )
+            rowLayouts.append(rowLayout)
+            currentY += rowHeight
+            
+            // 添加行分隔线（除了最后一行）
+            if rowIndex < node.rows.count - 1 {
+                currentY += 1 // 分隔线高度
+            }
+        }
+        
+        return NodeLayout(
+            frame: CGRect(origin: origin, size: CGSize(width: width, height: currentY)),
+            children: rowLayouts,
+            node: .table(node),
+            borderColor: context.theme.tableBorderColor,
+            borderWidth: 1
+        )
+    }
+    
+    /// 计算列表布局
+    private static func calculateListLayout(_ node: ListNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
+        var currentY: CGFloat = 0
+        var itemLayouts: [NodeLayout] = []
+        let spacing = context.theme.listItemSpacing
+        let markerWidth: CGFloat = 20
+        
+        for (index, item) in node.items.enumerated() {
+            let contentWidth = width - markerWidth - 8 // 8 是标记和内容之间的间距
+            
+            // 检查列表项是否包含嵌套列表
+            let hasNestedList = item.children.contains { wrapper in
+                if case .list = wrapper {
+                    return true
+                }
+                return false
+            }
+            
+            // 检查列表项是否包含块级节点（段落、标题等）
+            let hasBlockLevelNodes = item.children.contains { wrapper in
+                switch wrapper {
+                case .paragraph, .heading, .codeBlock, .table, .blockquote, .horizontalRule:
+                    return true
+                default:
+                    return false
+                }
+            }
+            
+            let contentLayout: NodeLayout
+            
+            if hasNestedList || hasBlockLevelNodes {
+                // 如果包含嵌套列表或块级节点，使用垂直堆栈布局
+                contentLayout = calculateVerticalStackLayout(
+                    children: item.children,
+                    context: context,
+                    origin: CGPoint(x: markerWidth + 8, y: currentY),
+                    width: contentWidth,
+                    spacing: 4 // 内部紧凑一些
+                )
+            } else {
+                // 否则，将列表项内容当作行内内容处理
+                // 提取所有行内节点（包括段落内的行内节点）
+                var inlineNodes: [ASTNodeWrapper] = []
+                for child in item.children {
+                    if case .paragraph(let pNode) = child {
+                        // 如果子节点是段落，提取段落内的行内节点
+                        inlineNodes.append(contentsOf: pNode.children)
+                    } else {
+                        // 否则直接添加
+                        inlineNodes.append(child)
+                    }
+                }
+                
+                // 检查是否包含块级特殊节点（图片、数学公式、Mermaid）
+                let hasBlockLevelSpecialNodes = inlineNodes.contains { wrapper in
+                    switch wrapper {
+                    case .image, .math, .mermaid:
+                        return true
+                    default:
+                        return false
+                    }
+                }
+                
+                // 检查是否包含行内特殊节点（mention、emoji）
+                let hasInlineSpecialNodes = inlineNodes.contains { wrapper in
+                    switch wrapper {
+                    case .mention, .emoji:
+                        return true
+                    default:
+                        return false
+                    }
+                }
+                
+                if hasBlockLevelSpecialNodes {
+                    // 包含块级特殊节点，需要混合布局计算
+                    contentLayout = calculateListItemInlineContentWithSpecialNodes(
+                        nodes: inlineNodes,
+                        context: context,
+                        origin: CGPoint(x: markerWidth + 8, y: currentY),
+                        width: contentWidth
+                    )
+                } else if hasInlineSpecialNodes {
+                    // 只包含行内特殊节点（mention、emoji），使用行内布局计算
+                    contentLayout = calculateListItemInlineContentWithInlineNodes(
+                        nodes: inlineNodes,
+                        context: context,
+                        origin: CGPoint(x: markerWidth + 8, y: currentY),
+                        width: contentWidth
+                    )
+                } else {
+                    // 纯文本内容，使用 NSAttributedString 计算
+                    let attrString = context.stringBuilder.buildAttributedString(from: inlineNodes, context: context)
+                    
+                    let size = attrString.boundingRect(
+                        with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                        options: [.usesLineFragmentOrigin, .usesFontLeading],
+                        context: nil
+                    ).size
+                    
+                    let height = ceil(size.height)
+                    // 使用实际宽度，但不超过最大宽度
+                    let actualContentWidth = min(ceil(size.width), contentWidth)
+                    
+                    contentLayout = NodeLayout(
+                        frame: CGRect(x: markerWidth + 8, y: currentY, width: actualContentWidth, height: height),
+                        content: attrString
+                    )
+                }
+            }
+            
+            // 标记 (Marker) - 精确计算高度
+            let markerText = node.listType == .bullet ? "•" : "\(index + 1)."
+            let markerAttr = NSAttributedString(string: markerText, attributes: [.font: context.theme.font, .foregroundColor: context.theme.textColor])
+            let markerSize = markerAttr.boundingRect(
+                with: CGSize(width: markerWidth, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).size
+            let markerHeight = ceil(markerSize.height)
+            
+            let markerLayout = NodeLayout(
+                frame: CGRect(x: 0, y: currentY, width: markerWidth, height: markerHeight),
+                content: markerAttr
+            )
+            
+            itemLayouts.append(markerLayout)
+            itemLayouts.append(contentLayout)
+            
+            // 列表项高度取标记和内容的最大高度
+            let itemHeight = max(markerHeight, contentLayout.frame.height)
+            currentY += itemHeight + spacing
+        }
+        
+        if !node.items.isEmpty {
+            currentY -= spacing
+        }
+        
+        // 计算实际宽度：取所有列表项的最大宽度（marker + content）
+        let actualWidth = itemLayouts.map { $0.frame.maxX }.max() ?? width
+        
+        return NodeLayout(
+            frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: currentY)),
+            children: itemLayouts,
+            node: .list(node)
+        )
+    }
+    
+    /// 计算包含特殊节点的列表项行内内容布局
+    private static func calculateListItemInlineContentWithSpecialNodes(nodes: [ASTNodeWrapper], context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
+        var currentY: CGFloat = 0
+        var childLayouts: [NodeLayout] = []
+        
+        // 将行内节点分组：连续的文本节点合并，特殊节点单独处理
+        var currentTextNodes: [ASTNodeWrapper] = []
+        
+        func flushTextNodes() {
+            if !currentTextNodes.isEmpty {
+                let attrString = context.stringBuilder.buildAttributedString(from: currentTextNodes, context: context)
+                let size = attrString.boundingRect(
+                    with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    context: nil
+                ).size
+                let height = ceil(size.height)
+                // 使用实际宽度，但不超过最大宽度
+                let actualWidth = min(ceil(size.width), width)
+                
+                let textLayout = NodeLayout(
+                    frame: CGRect(x: 0, y: currentY, width: actualWidth, height: height),
+                    content: attrString
+                )
+                childLayouts.append(textLayout)
+                currentY += height
+                currentTextNodes.removeAll()
+            }
+        }
+        
+        for child in nodes {
+            switch child {
+            case .image(let imgNode):
+                flushTextNodes()
+                // 图片布局已经包含了 imageMargin，所以这里直接使用
+                let imgLayout = calculateNodeLayout(.image(imgNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(imgLayout)
+                currentY += imgLayout.frame.height
+                
+            case .math(let mathNode):
+                flushTextNodes()
+                let mathLayout = calculateNodeLayout(.math(mathNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(mathLayout)
+                currentY += mathLayout.frame.height
+                
+            case .mermaid(let mermaidNode):
+                flushTextNodes()
+                let mermaidLayout = calculateNodeLayout(.mermaid(mermaidNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(mermaidLayout)
+                currentY += mermaidLayout.frame.height
+                
+            case .mention, .emoji:
+                // mention 和 emoji 应该作为行内元素，与文本在同一行
+                // 它们不应该在这里被处理，应该包含在文本节点中
+                currentTextNodes.append(child)
+                
+            default:
+                currentTextNodes.append(child)
+            }
+        }
+        flushTextNodes()
+        
+        // 计算实际宽度：取所有子布局的最大宽度
+        let actualWidth = childLayouts.map { $0.frame.width }.max() ?? width
+        return NodeLayout(
+            frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: currentY)),
+            children: childLayouts
+        )
+    }
+    
+    /// 计算包含行内特殊节点（mention、emoji）的列表项行内内容布局
+    /// 这些节点应该与文本在同一行显示，使用水平布局
+    private static func calculateListItemInlineContentWithInlineNodes(nodes: [ASTNodeWrapper], context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
+        // 将节点分组：连续的文本节点合并，mention 和 emoji 单独处理
+        var inlineNodeGroups: [(isText: Bool, nodes: [ASTNodeWrapper], mentionNode: MentionNode?, emojiNode: EmojiNode?)] = []
+        var currentTextNodes: [ASTNodeWrapper] = []
+        
+        func flushTextNodes() {
+            if !currentTextNodes.isEmpty {
+                inlineNodeGroups.append((isText: true, nodes: currentTextNodes, mentionNode: nil, emojiNode: nil))
+                currentTextNodes.removeAll()
+            }
+        }
+        
+        for child in nodes {
+            switch child {
+            case .mention(let mentionNode):
+                flushTextNodes()
+                inlineNodeGroups.append((isText: false, nodes: [], mentionNode: mentionNode, emojiNode: nil))
+            case .emoji(let emojiNode):
+                flushTextNodes()
+                inlineNodeGroups.append((isText: false, nodes: [], mentionNode: nil, emojiNode: emojiNode))
+            default:
+                currentTextNodes.append(child)
+            }
+        }
+        flushTextNodes()
+        
+        // 构建包含 mention 和 emoji 的 NSAttributedString
+        let mutableAttrString = NSMutableAttributedString()
+        
+        for group in inlineNodeGroups {
+            if group.isText {
+                // 文本节点组
+                let textAttrString = context.stringBuilder.buildAttributedString(from: group.nodes, context: context)
+                mutableAttrString.append(textAttrString)
+            } else if let mentionNode = group.mentionNode {
+                // Mention 节点：直接使用文本（不需要背景和圆角）
+                let font = context.currentFont ?? context.theme.font
+                let mentionString = NSMutableAttributedString(
+                    string: "@\(mentionNode.name)",
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: context.theme.mentionTextColor
+                    ]
+                )
+                mutableAttrString.append(mentionString)
+                
+                // 如果有代理，尝试加载状态图片并追加
+                if let inlineImageLoaderDelegate = context.inlineImageLoaderDelegate {
+                    // 使用信号量等待异步加载结果（最多等待 100ms）
+                    let semaphore = DispatchSemaphore(value: 0)
+                    var statusImage: UIImage?
+                    
+                    inlineImageLoaderDelegate.loadMentionStatusImage(mentionNode: mentionNode) { image in
+                        statusImage = image
+                        semaphore.signal()
+                    }
+                    
+                    let timeout = DispatchTime.now() + .milliseconds(100)
+                    if semaphore.wait(timeout: timeout) == .success, let image = statusImage {
+                        // 成功获取状态图片，添加一个空格和图片附件
+                        mutableAttrString.append(NSAttributedString(string: " "))
+                        let statusAttachment = MentionStatusImageAttachment(mentionNode: mentionNode, context: context)
+                        statusAttachment.image = image
+                        statusAttachment.cachedImage = image
+                        let attachmentString = NSAttributedString(attachment: statusAttachment)
+                        mutableAttrString.append(attachmentString)
+                    }
+                }
+            } else if let emojiNode = group.emojiNode {
+                // Emoji 节点：如果有代理，使用 NSTextAttachment；否则使用文本
+                if context.inlineImageLoaderDelegate != nil {
+                    let emojiAttachment = EmojiTextAttachment(emojiNode: emojiNode, context: context)
+                    let attachmentString = NSAttributedString(attachment: emojiAttachment)
+                    mutableAttrString.append(attachmentString)
+                } else {
+                    // 没有代理，直接添加文本
+                    let font = context.currentFont ?? context.theme.font
+                    let color = context.currentTextColor ?? context.theme.textColor
+                    let emojiString = NSAttributedString(
+                        string: emojiNode.content,
+                        attributes: [
+                            .font: font,
+                            .foregroundColor: color
+                        ]
+                    )
+                    mutableAttrString.append(emojiString)
+                }
+            }
+        }
+        
+        // 计算布局大小
+        let size = mutableAttrString.boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        ).size
+        
+        let height = ceil(size.height)
+        let actualWidth = min(ceil(size.width), width)
+        
+        return NodeLayout(
+            frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: height)),
+            content: mutableAttrString
+        )
+    }
+}

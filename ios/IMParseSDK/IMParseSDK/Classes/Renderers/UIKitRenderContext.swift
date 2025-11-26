@@ -37,18 +37,26 @@ public protocol UIKitFormulaSizeCacheDelegate: AnyObject {
     func saveFormulaImage(_ image: UIImage, for key: String)
 }
 
-/// Emoji 图片加载代理协议
-public protocol UIKitEmojiImageLoaderDelegate: AnyObject {
+/// 行内图片加载代理协议（用于 Emoji 和 Mention 状态图片）
+public protocol UIKitInlineImageLoaderDelegate: AnyObject {
     /// 加载 Emoji 图片
     /// - Parameters:
     ///   - content: Emoji 内容（如 "[加油]"）
-    ///   - completion: 加载完成回调，参数为加载的图片。如果获取失败，传入 nil
-    func loadEmojiImage(content: String, completion: @escaping (UIImage?) -> Void)
+    ///   - size: 目标尺寸（宽度和高度相同，为字体尺寸）
+    ///   - completion: 加载完成回调，参数为加载的图片。如果获取失败，传入 nil。上层调用者负责将图片裁剪/压缩到指定尺寸
+    func loadEmojiImage(content: String, size: CGFloat, completion: @escaping (UIImage?) -> Void)
+    
+    /// 加载 Mention 状态图片（已读/未读）
+    /// - Parameters:
+    ///   - mentionNode: Mention 节点
+    ///   - completion: 加载完成回调，参数为加载的图片。如果获取失败或不需要显示状态，传入 nil
+    func loadMentionStatusImage(mentionNode: MentionNode, completion: @escaping (UIImage?) -> Void)
 }
 
 /// UIKit 渲染上下文
 /// 包含渲染过程中的所有状态和回调
 public struct UIKitRenderContext {
+    public var stringBuilder: UIKitAttributedStringBuilder = UIKitAttributedStringBuilder()
     public var theme: UIKitTheme
     public var width: CGFloat
     public var onLinkTap: ((URL) -> Void)?
@@ -68,8 +76,8 @@ public struct UIKitRenderContext {
     // 数学公式和Mermaid尺寸缓存代理（可选）
     public weak var formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate?
     
-    // Emoji 图片加载代理（可选）
-    public weak var emojiImageLoaderDelegate: UIKitEmojiImageLoaderDelegate?
+    // 行内图片加载代理（可选，用于 Emoji 和 Mention 状态图片）
+    public weak var inlineImageLoaderDelegate: UIKitInlineImageLoaderDelegate?
     
     // 布局高度变化回调（用于通知 cell 高度变化）
     public var onLayoutHeightChanged: ((CGFloat) -> Void)?
@@ -86,7 +94,7 @@ public struct UIKitRenderContext {
                 currentTextColor: UIColor? = nil,
                 imageLoaderDelegate: UIKitImageLoaderDelegate? = nil,
                 formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil,
-                emojiImageLoaderDelegate: UIKitEmojiImageLoaderDelegate? = nil,
+                inlineImageLoaderDelegate: UIKitInlineImageLoaderDelegate? = nil,
                 onLayoutHeightChanged: ((CGFloat) -> Void)? = nil) {
         self.theme = theme
         self.width = width
@@ -100,7 +108,7 @@ public struct UIKitRenderContext {
         self.currentTextColor = currentTextColor
         self.imageLoaderDelegate = imageLoaderDelegate
         self.formulaSizeCacheDelegate = formulaSizeCacheDelegate
-        self.emojiImageLoaderDelegate = emojiImageLoaderDelegate
+        self.inlineImageLoaderDelegate = inlineImageLoaderDelegate
         self.onLayoutHeightChanged = onLayoutHeightChanged
     }
 }

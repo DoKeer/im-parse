@@ -1,27 +1,21 @@
 //
-//  UIKitRenderer.swift
+//  UIKitAutoLayoutRender.swift
 //  IMParseSDK
 //
 //  Created by IMParse on 2025.
 //
-//  UIKit 版本的 AST 渲染器
-//  负责将 AST 节点树转换为 UIView 树
+//  UIKit Auto Layout 渲染器
+//  负责将 AST 节点树转换为 UIView 树（使用 UIStackView 和 Auto Layout）
 //
 
 import UIKit
 
 // MARK: - UIKit AST 渲染器
 
-/// UIKit AST 渲染器
-/// 提供两种渲染模式：
-/// 1. `render(ast:context:)`: 使用 Auto Layout (UIStackView) 渲染，适合动态内容
-/// 2. `renderWithFrame(ast:context:)`: 使用 Frame 布局 (UIKitLayoutCalculator) 渲染，性能更好
-public class UIKitRenderer {
-    
-    // MARK: - 属性
-    
-    /// 属性字符串构建器
-    private let attributedStringBuilder = UIKitAttributedStringBuilder()
+/// UIKit Auto Layout 渲染器
+/// 使用 UIStackView 和 Auto Layout 来布局视图，适合动态内容
+/// 如果需要精确控制布局和更好的性能，请使用 UIKitFrameAsyncCalculator 和 UIKitFrameRender
+public class UIKitAutoLayoutRender {
     
     // MARK: - 初始化
     
@@ -36,7 +30,7 @@ public class UIKitRenderer {
     /// 渲染 AST 根节点（使用 UIStackView 和 Auto Layout）
     ///
     /// 这个方法使用 UIStackView 和 Auto Layout 来布局视图，适合需要动态调整的场景。
-    /// 如果需要精确控制布局和更好的性能，请使用 `renderWithFrame(ast:context:)` 方法。
+    /// 如果需要精确控制布局和更好的性能，请使用 `UIKitFrameAsyncCalculator` 和 `UIKitFrameRender`。
     ///
     /// - Parameters:
     ///   - ast: AST 根节点
@@ -78,40 +72,7 @@ public class UIKitRenderer {
         return outerContainer
     }
     
-    /// 渲染 AST 根节点（使用 frame 计算，不使用 Auto Layout）
-    ///
-    /// 这个方法使用 UIKitLayoutCalculator 在后台预计算布局，然后使用 frame 精确渲染视图。
-    /// 与 `render(ast:context:)` 方法不同，这个方法：
-    /// - 不使用 UIStackView 和 Auto Layout
-    /// - 所有视图使用精确的 frame 定位
-    /// - 高度在渲染前就已经计算完成
-    /// - 性能更好，适合需要精确控制布局的场景
-    ///
-    /// - Parameters:
-    ///   - ast: AST 根节点
-    ///   - context: 渲染上下文
-    /// - Returns: 使用 frame 布局的 UIView
-    public func renderWithFrame(ast: RootNode, context: UIKitRenderContext) -> UIView {
-        // 使用 UIKitLayoutCalculator 计算布局（在后台线程完成）
-        let layout = UIKitLayoutCalculator.calculateLayout(ast: ast, context: context)
-        
-        // 使用 NodeLayout 的 render 方法，它使用 frame 布局而不是 Auto Layout
-        // 返回的视图的所有子视图都使用精确的 frame 定位
-        return layout.render(context: context)
-    }
 
-    /// 从节点列表构建 NSAttributedString
-    /// (代理给 UIKitAttributedStringBuilder)
-    public func buildAttributedString(from nodes: [ASTNodeWrapper], context: UIKitRenderContext) -> NSAttributedString {
-        return attributedStringBuilder.buildAttributedString(from: nodes, context: context)
-    }
-    
-    /// 从单个节点构建 NSAttributedString
-    /// (代理给 UIKitAttributedStringBuilder)
-    func buildAttributedString(from node: ASTNodeWrapper, context: UIKitRenderContext) -> NSAttributedString {
-        return attributedStringBuilder.buildAttributedString(from: node, context: context)
-    }
-    
     // MARK: - 私有渲染方法
     
     /// 渲染节点包装器
@@ -232,7 +193,7 @@ public class UIKitRenderer {
     
     /// 使用 NSAttributedString 渲染段落（纯文本格式）
     private func renderParagraphAsAttributedString(_ node: ParagraphNode, context: UIKitRenderContext) -> UIView {
-        let attributedString = buildAttributedString(from: node.children, context: context)
+        let attributedString = context.stringBuilder.buildAttributedString(from: node.children, context: context)
         
         // 使用 UITextView 替代 UILabel 以支持链接点击
         // 注意：在 renderWithFrame 中有特定的处理逻辑，这里主要用于 Auto Layout 模式
@@ -280,7 +241,7 @@ public class UIKitRenderer {
         
         func flushTextNodes() {
             if !currentTextNodes.isEmpty {
-                let attributedString = buildAttributedString(from: currentTextNodes, context: context)
+                let attributedString = context.stringBuilder.buildAttributedString(from: currentTextNodes, context: context)
                 let label = UILabel()
                 label.attributedText = attributedString
                 label.numberOfLines = 0
@@ -338,7 +299,7 @@ public class UIKitRenderer {
             return renderHeadingWithSpecialNodes(node, context: headingContext, font: font, color: color)
         } else {
             // 否则使用 NSAttributedString 渲染
-            let attributedString = buildAttributedString(from: node.children, context: headingContext)
+            let attributedString = context.stringBuilder.buildAttributedString(from: node.children, context: headingContext)
             let label = UILabel()
             label.attributedText = attributedString
             label.numberOfLines = 0
@@ -370,7 +331,7 @@ public class UIKitRenderer {
         
         func flushTextNodes() {
             if !currentTextNodes.isEmpty {
-                let attributedString = buildAttributedString(from: currentTextNodes, context: context)
+                let attributedString = context.stringBuilder.buildAttributedString(from: currentTextNodes, context: context)
                 let label = UILabel()
                 label.attributedText = attributedString
                 label.numberOfLines = 0
@@ -955,7 +916,7 @@ public class UIKitRenderer {
             
             func flushTextNodes() {
                 if !currentTextNodes.isEmpty {
-                    let attributedString = buildAttributedString(from: currentTextNodes, context: context)
+                    let attributedString = context.stringBuilder.buildAttributedString(from: currentTextNodes, context: context)
                     let label = UILabel()
                     label.attributedText = attributedString
                     label.numberOfLines = 0
@@ -979,7 +940,7 @@ public class UIKitRenderer {
             
             return containerView
         } else {
-            let attributedString = buildAttributedString(from: nodes, context: context)
+            let attributedString = context.stringBuilder.buildAttributedString(from: nodes, context: context)
             let label = UILabel()
             label.attributedText = attributedString
             label.numberOfLines = 0
@@ -1086,7 +1047,7 @@ public class UIKitRenderer {
             
             func flushTextNodes() {
                 if !currentTextNodes.isEmpty {
-                    let attributedString = buildAttributedString(from: currentTextNodes, context: context)
+                    let attributedString = context.stringBuilder.buildAttributedString(from: currentTextNodes, context: context)
                     let label = UILabel()
                     label.attributedText = attributedString
                     label.numberOfLines = 0
@@ -1116,7 +1077,7 @@ public class UIKitRenderer {
                 contentStackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -padding)
             ])
         } else {
-            let attributedString = buildAttributedString(from: cell.children, context: context)
+            let attributedString = context.stringBuilder.buildAttributedString(from: cell.children, context: context)
             let label = UILabel()
             label.attributedText = attributedString
             label.numberOfLines = 0
@@ -1573,7 +1534,7 @@ public class UIKitRenderer {
                 
                 func flushTextNodes() {
                     if !currentTextNodes.isEmpty {
-                        let attributedString = buildAttributedString(from: currentTextNodes, context: blockquoteContext)
+                        let attributedString = context.stringBuilder.buildAttributedString(from: currentTextNodes, context: blockquoteContext)
                         let label = UILabel()
                         label.attributedText = attributedString
                         label.numberOfLines = 0
@@ -1597,7 +1558,7 @@ public class UIKitRenderer {
                 
                 stackView.addArrangedSubview(containerView)
             } else {
-                let attributedString = buildAttributedString(from: node.children, context: blockquoteContext)
+                let attributedString = context.stringBuilder.buildAttributedString(from: node.children, context: blockquoteContext)
                 let label = UILabel()
                 label.attributedText = attributedString
                 label.numberOfLines = 0

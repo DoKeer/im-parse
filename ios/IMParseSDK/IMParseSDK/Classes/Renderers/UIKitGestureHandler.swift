@@ -24,11 +24,6 @@ class TapGestureHandler: NSObject {
     }
 }
 
-// MARK: - 关联对象键
-
-fileprivate struct AssociatedKeys {
-    static var tapHandler = "tapHandler"
-}
 
 // MARK: - View Extension 用于方便添加手势
 
