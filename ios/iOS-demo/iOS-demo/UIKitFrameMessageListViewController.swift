@@ -1,15 +1,15 @@
 //
-//  UIKitMessageListViewController.swift
+//  UIKitFrameMessageListViewController.swift
 //  IMParseDemo
 //
-//  UIKit 版本的消息列表
+//  UIKit Frame 布局版本的消息列表
 //
 
 import UIKit
 import IMParseSDK
 import Kingfisher
 
-class UIKitMessageListViewController: UIViewController {
+class UIKitFrameMessageListViewController: UIViewController {
     
     private var messages: [Message] = []
     private var tableView: UITableView!
@@ -20,7 +20,7 @@ class UIKitMessageListViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        title = "UIKit 消息列表"
+        title = "UIKit Frame 消息列表"
         view.backgroundColor = .systemBackground
         
         setupTableView()
@@ -77,7 +77,7 @@ class UIKitMessageListViewController: UIViewController {
             var parsedMessages = generatedMessages
             for i in 0..<parsedMessages.count {
                 // calculateLayout 会自动调用 parse
-                parsedMessages[i].calculateLayout(width: contentWidth)
+                parsedMessages[i].calculateLayout(width: contentWidth, delegate: self)
             }
             
             // 回到主线程更新 UI
@@ -89,7 +89,7 @@ class UIKitMessageListViewController: UIViewController {
     }
 }
 
-extension UIKitMessageListViewController: UITableViewDataSource {
+extension UIKitFrameMessageListViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         return messages.count
     }
@@ -127,7 +127,7 @@ extension UIKitMessageListViewController: UITableViewDataSource {
     }
 }
 
-extension UIKitMessageListViewController: UITableViewDelegate {
+extension UIKitFrameMessageListViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         let message = messages[indexPath.row]
         
@@ -447,6 +447,7 @@ class MessageTableViewCell: UITableViewCell {
             },
             imageLoaderDelegate: viewController as? UIKitImageLoaderDelegate,
             formulaSizeCacheDelegate: viewController as? UIKitFormulaSizeCacheDelegate,
+            emojiImageLoaderDelegate: viewController as? UIKitEmojiImageLoaderDelegate,
             onLayoutHeightChanged: onHeightChanged
         )
     }
@@ -471,9 +472,45 @@ class MessageTableViewCell: UITableViewCell {
     }
 }
 
+// MARK: - UIKitEmojiImageLoaderDelegate
+
+extension UIKitFrameMessageListViewController: UIKitEmojiImageLoaderDelegate {
+    func loadEmojiImage(content: String, completion: @escaping (UIImage?) -> Void) {
+        // Emoji content 格式应该是类似 "[加油]" 这样的
+        // 对应的文件名是 "[加油].png"
+        let imageName = "\(content).png"
+        
+        // 在后台线程加载图片，避免阻塞主线程
+        DispatchQueue.global(qos: .userInitiated).async {
+            var image: UIImage?
+            
+            // 首先尝试从 main bundle 加载
+            if let loadedImage = UIImage(named: imageName, in: Bundle.main, compatibleWith: nil) {
+                image = loadedImage
+            }
+            // 如果 main bundle 中没有，尝试从 Emojis 文件夹加载
+            else if let emojiPath = Bundle.main.path(forResource: imageName, ofType: nil, inDirectory: "Emojis"),
+                    let loadedImage = UIImage(contentsOfFile: emojiPath) {
+                image = loadedImage
+            }
+            // 如果还是找不到，尝试从 Emojis bundle 加载
+            else if let emojiBundlePath = Bundle.main.path(forResource: "Emojis", ofType: nil),
+                    let emojiBundle = Bundle(path: emojiBundlePath),
+                    let loadedImage = UIImage(named: imageName, in: emojiBundle, compatibleWith: nil) {
+                image = loadedImage
+            }
+            
+            // 回到主线程调用 completion
+            DispatchQueue.main.async {
+                completion(image)
+            }
+        }
+    }
+}
+
 // MARK: - UIKitImageLoaderDelegate
 
-extension UIKitMessageListViewController: UIKitImageLoaderDelegate {
+extension UIKitFrameMessageListViewController: UIKitImageLoaderDelegate {
     func loadImage(url: URL, into imageView: UIImageView, completion: @escaping (UIImage?, Error?) -> Void) {
         // 使用 Kingfisher 加载图片
         imageView.kf.setImage(
@@ -497,7 +534,7 @@ extension UIKitMessageListViewController: UIKitImageLoaderDelegate {
 
 // MARK: - UIKitFormulaSizeCacheDelegate
 
-extension UIKitMessageListViewController: UIKitFormulaSizeCacheDelegate {
+extension UIKitFrameMessageListViewController: UIKitFormulaSizeCacheDelegate {
     /// 获取缓存的尺寸
     /// 从 Kingfisher 的图片缓存中读取图片，然后返回图片尺寸
     /// - Parameter key: 缓存键（公式或Mermaid的内容字符串）

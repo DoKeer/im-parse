@@ -11,6 +11,252 @@ import UIKit
 
 fileprivate struct AssociatedKeys {
     static var linkHandler = "linkHandler"
+    static var mentionHandler = "mentionHandler"
+}
+
+/// Emoji 文本附件，用于在 NSAttributedString 中嵌入 emoji 节点
+private class EmojiTextAttachment: NSTextAttachment {
+    let emojiNode: EmojiNode
+    let context: UIKitRenderContext
+    private var cachedImage: UIImage?
+    private var isLoading = false
+    
+    init(emojiNode: EmojiNode, context: UIKitRenderContext) {
+        self.emojiNode = emojiNode
+        self.context = context
+        super.init(data: nil, ofType: nil)
+        
+        // 计算尺寸（使用文本大小作为默认尺寸）
+        let font = context.currentFont ?? context.theme.font
+        let attrString = NSAttributedString(
+            string: emojiNode.content,
+            attributes: [.font: font]
+        )
+        
+        let textSize = attrString.boundingRect(
+            with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        ).size
+        
+        // Emoji 图片尺寸（通常与文本行高相同）
+        let emojiHeight = ceil(textSize.height)
+        let attachmentSize = CGSize(width: emojiHeight, height: emojiHeight)
+        
+        // 设置 bounds
+        let baselineOffset = (font.capHeight - attachmentSize.height) / 2 - font.descender
+        self.bounds = CGRect(origin: CGPoint(x: 0, y: baselineOffset), size: attachmentSize)
+        
+        // 如果有代理，尝试同步获取图片（在调用线程执行，但使用信号量等待异步结果）
+        if let emojiImageLoaderDelegate = context.emojiImageLoaderDelegate {
+            // 使用信号量等待异步加载结果（最多等待 100ms）
+            let semaphore = DispatchSemaphore(value: 0)
+            var loadedImage: UIImage?
+            
+            // 在调用线程执行代理方法
+            emojiImageLoaderDelegate.loadEmojiImage(content: emojiNode.content) { image in
+                loadedImage = image
+                semaphore.signal()
+            }
+            
+            // 等待结果，但设置超时避免阻塞太久
+            let timeout = DispatchTime.now() + .milliseconds(100)
+            if semaphore.wait(timeout: timeout) == .success, let image = loadedImage {
+                // 成功获取图片
+                self.image = image
+                self.cachedImage = image
+            } else {
+                // 超时或失败，创建占位图片
+                self.createPlaceholderImage(size: attachmentSize)
+                // 继续异步加载（在后台线程）
+                self.loadImageAsync()
+            }
+        } else {
+            // 没有代理，创建占位图片（文本）
+            self.createPlaceholderImage(size: attachmentSize)
+        }
+    }
+    
+    /// 创建占位图片（使用文本渲染）
+    private func createPlaceholderImage(size: CGSize) {
+        let font = context.currentFont ?? context.theme.font
+        let color = context.currentTextColor ?? context.theme.textColor
+        
+        let renderer = UIGraphicsImageRenderer(size: size)
+        self.image = renderer.image { context in
+            // 绘制文本
+            let attrString = NSAttributedString(
+                string: emojiNode.content,
+                attributes: [
+                    .font: font,
+                    .foregroundColor: color
+                ]
+            )
+            let textSize = attrString.boundingRect(
+                with: size,
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).size
+            let textRect = CGRect(
+                x: (size.width - textSize.width) / 2,
+                y: (size.height - textSize.height) / 2,
+                width: textSize.width,
+                height: textSize.height
+            )
+            attrString.draw(in: textRect)
+        }
+    }
+    
+    /// 异步加载图片（在后台线程）
+    private func loadImageAsync() {
+        guard !isLoading, let emojiImageLoaderDelegate = context.emojiImageLoaderDelegate else {
+            return
+        }
+        
+        isLoading = true
+        
+        // 在后台线程加载
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self else { return }
+            
+            let semaphore = DispatchSemaphore(value: 0)
+            var loadedImage: UIImage?
+            
+            emojiImageLoaderDelegate.loadEmojiImage(content: self.emojiNode.content) { image in
+                loadedImage = image
+                semaphore.signal()
+            }
+            
+            semaphore.wait()
+            
+            // 回到主线程更新图片
+            DispatchQueue.main.async {
+                if let image = loadedImage {
+                    self.image = image
+                    self.cachedImage = image
+                }
+                self.isLoading = false
+            }
+        }
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+/// Mention 文本附件，用于在 NSAttributedString 中嵌入 mention 节点
+private class MentionTextAttachment: NSTextAttachment {
+    let mentionNode: MentionNode
+    let context: UIKitRenderContext
+    private var cachedImage: UIImage?
+    
+    init(mentionNode: MentionNode, context: UIKitRenderContext) {
+        self.mentionNode = mentionNode
+        self.context = context
+        super.init(data: nil, ofType: nil)
+        
+        // 只计算尺寸，不创建 UI 视图（避免在后台线程创建 UI）
+        let font = context.theme.font
+        let text = "@\(mentionNode.name)"
+        let attrString = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: font,
+                .foregroundColor: context.theme.mentionTextColor
+            ]
+        )
+        
+        let textSize = attrString.boundingRect(
+            with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        ).size
+        
+        // Mention 有内边距：上下 2，左右 6
+        let padding: CGFloat = 2
+        let horizontalPadding: CGFloat = 6
+        let attachmentSize = CGSize(
+            width: ceil(textSize.width) + horizontalPadding * 2,
+            height: ceil(textSize.height) + padding * 2
+        )
+        
+        // 设置 bounds，但不设置 image（延迟到主线程渲染）
+        self.bounds = CGRect(origin: CGPoint(x: 0, y: -padding), size: attachmentSize)
+        
+        // 创建一个占位图片（1x1 透明图片），避免显示问题
+        let renderer = UIGraphicsImageRenderer(size: attachmentSize)
+        self.image = renderer.image { context in
+            // 只绘制透明背景，不创建 UI 视图
+            context.cgContext.clear(context.format.bounds)
+        }
+    }
+    
+    /// 在主线程渲染 mention 图片
+    func renderImage() -> UIImage? {
+        if let cached = cachedImage {
+            return cached
+        }
+        
+        // 确保在主线程执行
+        guard Thread.isMainThread else {
+            return image // 返回占位图片
+        }
+        
+        // 计算尺寸
+        let font = context.theme.font
+        let text = "@\(mentionNode.name)"
+        let attrString = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: font,
+                .foregroundColor: context.theme.mentionTextColor
+            ]
+        )
+        
+        let textSize = attrString.boundingRect(
+            with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        ).size
+        
+        let padding: CGFloat = 2
+        let horizontalPadding: CGFloat = 6
+        let attachmentSize = CGSize(
+            width: ceil(textSize.width) + horizontalPadding * 2,
+            height: ceil(textSize.height) + padding * 2
+        )
+        
+        // 创建 mention 视图并渲染为图片（现在在主线程）
+        let containerView = UIView(frame: CGRect(origin: .zero, size: attachmentSize))
+        containerView.backgroundColor = context.theme.mentionBackground
+        containerView.layer.cornerRadius = 4
+        containerView.clipsToBounds = true
+        
+        let label = UILabel(frame: CGRect(
+            x: horizontalPadding,
+            y: padding,
+            width: textSize.width,
+            height: textSize.height
+        ))
+        label.text = text
+        label.font = font
+        label.textColor = context.theme.mentionTextColor
+        containerView.addSubview(label)
+        
+        // 渲染为图片
+        let renderer = UIGraphicsImageRenderer(size: attachmentSize)
+        let renderedImage = renderer.image { _ in
+            containerView.layer.render(in: UIGraphicsGetCurrentContext()!)
+        }
+        
+        cachedImage = renderedImage
+        return renderedImage
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 }
 
 /// 用于处理 UITextView 链接点击的代理
@@ -28,6 +274,55 @@ private class LinkHandler: NSObject, UITextViewDelegate {
             return false // 我们自己处理了，系统不用再处理
         }
         return true // 使用系统默认行为（打开 Safari）
+    }
+}
+
+/// 用于处理 UITextView 中 mention 点击的处理器
+private class MentionTapHandler: NSObject {
+    weak var textView: UITextView?
+    let attributedString: NSAttributedString
+    let onMentionTap: (MentionNode) -> Void
+    
+    init(textView: UITextView, attributedString: NSAttributedString, onMentionTap: @escaping (MentionNode) -> Void) {
+        self.textView = textView
+        self.attributedString = attributedString
+        self.onMentionTap = onMentionTap
+        super.init()
+        
+        // 添加点击手势
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        textView.addGestureRecognizer(tapGesture)
+    }
+    
+    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+        guard let textView = textView else { return }
+        
+        let location = gesture.location(in: textView)
+        let textContainer = textView.textContainer
+        let layoutManager = textView.layoutManager
+        
+        // 计算点击位置对应的字符索引
+        let textContainerOffset = CGPoint(
+            x: textView.textContainerInset.left,
+            y: textView.textContainerInset.top
+        )
+        let locationInTextContainer = CGPoint(
+            x: location.x - textContainerOffset.x,
+            y: location.y - textContainerOffset.y
+        )
+        
+        let characterIndex = layoutManager.characterIndex(
+            for: locationInTextContainer,
+            in: textContainer,
+            fractionOfDistanceBetweenInsertionPoints: nil
+        )
+        
+        if characterIndex < attributedString.length {
+            // 检查该字符是否是 mention attachment
+            if let attachment = attributedString.attribute(.attachment, at: characterIndex, effectiveRange: nil) as? MentionTextAttachment {
+                onMentionTap(attachment.mentionNode)
+            }
+        }
     }
 }
 
@@ -142,20 +437,33 @@ public class UIKitLayoutCalculator {
     private static func calculateNodeLayout(_ node: ASTNodeWrapper, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
         switch node {
         case .paragraph(let pNode):
-            // 段落布局：检查是否包含特殊节点
-            // 注意：mention 和 emoji 也需要单独处理，因为它们需要支持点击事件或特殊样式
-            let hasSpecialNodes = pNode.children.contains { wrapper in
+            // 段落布局：检查是否包含块级特殊节点（图片、数学公式、Mermaid）
+            // 注意：mention 和 emoji 应该作为行内元素，与文本在同一行显示
+            let hasBlockLevelSpecialNodes = pNode.children.contains { wrapper in
                 switch wrapper {
-                case .image, .math, .mermaid, .mention, .emoji:
+                case .image, .math, .mermaid:
                     return true
                 default:
                     return false
                 }
             }
             
-            if hasSpecialNodes {
-                // 包含特殊节点，需要混合布局计算
+            // 检查是否包含 mention 或 emoji（行内特殊节点）
+            let hasInlineSpecialNodes = pNode.children.contains { wrapper in
+                switch wrapper {
+                case .mention, .emoji:
+                    return true
+                default:
+                    return false
+                }
+            }
+            
+            if hasBlockLevelSpecialNodes {
+                // 包含块级特殊节点，需要混合布局计算
                 return calculateParagraphWithSpecialNodes(pNode, context: context, origin: origin, width: width)
+            } else if hasInlineSpecialNodes {
+                // 只包含行内特殊节点（mention、emoji），使用行内布局计算
+                return calculateParagraphWithInlineNodes(pNode, context: context, origin: origin, width: width)
             } else {
                 // 纯文本段落，使用 NSAttributedString 计算
                 let renderer = UIKitRenderer()
@@ -179,11 +487,21 @@ public class UIKitLayoutCalculator {
             }
             
         case .heading(let hNode):
-            // 检查是否包含特殊节点
-            // 注意：mention 和 emoji 也需要单独处理
-            let hasSpecialNodes = hNode.children.contains { wrapper in
+            // 检查是否包含块级特殊节点（图片、数学公式、Mermaid）
+            // 注意：mention 和 emoji 应该作为行内元素，与文本在同一行显示
+            let hasBlockLevelSpecialNodes = hNode.children.contains { wrapper in
                 switch wrapper {
-                case .image, .math, .mermaid, .mention, .emoji:
+                case .image, .math, .mermaid:
+                    return true
+                default:
+                    return false
+                }
+            }
+            
+            // 检查是否包含 mention 或 emoji（行内特殊节点）
+            let hasInlineSpecialNodes = hNode.children.contains { wrapper in
+                switch wrapper {
+                case .mention, .emoji:
                     return true
                 default:
                     return false
@@ -201,9 +519,12 @@ public class UIKitLayoutCalculator {
             headingContext.currentFont = font
             headingContext.currentTextColor = color
             
-            if hasSpecialNodes {
-                // 包含特殊节点，需要混合布局计算
+            if hasBlockLevelSpecialNodes {
+                // 包含块级特殊节点，需要混合布局计算
                 return calculateHeadingWithSpecialNodes(hNode, context: headingContext, origin: origin, width: width)
+            } else if hasInlineSpecialNodes {
+                // 只包含行内特殊节点（mention、emoji），使用行内布局计算
+                return calculateHeadingWithInlineNodes(hNode, context: headingContext, origin: origin, width: width)
             } else {
                 // 纯文本标题
                 let renderer = UIKitRenderer()
@@ -613,6 +934,90 @@ public class UIKitLayoutCalculator {
         )
     }
     
+    /// 计算包含行内特殊节点（mention、emoji）的段落布局
+    /// 这些节点应该与文本在同一行显示，使用水平布局
+    private static func calculateParagraphWithInlineNodes(_ node: ParagraphNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
+        // 使用 UITextView 的布局计算，将 mention 和 emoji 作为 NSTextAttachment 嵌入
+        // 但为了支持点击事件，我们需要使用自定义的布局方式
+        
+        // 将节点分组：连续的文本节点合并，mention 和 emoji 单独处理
+        var inlineNodeGroups: [(isText: Bool, nodes: [ASTNodeWrapper], mentionNode: MentionNode?, emojiNode: EmojiNode?)] = []
+        var currentTextNodes: [ASTNodeWrapper] = []
+        
+        func flushTextNodes() {
+            if !currentTextNodes.isEmpty {
+                inlineNodeGroups.append((isText: true, nodes: currentTextNodes, mentionNode: nil, emojiNode: nil))
+                currentTextNodes.removeAll()
+            }
+        }
+        
+        for child in node.children {
+            switch child {
+            case .mention(let mentionNode):
+                flushTextNodes()
+                inlineNodeGroups.append((isText: false, nodes: [], mentionNode: mentionNode, emojiNode: nil))
+            case .emoji(let emojiNode):
+                flushTextNodes()
+                inlineNodeGroups.append((isText: false, nodes: [], mentionNode: nil, emojiNode: emojiNode))
+            default:
+                currentTextNodes.append(child)
+            }
+        }
+        flushTextNodes()
+        
+        // 构建包含 mention 和 emoji 的 NSAttributedString
+        let renderer = UIKitRenderer()
+        let mutableAttrString = NSMutableAttributedString()
+        
+        for group in inlineNodeGroups {
+            if group.isText {
+                // 文本节点组
+                let textAttrString = renderer.buildAttributedString(from: group.nodes, context: context)
+                mutableAttrString.append(textAttrString)
+            } else if let mentionNode = group.mentionNode {
+                // Mention 节点：创建 NSTextAttachment
+                let mentionAttachment = MentionTextAttachment(mentionNode: mentionNode, context: context)
+                let attachmentString = NSAttributedString(attachment: mentionAttachment)
+                mutableAttrString.append(attachmentString)
+            } else if let emojiNode = group.emojiNode {
+                // Emoji 节点：如果有代理，使用 NSTextAttachment；否则使用文本
+                if context.emojiImageLoaderDelegate != nil {
+                    let emojiAttachment = EmojiTextAttachment(emojiNode: emojiNode, context: context)
+                    let attachmentString = NSAttributedString(attachment: emojiAttachment)
+                    mutableAttrString.append(attachmentString)
+                } else {
+                    // 没有代理，直接添加文本
+                    let font = context.currentFont ?? context.theme.font
+                    let color = context.currentTextColor ?? context.theme.textColor
+                    let emojiString = NSAttributedString(
+                        string: emojiNode.content,
+                        attributes: [
+                            .font: font,
+                            .foregroundColor: color
+                        ]
+                    )
+                    mutableAttrString.append(emojiString)
+                }
+            }
+        }
+        
+        // 计算布局大小
+        let size = mutableAttrString.boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        ).size
+        
+        let height = ceil(size.height)
+        let actualWidth = min(ceil(size.width), width)
+        
+        return NodeLayout(
+            frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: height)),
+            node: .paragraph(node),
+            content: mutableAttrString
+        )
+    }
+    
     /// 计算包含特殊节点的标题布局
     private static func calculateHeadingWithSpecialNodes(_ node: HeadingNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
         var currentY: CGFloat = 0
@@ -689,6 +1094,87 @@ public class UIKitLayoutCalculator {
             frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: currentY)),
             children: childLayouts,
             node: .heading(node)
+        )
+    }
+    
+    /// 计算包含行内特殊节点（mention、emoji）的标题布局
+    /// 这些节点应该与文本在同一行显示，使用水平布局
+    private static func calculateHeadingWithInlineNodes(_ node: HeadingNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
+        // 将节点分组：连续的文本节点合并，mention 和 emoji 单独处理
+        var inlineNodeGroups: [(isText: Bool, nodes: [ASTNodeWrapper], mentionNode: MentionNode?, emojiNode: EmojiNode?)] = []
+        var currentTextNodes: [ASTNodeWrapper] = []
+        
+        func flushTextNodes() {
+            if !currentTextNodes.isEmpty {
+                inlineNodeGroups.append((isText: true, nodes: currentTextNodes, mentionNode: nil, emojiNode: nil))
+                currentTextNodes.removeAll()
+            }
+        }
+        
+        for child in node.children {
+            switch child {
+            case .mention(let mentionNode):
+                flushTextNodes()
+                inlineNodeGroups.append((isText: false, nodes: [], mentionNode: mentionNode, emojiNode: nil))
+            case .emoji(let emojiNode):
+                flushTextNodes()
+                inlineNodeGroups.append((isText: false, nodes: [], mentionNode: nil, emojiNode: emojiNode))
+            default:
+                currentTextNodes.append(child)
+            }
+        }
+        flushTextNodes()
+        
+        // 构建包含 mention 和 emoji 的 NSAttributedString
+        let renderer = UIKitRenderer()
+        let mutableAttrString = NSMutableAttributedString()
+        
+        for group in inlineNodeGroups {
+            if group.isText {
+                // 文本节点组
+                let textAttrString = renderer.buildAttributedString(from: group.nodes, context: context)
+                mutableAttrString.append(textAttrString)
+            } else if let mentionNode = group.mentionNode {
+                // Mention 节点：创建 NSTextAttachment
+                let mentionAttachment = MentionTextAttachment(mentionNode: mentionNode, context: context)
+                let attachmentString = NSAttributedString(attachment: mentionAttachment)
+                mutableAttrString.append(attachmentString)
+            } else if let emojiNode = group.emojiNode {
+                // Emoji 节点：如果有代理，使用 NSTextAttachment；否则使用文本
+                if context.emojiImageLoaderDelegate != nil {
+                    let emojiAttachment = EmojiTextAttachment(emojiNode: emojiNode, context: context)
+                    let attachmentString = NSAttributedString(attachment: emojiAttachment)
+                    mutableAttrString.append(attachmentString)
+                } else {
+                    // 没有代理，直接添加文本
+                    let font = context.currentFont ?? context.theme.font
+                    let color = context.currentTextColor ?? context.theme.textColor
+                    let emojiString = NSAttributedString(
+                        string: emojiNode.content,
+                        attributes: [
+                            .font: font,
+                            .foregroundColor: color
+                        ]
+                    )
+                    mutableAttrString.append(emojiString)
+                }
+            }
+        }
+        
+        // 计算布局大小
+        let size = mutableAttrString.boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        ).size
+        
+        let height = ceil(size.height)
+        let actualWidth = min(ceil(size.width), width)
+        
+        return NodeLayout(
+            frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: height)),
+            node: .heading(node),
+            content: mutableAttrString
         )
     }
     
@@ -812,8 +1298,8 @@ public class UIKitLayoutCalculator {
                     }
                 }
                 
-                // 检查是否包含特殊节点（图片、数学公式、Mermaid）
-                let hasSpecialNodes = inlineNodes.contains { wrapper in
+                // 检查是否包含块级特殊节点（图片、数学公式、Mermaid）
+                let hasBlockLevelSpecialNodes = inlineNodes.contains { wrapper in
                     switch wrapper {
                     case .image, .math, .mermaid:
                         return true
@@ -822,9 +1308,27 @@ public class UIKitLayoutCalculator {
                     }
                 }
                 
-                if hasSpecialNodes {
-                    // 包含特殊节点，需要混合布局计算
+                // 检查是否包含行内特殊节点（mention、emoji）
+                let hasInlineSpecialNodes = inlineNodes.contains { wrapper in
+                    switch wrapper {
+                    case .mention, .emoji:
+                        return true
+                    default:
+                        return false
+                    }
+                }
+                
+                if hasBlockLevelSpecialNodes {
+                    // 包含块级特殊节点，需要混合布局计算
                     contentLayout = calculateListItemInlineContentWithSpecialNodes(
+                        nodes: inlineNodes,
+                        context: context,
+                        origin: CGPoint(x: markerWidth + 8, y: currentY),
+                        width: contentWidth
+                    )
+                } else if hasInlineSpecialNodes {
+                    // 只包含行内特殊节点（mention、emoji），使用行内布局计算
+                    contentLayout = calculateListItemInlineContentWithInlineNodes(
                         nodes: inlineNodes,
                         context: context,
                         origin: CGPoint(x: markerWidth + 8, y: currentY),
@@ -941,17 +1445,10 @@ public class UIKitLayoutCalculator {
                 childLayouts.append(mermaidLayout)
                 currentY += mermaidLayout.frame.height
                 
-            case .mention(let mentionNode):
-                flushTextNodes()
-                let mentionLayout = calculateNodeLayout(.mention(mentionNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
-                childLayouts.append(mentionLayout)
-                currentY += mentionLayout.frame.height
-                
-            case .emoji(let emojiNode):
-                flushTextNodes()
-                let emojiLayout = calculateNodeLayout(.emoji(emojiNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
-                childLayouts.append(emojiLayout)
-                currentY += emojiLayout.frame.height
+            case .mention, .emoji:
+                // mention 和 emoji 应该作为行内元素，与文本在同一行
+                // 它们不应该在这里被处理，应该包含在文本节点中
+                currentTextNodes.append(child)
                 
             default:
                 currentTextNodes.append(child)
@@ -964,6 +1461,86 @@ public class UIKitLayoutCalculator {
         return NodeLayout(
             frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: currentY)),
             children: childLayouts
+        )
+    }
+    
+    /// 计算包含行内特殊节点（mention、emoji）的列表项行内内容布局
+    /// 这些节点应该与文本在同一行显示，使用水平布局
+    private static func calculateListItemInlineContentWithInlineNodes(nodes: [ASTNodeWrapper], context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
+        // 将节点分组：连续的文本节点合并，mention 和 emoji 单独处理
+        var inlineNodeGroups: [(isText: Bool, nodes: [ASTNodeWrapper], mentionNode: MentionNode?, emojiNode: EmojiNode?)] = []
+        var currentTextNodes: [ASTNodeWrapper] = []
+        
+        func flushTextNodes() {
+            if !currentTextNodes.isEmpty {
+                inlineNodeGroups.append((isText: true, nodes: currentTextNodes, mentionNode: nil, emojiNode: nil))
+                currentTextNodes.removeAll()
+            }
+        }
+        
+        for child in nodes {
+            switch child {
+            case .mention(let mentionNode):
+                flushTextNodes()
+                inlineNodeGroups.append((isText: false, nodes: [], mentionNode: mentionNode, emojiNode: nil))
+            case .emoji(let emojiNode):
+                flushTextNodes()
+                inlineNodeGroups.append((isText: false, nodes: [], mentionNode: nil, emojiNode: emojiNode))
+            default:
+                currentTextNodes.append(child)
+            }
+        }
+        flushTextNodes()
+        
+        // 构建包含 mention 和 emoji 的 NSAttributedString
+        let renderer = UIKitRenderer()
+        let mutableAttrString = NSMutableAttributedString()
+        
+        for group in inlineNodeGroups {
+            if group.isText {
+                // 文本节点组
+                let textAttrString = renderer.buildAttributedString(from: group.nodes, context: context)
+                mutableAttrString.append(textAttrString)
+            } else if let mentionNode = group.mentionNode {
+                // Mention 节点：创建 NSTextAttachment
+                let mentionAttachment = MentionTextAttachment(mentionNode: mentionNode, context: context)
+                let attachmentString = NSAttributedString(attachment: mentionAttachment)
+                mutableAttrString.append(attachmentString)
+            } else if let emojiNode = group.emojiNode {
+                // Emoji 节点：如果有代理，使用 NSTextAttachment；否则使用文本
+                if context.emojiImageLoaderDelegate != nil {
+                    let emojiAttachment = EmojiTextAttachment(emojiNode: emojiNode, context: context)
+                    let attachmentString = NSAttributedString(attachment: emojiAttachment)
+                    mutableAttrString.append(attachmentString)
+                } else {
+                    // 没有代理，直接添加文本
+                    let font = context.currentFont ?? context.theme.font
+                    let color = context.currentTextColor ?? context.theme.textColor
+                    let emojiString = NSAttributedString(
+                        string: emojiNode.content,
+                        attributes: [
+                            .font: font,
+                            .foregroundColor: color
+                        ]
+                    )
+                    mutableAttrString.append(emojiString)
+                }
+            }
+        }
+        
+        // 计算布局大小
+        let size = mutableAttrString.boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        ).size
+        
+        let height = ceil(size.height)
+        let actualWidth = min(ceil(size.width), width)
+        
+        return NodeLayout(
+            frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: height)),
+            content: mutableAttrString
         )
     }
 }
@@ -1076,8 +1653,11 @@ private class FrameRenderer {
     
     /// 渲染 NSAttributedString
     private static func renderAttributedString(_ attributedString: NSAttributedString, frame: CGRect, context: UIKitRenderContext) -> UIView {
-        // 检查是否包含链接
+        // 检查是否包含链接或 mention attachment
         var hasLink = false
+        var hasMention = false
+        var mentionAttachments: [MentionTextAttachment] = []
+        
         attributedString.enumerateAttribute(.link, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
             if value != nil {
                 hasLink = true
@@ -1085,12 +1665,42 @@ private class FrameRenderer {
             }
         }
         
-        if hasLink {
-            // 如果包含链接，使用 UITextView 以支持点击
+        attributedString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributedString.length), options: []) { value, range, stop in
+            if let mentionAttachment = value as? MentionTextAttachment {
+                hasMention = true
+                mentionAttachments.append(mentionAttachment)
+            }
+        }
+        
+        // 如果包含 mention attachment，在主线程渲染图片
+        if hasMention {
+            // 确保在主线程执行
+            if Thread.isMainThread {
+                // 渲染所有 mention attachment 的图片
+                for attachment in mentionAttachments {
+                    if let renderedImage = attachment.renderImage() {
+                        attachment.image = renderedImage
+                    }
+                }
+            } else {
+                // 如果不在主线程，延迟到主线程执行
+                DispatchQueue.main.async {
+                    for attachment in mentionAttachments {
+                        if let renderedImage = attachment.renderImage() {
+                            attachment.image = renderedImage
+                        }
+                    }
+                }
+            }
+        }
+        
+        if hasLink || hasMention {
+            // 如果包含链接或 mention，使用 UITextView 以支持点击
             let textView = UITextView()
             textView.attributedText = attributedString
             textView.isEditable = false
             textView.isScrollEnabled = false
+            textView.isUserInteractionEnabled = true // 确保可以接收点击事件
             textView.textContainerInset = .zero
             textView.textContainer.lineFragmentPadding = 0
             textView.backgroundColor = .clear
@@ -1100,9 +1710,21 @@ private class FrameRenderer {
             centerTextViewVertically(textView, attributedString: attributedString, frame: frame.size)
             
             // 设置代理以处理链接点击
-            let linkHandler = LinkHandler(onLinkTap: context.onLinkTap)
-            textView.delegate = linkHandler
-            objc_setAssociatedObject(textView, &AssociatedKeys.linkHandler, linkHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            if hasLink {
+                let linkHandler = LinkHandler(onLinkTap: context.onLinkTap)
+                textView.delegate = linkHandler
+                objc_setAssociatedObject(textView, &AssociatedKeys.linkHandler, linkHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            }
+            
+            // 如果包含 mention，添加点击手势处理
+            if hasMention, let onMentionTap = context.onMentionTap {
+                let mentionHandler = MentionTapHandler(
+                    textView: textView,
+                    attributedString: attributedString,
+                    onMentionTap: onMentionTap
+                )
+                objc_setAssociatedObject(textView, &AssociatedKeys.mentionHandler, mentionHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            }
             
             return textView
         } else {
@@ -1832,12 +2454,52 @@ private class FrameRenderer {
     
     /// 渲染 Emoji
     private static func renderEmoji(_ node: EmojiNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
-        let label = UILabel()
-        label.text = node.content
-        label.font = context.currentFont ?? context.theme.font
-        label.textColor = context.currentTextColor ?? context.theme.textColor
-        label.frame = CGRect(origin: .zero, size: frame.size)
-        return label
+        let containerView = UIView()
+        containerView.frame = CGRect(origin: .zero, size: frame.size)
+        
+        // 如果有 emoji 图片加载代理，尝试加载图片
+        if let emojiImageLoaderDelegate = context.emojiImageLoaderDelegate {
+            // 创建图片视图
+            let imageView = UIImageView()
+            imageView.contentMode = .scaleAspectFit
+            imageView.frame = containerView.bounds
+            containerView.addSubview(imageView)
+            
+            // 创建文本标签作为后备（如果图片加载失败）
+            let label = UILabel()
+            label.text = node.content
+            label.font = context.currentFont ?? context.theme.font
+            label.textColor = context.currentTextColor ?? context.theme.textColor
+            label.frame = containerView.bounds
+            label.textAlignment = .center
+            label.isHidden = true // 初始隐藏，如果图片加载失败再显示
+            containerView.addSubview(label)
+            
+            // 尝试加载 emoji 图片
+            emojiImageLoaderDelegate.loadEmojiImage(content: node.content) { image in
+                DispatchQueue.main.async {
+                    if let image = image {
+                        // 加载成功，显示图片
+                        imageView.image = image
+                        label.isHidden = true
+                    } else {
+                        // 加载失败，显示原始文本
+                        imageView.isHidden = true
+                        label.isHidden = false
+                    }
+                }
+            }
+            
+            return containerView
+        } else {
+            // 没有代理，直接显示原始文本
+            let label = UILabel()
+            label.text = node.content
+            label.font = context.currentFont ?? context.theme.font
+            label.textColor = context.currentTextColor ?? context.theme.textColor
+            label.frame = CGRect(origin: .zero, size: frame.size)
+            return label
+        }
     }
     
     /// 渲染 Mention

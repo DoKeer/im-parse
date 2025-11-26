@@ -37,6 +37,15 @@ public protocol UIKitFormulaSizeCacheDelegate: AnyObject {
     func saveFormulaImage(_ image: UIImage, for key: String)
 }
 
+/// Emoji 图片加载代理协议
+public protocol UIKitEmojiImageLoaderDelegate: AnyObject {
+    /// 加载 Emoji 图片
+    /// - Parameters:
+    ///   - content: Emoji 内容（如 "[加油]"）
+    ///   - completion: 加载完成回调，参数为加载的图片。如果获取失败，传入 nil
+    func loadEmojiImage(content: String, completion: @escaping (UIImage?) -> Void)
+}
+
 /// UIKit 渲染上下文
 /// 包含渲染过程中的所有状态和回调
 public struct UIKitRenderContext {
@@ -59,6 +68,9 @@ public struct UIKitRenderContext {
     // 数学公式和Mermaid尺寸缓存代理（可选）
     public weak var formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate?
     
+    // Emoji 图片加载代理（可选）
+    public weak var emojiImageLoaderDelegate: UIKitEmojiImageLoaderDelegate?
+    
     // 布局高度变化回调（用于通知 cell 高度变化）
     public var onLayoutHeightChanged: ((CGFloat) -> Void)?
     
@@ -74,6 +86,7 @@ public struct UIKitRenderContext {
                 currentTextColor: UIColor? = nil,
                 imageLoaderDelegate: UIKitImageLoaderDelegate? = nil,
                 formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil,
+                emojiImageLoaderDelegate: UIKitEmojiImageLoaderDelegate? = nil,
                 onLayoutHeightChanged: ((CGFloat) -> Void)? = nil) {
         self.theme = theme
         self.width = width
@@ -87,6 +100,7 @@ public struct UIKitRenderContext {
         self.currentTextColor = currentTextColor
         self.imageLoaderDelegate = imageLoaderDelegate
         self.formulaSizeCacheDelegate = formulaSizeCacheDelegate
+        self.emojiImageLoaderDelegate = emojiImageLoaderDelegate
         self.onLayoutHeightChanged = onLayoutHeightChanged
     }
 }

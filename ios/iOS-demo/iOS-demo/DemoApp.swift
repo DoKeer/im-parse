@@ -36,11 +36,11 @@ struct MainTabView: View {
 // MARK: - UIKit Wrapper
 
 struct UIKitMessageListWrapper: UIViewControllerRepresentable {
-    func makeUIViewController(context: Context) -> UIKitMessageListViewController {
-        return UIKitMessageListViewController()
+    func makeUIViewController(context: Context) -> UIKitFrameMessageListViewController {
+        return UIKitFrameMessageListViewController()
     }
     
-    func updateUIViewController(_ uiViewController: UIKitMessageListViewController, context: Context) {
+    func updateUIViewController(_ uiViewController: UIKitFrameMessageListViewController, context: Context) {
         // 不需要更新
     }
 }
