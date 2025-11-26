@@ -137,5 +137,335 @@ public class UIKitAttributedStringBuilder {
             return NSAttributedString()
         }
     }
+    
+    // MARK: - 字符串拼接方法
+    
+    /// 将AST树结构拼接成String，可以控制拼接长度
+    /// - Parameters:
+    ///   - nodes: AST 节点列表
+    ///   - maxLength: 最大长度限制，nil表示不限制
+    /// - Returns: 拼接好的字符串
+    public func buildString(from nodes: [ASTNodeWrapper], maxLength: Int? = nil) -> String {
+        var result = ""
+        var currentLength = 0
+        
+        for node in nodes {
+            if let maxLen = maxLength, currentLength >= maxLen {
+                break
+            }
+            
+            let nodeString = buildString(from: node, maxLength: maxLength, currentLength: &currentLength)
+            result.append(nodeString)
+        }
+        
+        return result
+    }
+    
+    /// 从单个节点构建字符串（递归方法）
+    /// - Parameters:
+    ///   - node: AST 节点
+    ///   - maxLength: 最大长度限制
+    ///   - currentLength: 当前已拼接的长度（inout参数）
+    /// - Returns: 构建好的字符串
+    private func buildString(from node: ASTNodeWrapper, maxLength: Int?, currentLength: inout Int) -> String {
+        // 检查是否超过长度限制
+        if let maxLen = maxLength, currentLength >= maxLen {
+            return ""
+        }
+        
+        switch node {
+        case .text(let textNode):
+            let content = textNode.content
+            if let maxLen = maxLength {
+                let remaining = maxLen - currentLength
+                if remaining <= 0 {
+                    return ""
+                }
+                if content.count <= remaining {
+                    currentLength += content.count
+                    return content
+                } else {
+                    let truncated = String(content.prefix(remaining))
+                    currentLength += truncated.count
+                    return truncated
+                }
+            } else {
+                currentLength += content.count
+                return content
+            }
+            
+        case .strong(let strongNode):
+            return buildString(fromChildren: strongNode.children, maxLength: maxLength, currentLength: &currentLength)
+            
+        case .em(let emNode):
+            return buildString(fromChildren: emNode.children, maxLength: maxLength, currentLength: &currentLength)
+            
+        case .underline(let underlineNode):
+            return buildString(fromChildren: underlineNode.children, maxLength: maxLength, currentLength: &currentLength)
+            
+        case .strike(let strikeNode):
+            return buildString(fromChildren: strikeNode.children, maxLength: maxLength, currentLength: &currentLength)
+            
+        case .code(let codeNode):
+            let content = codeNode.content
+            if let maxLen = maxLength {
+                let remaining = maxLen - currentLength
+                if remaining <= 0 {
+                    return ""
+                }
+                if content.count <= remaining {
+                    currentLength += content.count
+                    return content
+                } else {
+                    let truncated = String(content.prefix(remaining))
+                    currentLength += truncated.count
+                    return truncated
+                }
+            } else {
+                currentLength += content.count
+                return content
+            }
+            
+        case .codeBlock(let codeBlockNode):
+            let content = codeBlockNode.content
+            if let maxLen = maxLength {
+                let remaining = maxLen - currentLength
+                if remaining <= 0 {
+                    return ""
+                }
+                if content.count <= remaining {
+                    currentLength += content.count
+                    return content
+                } else {
+                    let truncated = String(content.prefix(remaining))
+                    currentLength += truncated.count
+                    return truncated
+                }
+            } else {
+                currentLength += content.count
+                return content
+            }
+            
+        case .link(let linkNode):
+            return buildString(fromChildren: linkNode.children, maxLength: maxLength, currentLength: &currentLength)
+            
+        case .paragraph(let paragraphNode):
+            return buildString(fromChildren: paragraphNode.children, maxLength: maxLength, currentLength: &currentLength)
+            
+        case .heading(let headingNode):
+            return buildString(fromChildren: headingNode.children, maxLength: maxLength, currentLength: &currentLength)
+            
+        case .blockquote(let blockquoteNode):
+            return buildString(fromChildren: blockquoteNode.children, maxLength: maxLength, currentLength: &currentLength)
+            
+        case .list(let listNode):
+            var result = ""
+            for item in listNode.items {
+                if let maxLen = maxLength, currentLength >= maxLen {
+                    break
+                }
+                result.append(buildString(fromChildren: item.children, maxLength: maxLength, currentLength: &currentLength))
+            }
+            return result
+            
+        case .listItem(let listItemNode):
+            return buildString(fromChildren: listItemNode.children, maxLength: maxLength, currentLength: &currentLength)
+            
+        case .table(let tableNode):
+            var result = ""
+            for row in tableNode.rows {
+                if let maxLen = maxLength, currentLength >= maxLen {
+                    break
+                }
+                for cell in row.cells {
+                    if let maxLen = maxLength, currentLength >= maxLen {
+                        break
+                    }
+                    result.append(buildString(fromChildren: cell.children, maxLength: maxLength, currentLength: &currentLength))
+                    result.append(" ") // 单元格之间添加空格
+                }
+                result.append("\n") // 行之间添加换行
+            }
+            return result
+            
+        case .tableRow(let tableRow):
+            var result = ""
+            for cell in tableRow.cells {
+                if let maxLen = maxLength, currentLength >= maxLen {
+                    break
+                }
+                result.append(buildString(fromChildren: cell.children, maxLength: maxLength, currentLength: &currentLength))
+                result.append(" ")
+            }
+            return result
+            
+        case .tableCell(let tableCell):
+            return buildString(fromChildren: tableCell.children, maxLength: maxLength, currentLength: &currentLength)
+            
+        case .image(let imageNode):
+            // 使用alt文本，如果没有则返回空字符串
+            if let alt = imageNode.alt, !alt.isEmpty {
+                let content = alt
+                if let maxLen = maxLength {
+                    let remaining = maxLen - currentLength
+                    if remaining <= 0 {
+                        return ""
+                    }
+                    if content.count <= remaining {
+                        currentLength += content.count
+                        return content
+                    } else {
+                        let truncated = String(content.prefix(remaining))
+                        currentLength += truncated.count
+                        return truncated
+                    }
+                } else {
+                    currentLength += content.count
+                    return content
+                }
+            }
+            return ""
+            
+        case .mention(let mentionNode):
+            let content = mentionNode.name
+            if let maxLen = maxLength {
+                let remaining = maxLen - currentLength
+                if remaining <= 0 {
+                    return ""
+                }
+                if content.count <= remaining {
+                    currentLength += content.count
+                    return content
+                } else {
+                    let truncated = String(content.prefix(remaining))
+                    currentLength += truncated.count
+                    return truncated
+                }
+            } else {
+                currentLength += content.count
+                return content
+            }
+            
+        case .emoji(let emojiNode):
+            let content = emojiNode.content
+            if let maxLen = maxLength {
+                let remaining = maxLen - currentLength
+                if remaining <= 0 {
+                    return ""
+                }
+                if content.count <= remaining {
+                    currentLength += content.count
+                    return content
+                } else {
+                    let truncated = String(content.prefix(remaining))
+                    currentLength += truncated.count
+                    return truncated
+                }
+            } else {
+                currentLength += content.count
+                return content
+            }
+            
+        case .math(let mathNode):
+            // 数学公式可以返回空字符串或内容
+            let content = mathNode.content
+            if let maxLen = maxLength {
+                let remaining = maxLen - currentLength
+                if remaining <= 0 {
+                    return ""
+                }
+                if content.count <= remaining {
+                    currentLength += content.count
+                    return content
+                } else {
+                    let truncated = String(content.prefix(remaining))
+                    currentLength += truncated.count
+                    return truncated
+                }
+            } else {
+                currentLength += content.count
+                return content
+            }
+            
+        case .mermaid(let mermaidNode):
+            // Mermaid图表可以返回空字符串或内容
+            let content = mermaidNode.content
+            if let maxLen = maxLength {
+                let remaining = maxLen - currentLength
+                if remaining <= 0 {
+                    return ""
+                }
+                if content.count <= remaining {
+                    currentLength += content.count
+                    return content
+                } else {
+                    let truncated = String(content.prefix(remaining))
+                    currentLength += truncated.count
+                    return truncated
+                }
+            } else {
+                currentLength += content.count
+                return content
+            }
+            
+        case .html(let htmlNode):
+            // HTML节点可以返回空字符串或内容
+            let content = htmlNode.content
+            if let maxLen = maxLength {
+                let remaining = maxLen - currentLength
+                if remaining <= 0 {
+                    return ""
+                }
+                if content.count <= remaining {
+                    currentLength += content.count
+                    return content
+                } else {
+                    let truncated = String(content.prefix(remaining))
+                    currentLength += truncated.count
+                    return truncated
+                }
+            } else {
+                currentLength += content.count
+                return content
+            }
+            
+        case .color(let colorNode):
+            return buildString(fromChildren: colorNode.children, maxLength: maxLength, currentLength: &currentLength)
+            
+        case .horizontalRule:
+            // 水平线可以返回换行符或空字符串
+            if let maxLen = maxLength {
+                let remaining = maxLen - currentLength
+                if remaining <= 0 {
+                    return ""
+                }
+                currentLength += 1
+                return "\n"
+            } else {
+                currentLength += 1
+                return "\n"
+            }
+            
+        case .root(let rootNode):
+            return buildString(fromChildren: rootNode.children, maxLength: maxLength, currentLength: &currentLength)
+        }
+    }
+    
+    /// 从子节点列表构建字符串（辅助方法）
+    /// - Parameters:
+    ///   - children: 子节点列表
+    ///   - maxLength: 最大长度限制
+    ///   - currentLength: 当前已拼接的长度（inout参数）
+    /// - Returns: 构建好的字符串
+    private func buildString(fromChildren children: [ASTNodeWrapper], maxLength: Int?, currentLength: inout Int) -> String {
+        var result = ""
+        for child in children {
+            if let maxLen = maxLength, currentLength >= maxLen {
+                break
+            }
+            result.append(buildString(from: child, maxLength: maxLength, currentLength: &currentLength))
+        }
+        return result
+    }
 }
 
