@@ -388,23 +388,22 @@ public class UIKitFrameRender {
             let newImageHeight = containerWidth / imageAspectRatio
             let newContainerHeight = newImageHeight + imageMargin * 2
             
-            // 更新 frame
-            imageView.frame = CGRect(
-                x: 0,
-                y: imageMargin,
-                width: containerWidth,
-                height: newImageHeight
-            )
-            containerView.frame = CGRect(
-                x: containerView.frame.origin.x,
-                y: containerView.frame.origin.y,
-                width: containerWidth,
-                height: newContainerHeight
-            )
+            // 不在这更新 frame，因为可能破坏预计算的高度。
+//            imageView.frame = CGRect(
+//                x: 0,
+//                y: imageMargin,
+//                width: containerWidth,
+//                height: newImageHeight
+//            )
+//            containerView.frame = CGRect(
+//                x: containerView.frame.origin.x,
+//                y: containerView.frame.origin.y,
+//                width: containerWidth,
+//                height: newContainerHeight
+//            )
             
-            if let onHeightChanged = context.onLayoutHeightChanged {
-                let heightDiff = newContainerHeight - containerView.frame.height
-                onHeightChanged(heightDiff)
+            if abs(newContainerHeight - containerView.frame.height) > 1.0, let onHeightChanged = context.onLayoutHeightChanged {
+                onHeightChanged(newContainerHeight)
             }
         }
     }
@@ -712,8 +711,7 @@ public class UIKitFrameRender {
                     
                     // 如果实际高度与当前高度不同，触发高度刷新回调
                     if abs(actualHeight - currentHeight) > 1.0, let onHeightChanged = context.onLayoutHeightChanged {
-                        let heightDiff = actualHeight - currentHeight
-                        onHeightChanged(heightDiff)
+                        onHeightChanged(actualHeight)
                     }
                 } else {
                     // 渲染失败时，像代码块一样展示原始内容
@@ -827,8 +825,7 @@ public class UIKitFrameRender {
                     
                     // 如果实际高度与当前高度不同，触发高度刷新回调
                     if abs(actualHeight - currentHeight) > 1.0, let onHeightChanged = context.onLayoutHeightChanged {
-                        let heightDiff = actualHeight - currentHeight
-                        onHeightChanged(heightDiff)
+                        onHeightChanged(actualHeight)
                     }
                 } else {
                     // 渲染失败时，像代码块一样展示原始内容

@@ -22,9 +22,9 @@ public class NodeLayout {
     public let borderColor: UIColor?
     public let borderWidth: CGFloat
     
-    public init(frame: CGRect, 
-         children: [NodeLayout] = [], 
-         node: ASTNodeWrapper? = nil, 
+    public init(frame: CGRect,
+         children: [NodeLayout] = [],
+         node: ASTNodeWrapper? = nil,
          content: Any? = nil,
          backgroundColor: UIColor? = nil,
          cornerRadius: CGFloat = 0,
@@ -82,9 +82,9 @@ public class UIKitFrameAsyncCalculator {
     // MARK: - Private Layout Helpers
     
     /// 计算垂直堆栈布局
-    private static func calculateVerticalStackLayout(children: [ASTNodeWrapper], 
-                                                   context: UIKitRenderContext, 
-                                                   origin: CGPoint, 
+    private static func calculateVerticalStackLayout(children: [ASTNodeWrapper],
+                                                   context: UIKitRenderContext,
+                                                   origin: CGPoint,
                                                    width: CGFloat,
                                                    spacing: CGFloat) -> NodeLayout {
         var currentY: CGFloat = 0
@@ -261,8 +261,35 @@ public class UIKitFrameAsyncCalculator {
             let imageMargin = context.theme.imageMargin
             var imageHeight: CGFloat = 200 // 默认高度
             
-            if let h = imgNode.height, let w = imgNode.width {
-                // 如果有尺寸，按比例计算
+            // 优先尝试从 UIKitImageLoaderDelegate 获取缓存的图片并获取其尺寸
+            var cachedImageSize: CGSize? = nil
+            if let imageLoaderDelegate = context.imageLoaderDelegate,
+               let imageURLString = imgNode.url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+               let imageURL = URL(string: imageURLString) {
+                // 使用信号量等待异步加载结果（最多等待 100ms）
+                let semaphore = DispatchSemaphore(value: 0)
+                var loadedImage: UIImage?
+                
+                // 创建临时 UIImageView 用于加载图片
+                imageLoaderDelegate.loadImage(url: imageURL, into: nil) { image, _ in
+                    loadedImage = image
+                    semaphore.signal()
+                }
+                
+                let timeout = DispatchTime.now() + .milliseconds(100)
+                if semaphore.wait(timeout: timeout) == .success, let image = loadedImage {
+                    // 成功获取缓存的图片，使用图片的实际尺寸
+                    cachedImageSize = image.size
+                }
+            }
+            
+            // 根据获取到的信息计算图片高度
+            if let cachedSize = cachedImageSize {
+                // 使用缓存的图片尺寸，按比例计算高度
+                let ratio = cachedSize.height / cachedSize.width
+                imageHeight = width * ratio
+            } else if let h = imgNode.height, let w = imgNode.width {
+                // 如果有节点中的尺寸，按比例计算
                 let ratio = CGFloat(h) / CGFloat(w)
                 imageHeight = width * ratio
             } else {
