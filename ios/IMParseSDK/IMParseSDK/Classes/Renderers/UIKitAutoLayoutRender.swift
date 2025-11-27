@@ -171,9 +171,8 @@ public class UIKitAutoLayoutRender {
             return emptyView
         }
         
-        // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
-        // 行内代码现在可以嵌入到 NSAttributedString 中，不需要单独处理
-        let hasSpecialNodes = node.children.contains { wrapper in
+        // 检查是否包含块级特殊节点（图片、数学公式、Mermaid）
+        let hasBlockLevelSpecialNodes = node.children.contains { wrapper in
             switch wrapper {
             case .image, .math, .mermaid:
                 return true
@@ -182,9 +181,22 @@ public class UIKitAutoLayoutRender {
             }
         }
         
-        if hasSpecialNodes {
-            // 如果包含特殊节点，使用混合布局
+        // 检查是否包含行内特殊节点（mention、emoji）
+        let hasInlineSpecialNodes = node.children.contains { wrapper in
+            switch wrapper {
+            case .mention, .emoji:
+                return true
+            default:
+                return false
+            }
+        }
+        
+        if hasBlockLevelSpecialNodes {
+            // 如果包含块级特殊节点，使用混合布局
             return renderParagraphWithSpecialNodes(node, context: context)
+        } else if hasInlineSpecialNodes {
+            // 如果只包含行内特殊节点（mention、emoji），使用行内布局
+            return renderParagraphAsAttributedString(node, context: context)
         } else {
             // 否则使用 NSAttributedString 渲染，支持正确换行
             return renderParagraphAsAttributedString(node, context: context)
@@ -193,29 +205,173 @@ public class UIKitAutoLayoutRender {
     
     /// 使用 NSAttributedString 渲染段落（纯文本格式）
     private func renderParagraphAsAttributedString(_ node: ParagraphNode, context: UIKitRenderContext) -> UIView {
-        let attributedString = context.stringBuilder.buildAttributedString(from: node.children, context: context)
+        // 构建包含 mention 和 emoji 的 NSAttributedString
+        let attributedString = buildAttributedStringWithInlineNodes(from: node.children, context: context)
         
-        // 使用 UITextView 替代 UILabel 以支持链接点击
-        // 注意：在 renderWithFrame 中有特定的处理逻辑，这里主要用于 Auto Layout 模式
-        let textView = UITextView()
-        textView.attributedText = attributedString
-        textView.isEditable = false
-        textView.isScrollEnabled = false
-        textView.textContainerInset = .zero
-        textView.textContainer.lineFragmentPadding = 0
-        textView.backgroundColor = .clear
-        // 注意：这里我们无法直接设置 delegate 为 context 中的 block
-        // 在 Auto Layout 模式下，链接点击可能需要额外处理，或者使用自定义 Label
-        // 暂时保持 UILabel 逻辑，因为 renderWithFrame 会处理 Frame 模式下的链接
+        // 检查是否包含链接、mention 或 emoji attachment
+        var hasLink = false
+        var hasMention = false
+        var hasEmoji = false
         
-        // 实际上，为了简单起见，对于 render(Auto Layout)，我们还是使用 UILabel
-        // 如果需要链接点击，建议使用 renderWithFrame
-        let label = UILabel()
-        label.attributedText = attributedString
-        label.numberOfLines = 0
-        label.lineBreakMode = .byWordWrapping
+        attributedString.enumerateAttribute(.link, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
+            if value != nil {
+                hasLink = true
+                stop.pointee = true
+            }
+        }
         
-        return label
+        // 检查是否包含 mention 文本（通过检查 mentionTextColor）
+        attributedString.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attributedString.length), options: []) { value, range, stop in
+            if let color = value as? UIColor, color == context.theme.mentionTextColor {
+                let text = attributedString.attributedSubstring(from: range).string
+                if text.hasPrefix("@") {
+                    hasMention = true
+                    stop.pointee = true
+                }
+            }
+        }
+        
+        // 检查是否包含 emoji attachment
+        attributedString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
+            if value is EmojiTextAttachment {
+                hasEmoji = true
+                stop.pointee = true
+            }
+        }
+        
+        if hasLink || hasMention || hasEmoji {
+            // 如果包含链接、mention 或 emoji，使用 UITextView 以支持点击
+            let textView = UITextView()
+            textView.attributedText = attributedString
+            textView.isEditable = false
+            textView.isScrollEnabled = false
+            textView.isUserInteractionEnabled = true
+            textView.textContainerInset = .zero
+            textView.textContainer.lineFragmentPadding = 0
+            textView.backgroundColor = .clear
+            textView.translatesAutoresizingMaskIntoConstraints = false
+            
+            // 让 UITextView 的文本垂直居中，与 UILabel 对齐
+            centerTextViewVertically(textView, attributedString: attributedString)
+            
+            // 设置代理以处理链接点击
+            if hasLink {
+                let linkHandler = LinkHandler(onLinkTap: context.onLinkTap)
+                textView.delegate = linkHandler
+                objc_setAssociatedObject(textView, &AssociatedKeys.linkHandler, linkHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            }
+            
+            // 如果包含 mention，添加点击手势处理
+            if hasMention, let onMentionTap = context.onMentionTap {
+                let mentionHandler = MentionTapHandler(
+                    textView: textView,
+                    attributedString: attributedString,
+                    context: context,
+                    onMentionTap: onMentionTap
+                )
+                objc_setAssociatedObject(textView, &AssociatedKeys.mentionHandler, mentionHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            }
+            
+            return textView
+        } else {
+            // 纯文本，使用 UILabel 性能更好
+            let label = UILabel()
+            label.attributedText = attributedString
+            label.numberOfLines = 0
+            label.lineBreakMode = .byWordWrapping
+            label.translatesAutoresizingMaskIntoConstraints = false
+            return label
+        }
+    }
+    
+    /// 构建包含 mention 和 emoji 的 NSAttributedString
+    private func buildAttributedStringWithInlineNodes(from nodes: [ASTNodeWrapper], context: UIKitRenderContext) -> NSAttributedString {
+        let mutableAttrString = NSMutableAttributedString()
+        
+        for node in nodes {
+            switch node {
+            case .mention(let mentionNode):
+                // Mention 节点：添加文本
+                let font = context.currentFont ?? context.theme.font
+                let mentionString = NSMutableAttributedString(
+                    string: "@\(mentionNode.name)",
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: context.theme.mentionTextColor
+                    ]
+                )
+                mutableAttrString.append(mentionString)
+                
+                // 如果有代理，尝试加载状态图片并追加
+                if let inlineImageLoaderDelegate = context.inlineImageLoaderDelegate {
+                    // 使用信号量等待异步加载结果（最多等待 100ms）
+                    let semaphore = DispatchSemaphore(value: 0)
+                    var statusImage: UIImage?
+                    
+                    inlineImageLoaderDelegate.loadMentionStatusImage(mentionNode: mentionNode) { image in
+                        statusImage = image
+                        semaphore.signal()
+                    }
+                    
+                    let timeout = DispatchTime.now() + .milliseconds(100)
+                    if semaphore.wait(timeout: timeout) == .success, let image = statusImage {
+                        // 成功获取状态图片，添加一个空格和图片附件
+                        mutableAttrString.append(NSAttributedString(string: " "))
+                        let statusAttachment = MentionStatusImageAttachment(mentionNode: mentionNode, context: context)
+                        statusAttachment.image = image
+                        statusAttachment.cachedImage = image
+                        let attachmentString = NSAttributedString(attachment: statusAttachment)
+                        mutableAttrString.append(attachmentString)
+                    }
+                }
+            case .emoji(let emojiNode):
+                // Emoji 节点：如果有代理，使用 NSTextAttachment；否则使用文本
+                if context.inlineImageLoaderDelegate != nil {
+                    let emojiAttachment = EmojiTextAttachment(emojiNode: emojiNode, context: context)
+                    let attachmentString = NSAttributedString(attachment: emojiAttachment)
+                    mutableAttrString.append(attachmentString)
+                } else {
+                    // 没有代理，直接添加文本
+                    let font = context.currentFont ?? context.theme.font
+                    let color = context.currentTextColor ?? context.theme.textColor
+                    let emojiString = NSAttributedString(
+                        string: emojiNode.content,
+                        attributes: [
+                            .font: font,
+                            .foregroundColor: color
+                        ]
+                    )
+                    mutableAttrString.append(emojiString)
+                }
+            default:
+                // 其他节点使用 stringBuilder 构建
+                let nodeString = context.stringBuilder.buildAttributedString(from: node, context: context)
+                mutableAttrString.append(nodeString)
+            }
+        }
+        
+        return mutableAttrString
+    }
+    
+    /// 让 UITextView 的文本垂直居中，与 UILabel 对齐
+    private func centerTextViewVertically(_ textView: UITextView, attributedString: NSAttributedString) {
+        // 在 Auto Layout 模式下，我们需要在布局完成后调整
+        // 这里先设置一个初始值，实际调整在 layoutSubviews 中进行
+        DispatchQueue.main.async {
+            let textSize = attributedString.boundingRect(
+                with: CGSize(width: textView.frame.width, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).size
+            
+            let textHeight = ceil(textSize.height)
+            let containerHeight = textView.frame.height
+            
+            if textHeight < containerHeight && containerHeight > 0 {
+                let verticalInset = (containerHeight - textHeight) / 2.0
+                textView.textContainerInset = UIEdgeInsets(top: verticalInset, left: 0, bottom: verticalInset, right: 0)
+            }
+        }
     }
     
     /// 渲染包含特殊节点的段落（混合布局）
@@ -284,8 +440,8 @@ public class UIKitAutoLayoutRender {
         headingContext.currentFont = font
         headingContext.currentTextColor = color
         
-        // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
-        let hasSpecialNodes = node.children.contains { wrapper in
+        // 检查是否包含块级特殊节点（图片、数学公式、Mermaid）
+        let hasBlockLevelSpecialNodes = node.children.contains { wrapper in
             switch wrapper {
             case .image, .math, .mermaid:
                 return true
@@ -294,16 +450,100 @@ public class UIKitAutoLayoutRender {
             }
         }
         
-        if hasSpecialNodes {
-            // 如果包含特殊节点，使用混合布局
+        // 检查是否包含行内特殊节点（mention、emoji）
+        let hasInlineSpecialNodes = node.children.contains { wrapper in
+            switch wrapper {
+            case .mention, .emoji:
+                return true
+            default:
+                return false
+            }
+        }
+        
+        if hasBlockLevelSpecialNodes {
+            // 如果包含块级特殊节点，使用混合布局
             return renderHeadingWithSpecialNodes(node, context: headingContext, font: font, color: color)
+        } else if hasInlineSpecialNodes {
+            // 如果只包含行内特殊节点（mention、emoji），使用行内布局
+            return renderHeadingAsAttributedString(node, context: headingContext)
         } else {
             // 否则使用 NSAttributedString 渲染
-            let attributedString = context.stringBuilder.buildAttributedString(from: node.children, context: headingContext)
+            return renderHeadingAsAttributedString(node, context: headingContext)
+        }
+    }
+    
+    /// 使用 NSAttributedString 渲染标题
+    private func renderHeadingAsAttributedString(_ node: HeadingNode, context: UIKitRenderContext) -> UIView {
+        // 构建包含 mention 和 emoji 的 NSAttributedString
+        let attributedString = buildAttributedStringWithInlineNodes(from: node.children, context: context)
+        
+        // 检查是否包含链接、mention 或 emoji attachment
+        var hasLink = false
+        var hasMention = false
+        var hasEmoji = false
+        
+        attributedString.enumerateAttribute(.link, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
+            if value != nil {
+                hasLink = true
+                stop.pointee = true
+            }
+        }
+        
+        attributedString.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attributedString.length), options: []) { value, range, stop in
+            if let color = value as? UIColor, color == context.theme.mentionTextColor {
+                let text = attributedString.attributedSubstring(from: range).string
+                if text.hasPrefix("@") {
+                    hasMention = true
+                    stop.pointee = true
+                }
+            }
+        }
+        
+        attributedString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
+            if value is EmojiTextAttachment {
+                hasEmoji = true
+                stop.pointee = true
+            }
+        }
+        
+        if hasLink || hasMention || hasEmoji {
+            // 如果包含链接、mention 或 emoji，使用 UITextView 以支持点击
+            let textView = UITextView()
+            textView.attributedText = attributedString
+            textView.isEditable = false
+            textView.isScrollEnabled = false
+            textView.isUserInteractionEnabled = true
+            textView.textContainerInset = .zero
+            textView.textContainer.lineFragmentPadding = 0
+            textView.backgroundColor = .clear
+            textView.translatesAutoresizingMaskIntoConstraints = false
+            
+            centerTextViewVertically(textView, attributedString: attributedString)
+            
+            if hasLink {
+                let linkHandler = LinkHandler(onLinkTap: context.onLinkTap)
+                textView.delegate = linkHandler
+                objc_setAssociatedObject(textView, &AssociatedKeys.linkHandler, linkHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            }
+            
+            if hasMention, let onMentionTap = context.onMentionTap {
+                let mentionHandler = MentionTapHandler(
+                    textView: textView,
+                    attributedString: attributedString,
+                    context: context,
+                    onMentionTap: onMentionTap
+                )
+                objc_setAssociatedObject(textView, &AssociatedKeys.mentionHandler, mentionHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            }
+            
+            return textView
+        } else {
+            // 纯文本，使用 UILabel 性能更好
             let label = UILabel()
             label.attributedText = attributedString
             label.numberOfLines = 0
             label.lineBreakMode = .byWordWrapping
+            label.translatesAutoresizingMaskIntoConstraints = false
             return label
         }
     }
@@ -886,7 +1126,8 @@ public class UIKitAutoLayoutRender {
     
     /// 渲染列表项的行内内容
     private func renderListItemInlineContent(nodes: [ASTNodeWrapper], context: UIKitRenderContext) -> UIView {
-        let hasSpecialNodes = nodes.contains { wrapper in
+        // 检查是否包含块级特殊节点（图片、数学公式、Mermaid）
+        let hasBlockLevelSpecialNodes = nodes.contains { wrapper in
             switch wrapper {
             case .image, .math, .mermaid:
                 return true
@@ -895,7 +1136,17 @@ public class UIKitAutoLayoutRender {
             }
         }
         
-        if hasSpecialNodes {
+        // 检查是否包含行内特殊节点（mention、emoji）
+        let hasInlineSpecialNodes = nodes.contains { wrapper in
+            switch wrapper {
+            case .mention, .emoji:
+                return true
+            default:
+                return false
+            }
+        }
+        
+        if hasBlockLevelSpecialNodes {
             let containerView = UIView()
             let contentStackView = UIStackView()
             contentStackView.axis = .vertical
@@ -916,7 +1167,7 @@ public class UIKitAutoLayoutRender {
             
             func flushTextNodes() {
                 if !currentTextNodes.isEmpty {
-                    let attributedString = context.stringBuilder.buildAttributedString(from: currentTextNodes, context: context)
+                    let attributedString = buildAttributedStringWithInlineNodes(from: currentTextNodes, context: context)
                     let label = UILabel()
                     label.attributedText = attributedString
                     label.numberOfLines = 0
@@ -940,12 +1191,76 @@ public class UIKitAutoLayoutRender {
             
             return containerView
         } else {
-            let attributedString = context.stringBuilder.buildAttributedString(from: nodes, context: context)
-            let label = UILabel()
-            label.attributedText = attributedString
-            label.numberOfLines = 0
-            label.lineBreakMode = .byWordWrapping
-            return label
+            // 使用包含 mention 和 emoji 的 NSAttributedString
+            let attributedString = buildAttributedStringWithInlineNodes(from: nodes, context: context)
+            
+            // 检查是否包含链接、mention 或 emoji attachment
+            var hasLink = false
+            var hasMention = false
+            var hasEmoji = false
+            
+            attributedString.enumerateAttribute(.link, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
+                if value != nil {
+                    hasLink = true
+                    stop.pointee = true
+                }
+            }
+            
+            attributedString.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attributedString.length), options: []) { value, range, stop in
+                if let color = value as? UIColor, color == context.theme.mentionTextColor {
+                    let text = attributedString.attributedSubstring(from: range).string
+                    if text.hasPrefix("@") {
+                        hasMention = true
+                        stop.pointee = true
+                    }
+                }
+            }
+            
+            attributedString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
+                if value is EmojiTextAttachment {
+                    hasEmoji = true
+                    stop.pointee = true
+                }
+            }
+            
+            if hasLink || hasMention || hasEmoji {
+                let textView = UITextView()
+                textView.attributedText = attributedString
+                textView.isEditable = false
+                textView.isScrollEnabled = false
+                textView.isUserInteractionEnabled = true
+                textView.textContainerInset = .zero
+                textView.textContainer.lineFragmentPadding = 0
+                textView.backgroundColor = .clear
+                textView.translatesAutoresizingMaskIntoConstraints = false
+                
+                centerTextViewVertically(textView, attributedString: attributedString)
+                
+                if hasLink {
+                    let linkHandler = LinkHandler(onLinkTap: context.onLinkTap)
+                    textView.delegate = linkHandler
+                    objc_setAssociatedObject(textView, &AssociatedKeys.linkHandler, linkHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                }
+                
+                if hasMention, let onMentionTap = context.onMentionTap {
+                    let mentionHandler = MentionTapHandler(
+                        textView: textView,
+                        attributedString: attributedString,
+                        context: context,
+                        onMentionTap: onMentionTap
+                    )
+                    objc_setAssociatedObject(textView, &AssociatedKeys.mentionHandler, mentionHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                }
+                
+                return textView
+            } else {
+                let label = UILabel()
+                label.attributedText = attributedString
+                label.numberOfLines = 0
+                label.lineBreakMode = .byWordWrapping
+                label.translatesAutoresizingMaskIntoConstraints = false
+                return label
+            }
         }
     }
     

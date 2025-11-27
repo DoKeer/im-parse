@@ -539,22 +539,25 @@ extension UIKitFrameMessageListViewController: UIKitInlineImageLoaderDelegate {
 extension UIKitFrameMessageListViewController: UIKitImageLoaderDelegate {
     func loadImage(url: URL, into imageView: UIImageView?, completion: @escaping (UIImage?, Error?) -> Void) {
         // 使用 Kingfisher 加载图片
-        imageView!.kf.setImage(
-            with: url,
-            placeholder: nil,
-            options: [
-                .transition(.fade(0.2)),
-                .cacheOriginalImage
-            ],
-            completionHandler: { result in
-                switch result {
-                case .success(let value):
-                    completion(value.image, nil)
-                case .failure(let error):
-                    completion(nil, error)
+        if let imageView = imageView {
+            
+            imageView.kf.setImage(
+                with: url,
+                placeholder: nil,
+                options: [
+                    .transition(.fade(0.2)),
+                    .cacheOriginalImage
+                ],
+                completionHandler: { result in
+                    switch result {
+                    case .success(let value):
+                        completion(value.image, nil)
+                    case .failure(let error):
+                        completion(nil, error)
+                    }
                 }
-            }
-        )
+            )
+        }
     }
 }
 

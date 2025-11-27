@@ -202,23 +202,20 @@ public struct SwiftUIRenderer {
                 // 注意：需要保留子节点中可能已经应用的斜体（obliqueness）属性
                 let fontSize = getFontSize(from: font, context: context)
                 
-                // 检查并保留已有的 obliqueness 属性（来自嵌套的 em 节点）
-                var existingObliqueness: Double? = nil
-                for run in childString.runs {
-                    if let obliqueness = run.obliqueness, obliqueness != 0 {
-                        existingObliqueness = obliqueness
-                        break
-                    }
+                // 检查子节点是否是 em 节点（嵌套的粗体+斜体）
+                var isEmNode = false
+                if case .em = child {
+                    isEmNode = true
                 }
                 
-                // 应用粗体字体（使用 bold weight）
-                childString.font = .system(size: fontSize, weight: .bold)
-                
-                // 如果有斜体属性，需要重新应用（因为设置 font 可能会覆盖）
-                if let obliqueness = existingObliqueness {
-                    var attributes = AttributeContainer()
-                    attributes.obliqueness = obliqueness
-                    childString.mergeAttributes(attributes)
+                // 应用粗体字体（如果是嵌套的 em 节点，需要同时应用斜体）
+                if isEmNode {
+                    // 粗体+斜体：使用 UIFont 创建
+                    let boldItalicUIFont = createBoldItalicFont(size: fontSize)
+                    childString.font = Font(boldItalicUIFont)
+                } else {
+                    // 仅粗体
+                    childString.font = .system(size: fontSize, weight: .bold)
                 }
                 childString.foregroundColor = colorToSwiftUIColor(color)
                 result.append(childString)
@@ -232,7 +229,7 @@ public struct SwiftUIRenderer {
             
             for child in emNode.children {
                 var childString = buildAttributedString(from: child, context: context)
-                // 应用斜体：使用 obliqueness 属性实现斜体效果
+                // 应用斜体：使用 UIFont 的斜体字体实现
                 let fontSize = getFontSize(from: font, context: context)
                 
                 // 检查子节点是否是 strong 节点（嵌套的粗体+斜体）
@@ -243,27 +240,33 @@ public struct SwiftUIRenderer {
                     isStrongNode = false
                 }
                 
-                // 如果子节点不是 strong 节点，需要设置字体大小
-                // 如果子节点是 strong 节点，它已经设置了粗体字体，我们保留它
-                if !isStrongNode {
-                    // 检查子节点是否已经有字体设置（来自嵌套的 strong）
-                    // 如果没有，设置基础字体
-                    var hasFont = false
-                    for run in childString.runs {
-                        if run.font != nil {
-                            hasFont = true
-                            break
-                        }
-                    }
-                    if !hasFont {
-                        childString.font = .system(size: fontSize)
+                // 检查子节点是否已经有字体设置（来自嵌套的 strong）
+                var hasFont = false
+                for run in childString.runs {
+                    if run.font != nil {
+                        hasFont = true
+                        break
                     }
                 }
                 
-                // 使用 obliqueness 属性实现斜体效果（这会叠加在已有的粗体上）
-                var attributes = AttributeContainer()
-                attributes.obliqueness = 0.2
-                childString.mergeAttributes(attributes)
+                // 创建斜体字体
+                let italicFont: Font
+                if isStrongNode {
+                    // 粗体+斜体：使用 UIFont 创建
+                    let boldItalicUIFont = createBoldItalicFont(size: fontSize)
+                    italicFont = Font(boldItalicUIFont)
+                } else if !hasFont {
+                    // 没有已有字体，使用系统斜体字体
+                    italicFont = .system(size: fontSize).italic()
+                } else {
+                    // 已有字体，尝试应用斜体
+                    // 由于 Font 到 UIFont 的转换比较复杂，这里简化处理
+                    // 对于已有字体，我们使用系统斜体字体
+                    italicFont = .system(size: fontSize).italic()
+                }
+                
+                // 应用斜体字体
+                childString.font = italicFont
                 childString.foregroundColor = colorToSwiftUIColor(color)
                 result.append(childString)
             }
@@ -331,6 +334,9 @@ public struct SwiftUIRenderer {
             
         case .emoji(let emojiNode):
             // 表情：直接显示内容
+            // 注意：SwiftUI 的 AttributedString 不支持 NSTextAttachment
+            // 如果需要显示 emoji 图片，需要在 SwiftUI 层面使用其他方式（如 Image）
+            // 这里暂时只返回文本，图片加载需要在 renderEmoji 中处理
             var attributedString = AttributedString(emojiNode.content)
             let font = context.currentFont ?? context.theme.font
             let fontSize = getFontSize(from: font, context: context)
@@ -364,7 +370,11 @@ public struct SwiftUIRenderer {
             let fontSize = getFontSize(from: font, context: context)
             attributedString.font = .system(size: fontSize)
             attributedString.foregroundColor = colorToSwiftUIColor(context.theme.mentionTextColor)
-            // 可以添加背景色，但 AttributedString 的背景色支持有限
+            
+            // 注意：SwiftUI 的 AttributedString 不支持 NSTextAttachment
+            // 如果需要显示 mention 状态图片，需要在 SwiftUI 层面使用其他方式（如 HStack）
+            // 这里暂时只返回文本，状态图片需要在 renderMention 中处理
+            
             return attributedString
             
         default:
@@ -393,6 +403,21 @@ public struct SwiftUIRenderer {
     private func colorToUIKitColor(_ color: Color?) -> UIColor? {
         guard let color = color else { return nil }
         return UIColor(color)
+    }
+    
+    /// 创建粗体+斜体字体（使用 UIFont）
+    private func createBoldItalicFont(size: CGFloat) -> UIFont {
+        // 使用 UIFontDescriptor 创建粗体+斜体字体
+        let systemFont = UIFont.systemFont(ofSize: size)
+        let descriptor = systemFont.fontDescriptor
+        let symbolicTraits: UIFontDescriptor.SymbolicTraits = [.traitBold, .traitItalic]
+        
+        if let boldItalicDescriptor = descriptor.withSymbolicTraits(symbolicTraits) {
+            return UIFont(descriptor: boldItalicDescriptor, size: size)
+        }
+        
+        // 如果无法创建，回退到系统粗体字体
+        return UIFont.boldSystemFont(ofSize: size)
     }
     
     /// 旧版 Text 组合方式（iOS 14 及以下降级处理）
@@ -817,23 +842,33 @@ public struct SwiftUIRenderer {
     
     @ViewBuilder
     private func renderMention(_ node: MentionNode, context: RenderContext) -> some View {
-        Text("@\(node.name)")
-            .font(context.theme.font)
-            .foregroundColor(context.theme.mentionTextColor)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(context.theme.mentionBackground)
-            .cornerRadius(4)
-            .onTapGesture {
-                context.onMentionTap?(node)
-            }
+        HStack(spacing: 4) {
+            Text("@\(node.name)")
+                .font(context.theme.font)
+                .foregroundColor(context.theme.mentionTextColor)
+            
+            // 注意：SwiftUI 中无法直接使用 UIKit 的 inlineImageLoaderDelegate
+            // 如果需要显示状态图片，需要在 RenderContext 中添加 SwiftUI 版本的代理
+            // 这里暂时不显示状态图片
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(context.theme.mentionBackground)
+        .cornerRadius(4)
+        .onTapGesture {
+            context.onMentionTap?(node)
+        }
     }
     
     @ViewBuilder
     private func renderEmoji(_ node: EmojiNode, context: RenderContext) -> some View {
         // 表情内容通常是表情符号字符串，直接显示
+        // 注意：SwiftUI 中无法直接使用 UIKit 的 inlineImageLoaderDelegate
+        // 如果需要显示 emoji 图片，需要在 RenderContext 中添加 SwiftUI 版本的代理
+        // 这里暂时只显示文本
         Text(node.content)
-            .font(context.theme.font)
+            .font(context.currentFont ?? context.theme.font)
+            .foregroundColor(context.currentTextColor ?? context.theme.textColor)
     }
     
     @ViewBuilder
