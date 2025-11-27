@@ -537,9 +537,9 @@ extension UIKitFrameMessageListViewController: UIKitInlineImageLoaderDelegate {
 // MARK: - UIKitImageLoaderDelegate
 
 extension UIKitFrameMessageListViewController: UIKitImageLoaderDelegate {
-    func loadImage(url: URL, into imageView: UIImageView, completion: @escaping (UIImage?, Error?) -> Void) {
+    func loadImage(url: URL, into imageView: UIImageView?, completion: @escaping (UIImage?, Error?) -> Void) {
         // 使用 Kingfisher 加载图片
-        imageView.kf.setImage(
+        imageView!.kf.setImage(
             with: url,
             placeholder: nil,
             options: [
