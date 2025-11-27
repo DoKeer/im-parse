@@ -14,7 +14,7 @@ public protocol UIKitImageLoaderDelegate: AnyObject {
     ///   - url: 图片 URL
     ///   - imageView: 目标图片视图
     ///   - completion: 加载完成回调，参数为加载的图片和错误信息
-    func loadImage(url: URL, into imageView: UIImageView, completion: @escaping (UIImage?, Error?) -> Void)
+    func loadImage(url: URL, into imageView: UIImageView?, completion: @escaping (UIImage?, Error?) -> Void)
 }
 
 /// 数学公式和Mermaid图表尺寸缓存代理协议

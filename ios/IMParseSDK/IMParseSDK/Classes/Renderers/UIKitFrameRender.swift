@@ -322,7 +322,7 @@ public class UIKitFrameRender {
         
         // 加载图片
         loadImage(url: url, into: imageView, containerView: containerView, activityIndicator: activityIndicator, node: node, context: context)
-        
+//        print("IMParseSDK renderImage:\(containerView.frame.height)")
         return containerView
     }
     
@@ -347,8 +347,8 @@ public class UIKitFrameRender {
                         return
                     }
                     
-                    imageView.image = image
                     updateImageAspectRatio(image: image, node: node, imageView: imageView, containerView: containerView, context: context)
+                    imageView.image = image
                 }
             }
         } else {
@@ -401,8 +401,8 @@ public class UIKitFrameRender {
 //                width: containerWidth,
 //                height: newContainerHeight
 //            )
-            
-            if abs(newContainerHeight - containerView.frame.height) > 1.0, let onHeightChanged = context.onLayoutHeightChanged {
+//            print("IMParseSDK 图片加载完成：\(node.url) ，高度是否改变：\(newContainerHeight != containerView.frame.height)")
+            if newContainerHeight != containerView.frame.height , let onHeightChanged = context.onLayoutHeightChanged {
                 onHeightChanged(newContainerHeight)
             }
         }
