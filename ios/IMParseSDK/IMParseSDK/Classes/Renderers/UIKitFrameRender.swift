@@ -10,6 +10,64 @@
 
 import UIKit
 
+// MARK: - NonSelectableTextView
+
+/// 不可选择文本的 UITextView，用于禁用文本选择但保留链接点击功能
+private class NonSelectableTextView: UITextView {
+    override init(frame: CGRect, textContainer: NSTextContainer?) {
+        super.init(frame: frame, textContainer: textContainer)
+        setupNonSelectable()
+    }
+    
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupNonSelectable()
+    }
+    
+    private func setupNonSelectable() {
+        // 直接禁用选择功能
+        isSelectable = false
+        allowsEditingTextAttributes = false
+        
+        // 添加点击手势来处理链接点击（因为 isSelectable = false 会禁用链接点击）
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        tapGesture.numberOfTapsRequired = 1
+        addGestureRecognizer(tapGesture)
+    }
+    
+    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+        let location = gesture.location(in: self)
+        
+        // 调整位置以考虑 textContainerInset
+        let textContainer = self.textContainer
+        let layoutManager = self.layoutManager
+        let textStorage = self.textStorage
+        
+        let adjustedLocation = CGPoint(
+            x: location.x - textContainerInset.left,
+            y: location.y - textContainerInset.top
+        )
+        
+        // 找到点击位置的字符索引
+        let characterIndex = layoutManager.characterIndex(
+            for: adjustedLocation,
+            in: textContainer,
+            fractionOfDistanceBetweenInsertionPoints: nil
+        )
+        
+        guard characterIndex < textStorage.length else { return }
+        
+        // 检查该位置是否有链接
+        var linkRange = NSRange()
+        if let url = textStorage.attribute(.link, at: characterIndex, effectiveRange: &linkRange) as? URL {
+            // 找到链接，通过 delegate 处理
+            if let delegate = self.delegate as? LinkHandler {
+                _ = delegate.textView(self, shouldInteractWith: url, in: linkRange, interaction: .invokeDefaultAction)
+            }
+        }
+    }
+}
+
 // MARK: - UIKitFrameRender
 
 /// Frame 布局渲染器
@@ -155,7 +213,7 @@ public class UIKitFrameRender {
         
         if hasLink || hasMention || hasEmoji {
             // 如果包含链接或 mention，使用 UITextView 以支持点击
-            let textView = UITextView()
+            let textView = NonSelectableTextView()
             textView.attributedText = attributedString
             textView.isEditable = false
             textView.isScrollEnabled = false
@@ -548,7 +606,7 @@ public class UIKitFrameRender {
                     
                     if hasLink {
                         // 如果包含链接，使用 UITextView 以支持点击
-                        let textView_ = UITextView()
+                        let textView_ = NonSelectableTextView()
                         textView_.attributedText = attributedString
                         textView_.isEditable = false
                         textView_.isScrollEnabled = false
