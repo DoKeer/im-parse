@@ -2,18 +2,25 @@ package com.imparse.renderers
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -28,21 +35,23 @@ import com.imparse.models.*
 fun RenderAST(
     ast: RootNode,
     modifier: Modifier = Modifier,
-    renderContext: AndroidRenderContext = remember { 
+    renderContext: AndroidRenderContext? = null
+) {
+    val context = LocalContext.current
+    val finalRenderContext = renderContext ?: remember(context) {
         AndroidRenderContext(
-            context = androidx.compose.ui.platform.LocalContext.current,
+            context = context,
             theme = AndroidTheme.default()
         )
     }
-) {
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(renderContext.theme.contentPadding.dp),
-        verticalArrangement = Arrangement.spacedBy(renderContext.theme.paragraphSpacing.dp)
+            .padding(finalRenderContext.theme.contentPadding.dp),
+        verticalArrangement = Arrangement.spacedBy(finalRenderContext.theme.paragraphSpacing.dp)
     ) {
         ast.children.forEach { child ->
-            RenderNode(child, renderContext = renderContext)
+            RenderNode(child, renderContext = finalRenderContext)
         }
     }
 }
@@ -82,7 +91,7 @@ private fun RenderParagraph(
         horizontalArrangement = Arrangement.Start
     ) {
         node.children.forEach { child ->
-            RenderInlineNode(child, renderContext = renderContext, fontSize = fontSize, color = color, fontWeight = fontWeight)
+            RenderInlineNode(child, renderContext = renderContext)
         }
     }
 }
@@ -135,7 +144,9 @@ private fun RenderCodeBlock(
         color = Color(renderContext.theme.codeBackgroundColor),
         shape = RoundedCornerShape(renderContext.theme.codeBlockBorderRadius.dp)
     ) {
-        HorizontalScrollableRow {
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState())
+        ) {
             Text(
                 text = node.content,
                 fontSize = renderContext.theme.codeFontSize.sp,
@@ -171,9 +182,11 @@ private fun RenderList(
                             modifier = Modifier
                                 .size(6.dp)
                                 .offset(y = 6.dp)
-                        ) {
-                            Circle(color = Color(renderContext.theme.textColor))
-                        }
+                                .background(
+                                    color = Color(renderContext.theme.textColor),
+                                    shape = CircleShape
+                                )
+                        )
                     }
                     ListType.Ordered -> {
                         Text(
@@ -234,7 +247,7 @@ private fun RenderTable(
                 }
             }
             if (rowIndex < node.rows.size - 1) {
-                HorizontalDivider()
+                Divider()
             }
         }
     }
@@ -376,7 +389,7 @@ private fun RenderHorizontalRule(
     modifier: Modifier = Modifier,
     renderContext: AndroidRenderContext
 ) {
-    HorizontalDivider(
+    Divider(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp),
@@ -434,7 +447,8 @@ private fun RenderInlineNode(
     renderContext: AndroidRenderContext,
     fontSize: androidx.compose.ui.unit.TextUnit? = null,
     color: Color? = null,
-    fontWeight: FontWeight? = null
+    fontWeight: FontWeight? = null,
+    textDecoration: TextDecoration? = null
 ) {
     val finalFontSize = fontSize ?: renderContext.theme.fontSize.sp
     val finalColor = color ?: Color(renderContext.theme.textColor)
@@ -445,6 +459,7 @@ private fun RenderInlineNode(
                 fontSize = finalFontSize,
                 color = finalColor,
                 fontWeight = fontWeight,
+                textDecoration = textDecoration,
                 modifier = modifier
             )
         }
@@ -481,11 +496,12 @@ private fun RenderInlineNode(
                 node.children.forEach { child ->
                     RenderInlineNode(
                         child,
-                        modifier = Modifier.underline(),
+                        modifier = modifier,
                         renderContext = renderContext,
                         fontSize = finalFontSize,
                         color = finalColor,
-                        fontWeight = fontWeight
+                        fontWeight = fontWeight,
+                        textDecoration = TextDecoration.Underline
                     )
                 }
             }
@@ -495,11 +511,12 @@ private fun RenderInlineNode(
                 node.children.forEach { child ->
                     RenderInlineNode(
                         child,
-                        modifier = Modifier.strikethrough(),
+                        modifier = modifier,
                         renderContext = renderContext,
                         fontSize = finalFontSize,
                         color = finalColor,
-                        fontWeight = fontWeight
+                        fontWeight = fontWeight,
+                        textDecoration = TextDecoration.LineThrough
                     )
                 }
             }

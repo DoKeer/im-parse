@@ -9,9 +9,27 @@ import com.imparse.models.StyleConfig
  */
 object IMParseCore {
     
+    private var libraryLoaded = false
+    
     init {
         // 加载 Rust 核心库
-        System.loadLibrary("im_parse_core")
+        try {
+            System.loadLibrary("im_parse_core")
+            libraryLoaded = true
+            android.util.Log.d("IMParseCore", "Native library loaded successfully")
+        } catch (e: UnsatisfiedLinkError) {
+            android.util.Log.e("IMParseCore", "Failed to load native library: ${e.message}", e)
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.e("IMParseCore", "Unexpected error loading native library: ${e.message}", e)
+            throw e
+        }
+    }
+    
+    private fun ensureLibraryLoaded() {
+        if (!libraryLoaded) {
+            throw UnsatisfiedLinkError("Native library not loaded")
+        }
     }
     
     /**
@@ -86,6 +104,7 @@ object IMParseCore {
      * 解析 Markdown（高级 API）
      */
     fun parseMarkdownToResult(input: String): ParseResult {
+        ensureLibraryLoaded()
         val ptr = parseMarkdown(input)
         return try {
             val success = getParseResultSuccess(ptr)

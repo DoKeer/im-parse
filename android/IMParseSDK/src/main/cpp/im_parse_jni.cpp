@@ -1,6 +1,8 @@
 #include <jni.h>
 #include <string>
 #include <cstring>
+#include <stdint.h>
+#include <string.h>
 
 // 声明 Rust FFI 函数
 extern "C" {
