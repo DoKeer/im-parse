@@ -6,23 +6,84 @@
 //
 //  UIKit Auto Layout 渲染器
 //  负责将 AST 节点树转换为 UIView 树（使用 UIStackView 和 Auto Layout）
+//  布局方式与 UIKitFrameRender 对齐，但使用 Auto Layout 而不是 frame
 //
 
 import UIKit
 
-// MARK: - UIKit AST 渲染器
+// MARK: - NonSelectableTextView
+
+/// 不可选择文本的 UITextView，用于禁用文本选择但保留链接点击功能
+private class NonSelectableTextView: UITextView {
+    override init(frame: CGRect, textContainer: NSTextContainer?) {
+        super.init(frame: frame, textContainer: textContainer)
+        setupNonSelectable()
+    }
+    
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupNonSelectable()
+    }
+    
+    private func setupNonSelectable() {
+        // 直接禁用选择功能
+        isSelectable = false
+        allowsEditingTextAttributes = false
+        
+        // 添加点击手势来处理链接点击（因为 isSelectable = false 会禁用链接点击）
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        tapGesture.numberOfTapsRequired = 1
+        addGestureRecognizer(tapGesture)
+    }
+    
+    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+        let location = gesture.location(in: self)
+        
+        // 调整位置以考虑 textContainerInset
+        let textContainer = self.textContainer
+        let layoutManager = self.layoutManager
+        let textStorage = self.textStorage
+        
+        let adjustedLocation = CGPoint(
+            x: location.x - textContainerInset.left,
+            y: location.y - textContainerInset.top
+        )
+        
+        // 找到点击位置的字符索引
+        let characterIndex = layoutManager.characterIndex(
+            for: adjustedLocation,
+            in: textContainer,
+            fractionOfDistanceBetweenInsertionPoints: nil
+        )
+        
+        guard characterIndex < textStorage.length else { return }
+        
+        // 检查该位置是否有链接
+        var linkRange = NSRange()
+        if let url = textStorage.attribute(.link, at: characterIndex, effectiveRange: &linkRange) as? URL {
+            // 找到链接，通过 delegate 处理
+            if let delegate = self.delegate as? LinkHandler {
+                _ = delegate.textView(self, shouldInteractWith: url, in: linkRange, interaction: .invokeDefaultAction)
+            }
+        }
+    }
+}
+
+// MARK: - UIKit Auto Layout 渲染器
 
 /// UIKit Auto Layout 渲染器
 /// 使用 UIStackView 和 Auto Layout 来布局视图，适合动态内容
+/// 布局方式与 UIKitFrameRender 对齐，但使用 Auto Layout 而不是 frame
 /// 如果需要精确控制布局和更好的性能，请使用 UIKitFrameAsyncCalculator 和 UIKitFrameRender
 public class UIKitAutoLayoutRender {
+    private static let attributedStringBuilder = UIKitAttributedStringBuilder()
     
     // MARK: - 初始化
     
     public init() {}
     
     deinit {
-//        print("UIKitRenderer 实例被销毁")
+//        print("UIKitAutoLayoutRender 实例被销毁")
     }
     
     // MARK: - 公共 API
@@ -30,7 +91,7 @@ public class UIKitAutoLayoutRender {
     /// 渲染 AST 根节点（使用 UIStackView 和 Auto Layout）
     ///
     /// 这个方法使用 UIStackView 和 Auto Layout 来布局视图，适合需要动态调整的场景。
-    /// 如果需要精确控制布局和更好的性能，请使用 `UIKitFrameAsyncCalculator` 和 `UIKitFrameRender`。
+    /// 布局方式与 UIKitFrameRender 对齐，但使用 Auto Layout 而不是 frame。
     ///
     /// - Parameters:
     ///   - ast: AST 根节点
@@ -55,13 +116,18 @@ public class UIKitAutoLayoutRender {
         outerContainer.addSubview(containerView)
         
         // 设置约束：内容容器有内边距
+        // 注意：在 Auto Layout 中，我们使用 leading/trailing 约束来限制宽度
+        // 而不是直接设置 widthAnchor，这样可以避免约束冲突
+        let widthConstraint = containerView.widthAnchor.constraint(lessThanOrEqualToConstant: effectiveWidth)
+        widthConstraint.priority = .defaultHigh
+        
         NSLayoutConstraint.activate([
             containerView.topAnchor.constraint(equalTo: outerContainer.topAnchor, constant: context.theme.contentPadding),
             containerView.leadingAnchor.constraint(equalTo: outerContainer.leadingAnchor, constant: context.theme.contentPadding),
-            containerView.trailingAnchor.constraint(equalTo: outerContainer.trailingAnchor, constant: -context.theme.contentPadding),
+            containerView.trailingAnchor.constraint(lessThanOrEqualTo: outerContainer.trailingAnchor, constant: -context.theme.contentPadding),
             containerView.bottomAnchor.constraint(equalTo: outerContainer.bottomAnchor, constant: -context.theme.contentPadding),
             // 限制最大宽度
-            containerView.widthAnchor.constraint(lessThanOrEqualToConstant: effectiveWidth - context.theme.contentPadding * 2)
+            widthConstraint
         ])
         
         for child in ast.children {
@@ -73,6 +139,99 @@ public class UIKitAutoLayoutRender {
     }
     
 
+    // MARK: - 文本渲染
+    
+    /// 渲染 NSAttributedString（使用 Auto Layout）
+    private func renderAttributedString(_ attributedString: NSAttributedString, context: UIKitRenderContext) -> UIView {
+        // 检查是否包含链接、mention 文本、mention 状态图片或 emoji attachment
+        var hasLink = false
+        var hasMention = false
+        var hasEmoji = false
+        
+        attributedString.enumerateAttribute(.link, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
+            if value != nil {
+                hasLink = true
+                stop.pointee = true
+            }
+        }
+        
+        // 检查是否包含 mention 文本（通过检查 mentionTextColor）
+        attributedString.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attributedString.length), options: []) { value, range, stop in
+            if let color = value as? UIColor, color == context.theme.mentionTextColor {
+                // 检查文本是否以 @ 开头
+                let text = attributedString.attributedSubstring(from: range).string
+                if text.hasPrefix("@") {
+                    hasMention = true
+                    stop.pointee = true
+                }
+            }
+        }
+        
+        attributedString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
+            if value is EmojiTextAttachment {
+                hasEmoji = true
+                stop.pointee = true
+            }
+        }
+        
+        if hasLink || hasMention || hasEmoji {
+            // 如果包含链接或 mention，使用 UITextView 以支持点击
+            let textView = NonSelectableTextView()
+            textView.attributedText = attributedString
+            textView.isEditable = false
+            textView.isScrollEnabled = false
+            textView.isUserInteractionEnabled = true
+            textView.textContainerInset = .zero
+            textView.textContainer.lineFragmentPadding = 0
+            textView.backgroundColor = .clear
+            textView.translatesAutoresizingMaskIntoConstraints = false
+            
+            // 设置 Auto Layout 优先级，确保正确计算 intrinsic content size
+            textView.setContentHuggingPriority(.defaultLow, for: .vertical)
+            textView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+            textView.setContentHuggingPriority(.required, for: .horizontal)
+            textView.setContentCompressionResistancePriority(.required, for: .horizontal)
+            
+            // 让 UITextView 的文本垂直居中，与 UILabel 对齐
+            centerTextViewVertically(textView, attributedString: attributedString)
+            
+            // 设置代理以处理链接点击
+            if hasLink {
+                let linkHandler = LinkHandler(onLinkTap: context.onLinkTap)
+                textView.delegate = linkHandler
+                objc_setAssociatedObject(textView, &AssociatedKeys.linkHandler, linkHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            }
+            
+            // 如果包含 mention，添加点击手势处理
+            if hasMention, let onMentionTap = context.onMentionTap {
+                let mentionHandler = MentionTapHandler(
+                    textView: textView,
+                    attributedString: attributedString,
+                    context: context,
+                    onMentionTap: onMentionTap
+                )
+                objc_setAssociatedObject(textView, &AssociatedKeys.mentionHandler, mentionHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            }
+            
+            return textView
+        } else {
+            // 纯文本，使用 UILabel 性能更好
+            let label = UILabel()
+            label.attributedText = attributedString
+            label.numberOfLines = 0
+            label.lineBreakMode = .byWordWrapping
+            label.translatesAutoresizingMaskIntoConstraints = false
+            
+            // 设置 Auto Layout 优先级
+            label.setContentHuggingPriority(.defaultLow, for: .vertical)
+            label.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+            label.setContentHuggingPriority(.required, for: .horizontal)
+            label.setContentCompressionResistancePriority(.required, for: .horizontal)
+            
+            return label
+        }
+    }
+    
     // MARK: - 私有渲染方法
     
     /// 渲染节点包装器
@@ -85,9 +244,11 @@ public class UIKitAutoLayoutRender {
             containerView.alignment = .leading
             containerView.spacing = context.theme.paragraphSpacing
             containerView.distribution = .fill
+            containerView.translatesAutoresizingMaskIntoConstraints = false
             
             for child in node.children {
                 let childView = renderNodeWrapper(child, context: context)
+                childView.translatesAutoresizingMaskIntoConstraints = false
                 containerView.addArrangedSubview(childView)
             }
             return containerView
@@ -207,81 +368,7 @@ public class UIKitAutoLayoutRender {
     private func renderParagraphAsAttributedString(_ node: ParagraphNode, context: UIKitRenderContext) -> UIView {
         // 构建包含 mention 和 emoji 的 NSAttributedString
         let attributedString = buildAttributedStringWithInlineNodes(from: node.children, context: context)
-        
-        // 检查是否包含链接、mention 或 emoji attachment
-        var hasLink = false
-        var hasMention = false
-        var hasEmoji = false
-        
-        attributedString.enumerateAttribute(.link, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
-            if value != nil {
-                hasLink = true
-                stop.pointee = true
-            }
-        }
-        
-        // 检查是否包含 mention 文本（通过检查 mentionTextColor）
-        attributedString.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attributedString.length), options: []) { value, range, stop in
-            if let color = value as? UIColor, color == context.theme.mentionTextColor {
-                let text = attributedString.attributedSubstring(from: range).string
-                if text.hasPrefix("@") {
-                    hasMention = true
-                    stop.pointee = true
-                }
-            }
-        }
-        
-        // 检查是否包含 emoji attachment
-        attributedString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
-            if value is EmojiTextAttachment {
-                hasEmoji = true
-                stop.pointee = true
-            }
-        }
-        
-        if hasLink || hasMention || hasEmoji {
-            // 如果包含链接、mention 或 emoji，使用 UITextView 以支持点击
-            let textView = UITextView()
-            textView.attributedText = attributedString
-            textView.isEditable = false
-            textView.isScrollEnabled = false
-            textView.isUserInteractionEnabled = true
-            textView.textContainerInset = .zero
-            textView.textContainer.lineFragmentPadding = 0
-            textView.backgroundColor = .clear
-            textView.translatesAutoresizingMaskIntoConstraints = false
-            
-            // 让 UITextView 的文本垂直居中，与 UILabel 对齐
-            centerTextViewVertically(textView, attributedString: attributedString)
-            
-            // 设置代理以处理链接点击
-            if hasLink {
-                let linkHandler = LinkHandler(onLinkTap: context.onLinkTap)
-                textView.delegate = linkHandler
-                objc_setAssociatedObject(textView, &AssociatedKeys.linkHandler, linkHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-            }
-            
-            // 如果包含 mention，添加点击手势处理
-            if hasMention, let onMentionTap = context.onMentionTap {
-                let mentionHandler = MentionTapHandler(
-                    textView: textView,
-                    attributedString: attributedString,
-                    context: context,
-                    onMentionTap: onMentionTap
-                )
-                objc_setAssociatedObject(textView, &AssociatedKeys.mentionHandler, mentionHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-            }
-            
-            return textView
-        } else {
-            // 纯文本，使用 UILabel 性能更好
-            let label = UILabel()
-            label.attributedText = attributedString
-            label.numberOfLines = 0
-            label.lineBreakMode = .byWordWrapping
-            label.translatesAutoresizingMaskIntoConstraints = false
-            return label
-        }
+        return renderAttributedString(attributedString, context: context)
     }
     
     /// 构建包含 mention 和 emoji 的 NSAttributedString
@@ -355,23 +442,9 @@ public class UIKitAutoLayoutRender {
     
     /// 让 UITextView 的文本垂直居中，与 UILabel 对齐
     private func centerTextViewVertically(_ textView: UITextView, attributedString: NSAttributedString) {
-        // 在 Auto Layout 模式下，我们需要在布局完成后调整
-        // 这里先设置一个初始值，实际调整在 layoutSubviews 中进行
-        DispatchQueue.main.async {
-            let textSize = attributedString.boundingRect(
-                with: CGSize(width: textView.frame.width, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                context: nil
-            ).size
-            
-            let textHeight = ceil(textSize.height)
-            let containerHeight = textView.frame.height
-            
-            if textHeight < containerHeight && containerHeight > 0 {
-                let verticalInset = (containerHeight - textHeight) / 2.0
-                textView.textContainerInset = UIEdgeInsets(top: verticalInset, left: 0, bottom: verticalInset, right: 0)
-            }
-        }
+        // 在 Auto Layout 模式下，UITextView 会自动根据内容计算高度
+        // 不需要手动设置 textContainerInset，保持为 .zero 即可
+        // Auto Layout 会根据 intrinsic content size 自动调整
     }
     
     /// 渲染包含特殊节点的段落（混合布局）
@@ -402,6 +475,11 @@ public class UIKitAutoLayoutRender {
                 label.attributedText = attributedString
                 label.numberOfLines = 0
                 label.lineBreakMode = .byWordWrapping
+                label.translatesAutoresizingMaskIntoConstraints = false
+                label.setContentHuggingPriority(.defaultLow, for: .vertical)
+                label.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+                label.setContentHuggingPriority(.required, for: .horizontal)
+                label.setContentCompressionResistancePriority(.required, for: .horizontal)
                 stackView.addArrangedSubview(label)
                 currentTextNodes.removeAll()
             }
@@ -476,76 +554,7 @@ public class UIKitAutoLayoutRender {
     private func renderHeadingAsAttributedString(_ node: HeadingNode, context: UIKitRenderContext) -> UIView {
         // 构建包含 mention 和 emoji 的 NSAttributedString
         let attributedString = buildAttributedStringWithInlineNodes(from: node.children, context: context)
-        
-        // 检查是否包含链接、mention 或 emoji attachment
-        var hasLink = false
-        var hasMention = false
-        var hasEmoji = false
-        
-        attributedString.enumerateAttribute(.link, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
-            if value != nil {
-                hasLink = true
-                stop.pointee = true
-            }
-        }
-        
-        attributedString.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attributedString.length), options: []) { value, range, stop in
-            if let color = value as? UIColor, color == context.theme.mentionTextColor {
-                let text = attributedString.attributedSubstring(from: range).string
-                if text.hasPrefix("@") {
-                    hasMention = true
-                    stop.pointee = true
-                }
-            }
-        }
-        
-        attributedString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
-            if value is EmojiTextAttachment {
-                hasEmoji = true
-                stop.pointee = true
-            }
-        }
-        
-        if hasLink || hasMention || hasEmoji {
-            // 如果包含链接、mention 或 emoji，使用 UITextView 以支持点击
-            let textView = UITextView()
-            textView.attributedText = attributedString
-            textView.isEditable = false
-            textView.isScrollEnabled = false
-            textView.isUserInteractionEnabled = true
-            textView.textContainerInset = .zero
-            textView.textContainer.lineFragmentPadding = 0
-            textView.backgroundColor = .clear
-            textView.translatesAutoresizingMaskIntoConstraints = false
-            
-            centerTextViewVertically(textView, attributedString: attributedString)
-            
-            if hasLink {
-                let linkHandler = LinkHandler(onLinkTap: context.onLinkTap)
-                textView.delegate = linkHandler
-                objc_setAssociatedObject(textView, &AssociatedKeys.linkHandler, linkHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-            }
-            
-            if hasMention, let onMentionTap = context.onMentionTap {
-                let mentionHandler = MentionTapHandler(
-                    textView: textView,
-                    attributedString: attributedString,
-                    context: context,
-                    onMentionTap: onMentionTap
-                )
-                objc_setAssociatedObject(textView, &AssociatedKeys.mentionHandler, mentionHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-            }
-            
-            return textView
-        } else {
-            // 纯文本，使用 UILabel 性能更好
-            let label = UILabel()
-            label.attributedText = attributedString
-            label.numberOfLines = 0
-            label.lineBreakMode = .byWordWrapping
-            label.translatesAutoresizingMaskIntoConstraints = false
-            return label
-        }
+        return renderAttributedString(attributedString, context: context)
     }
     
     /// 渲染包含特殊节点的标题（混合布局）
@@ -576,6 +585,11 @@ public class UIKitAutoLayoutRender {
                 label.attributedText = attributedString
                 label.numberOfLines = 0
                 label.lineBreakMode = .byWordWrapping
+                label.translatesAutoresizingMaskIntoConstraints = false
+                label.setContentHuggingPriority(.defaultLow, for: .vertical)
+                label.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+                label.setContentHuggingPriority(.required, for: .horizontal)
+                label.setContentCompressionResistancePriority(.required, for: .horizontal)
                 stackView.addArrangedSubview(label)
                 currentTextNodes.removeAll()
             }
@@ -634,9 +648,11 @@ public class UIKitAutoLayoutRender {
         stackView.alignment = .top
         stackView.spacing = 0
         stackView.distribution = .fill
+        stackView.translatesAutoresizingMaskIntoConstraints = false
         
         for child in node.children {
             let childView = renderInlineNodeWrapper(child, context: context)
+            childView.translatesAutoresizingMaskIntoConstraints = false
             if let label = childView as? UILabel {
                 label.font = UIFont.boldSystemFont(ofSize: context.theme.font.pointSize)
             }
@@ -652,9 +668,11 @@ public class UIKitAutoLayoutRender {
         stackView.alignment = .top
         stackView.spacing = 0
         stackView.distribution = .fill
+        stackView.translatesAutoresizingMaskIntoConstraints = false
         
         for child in node.children {
             let childView = renderInlineNodeWrapper(child, context: context)
+            childView.translatesAutoresizingMaskIntoConstraints = false
             // 应用斜体效果：对 UILabel 使用 NSAttributedString 的倾斜属性
             applyItalicToView(childView, context: context)
             stackView.addArrangedSubview(childView)
@@ -712,9 +730,11 @@ public class UIKitAutoLayoutRender {
         stackView.alignment = .top
         stackView.spacing = 0
         stackView.distribution = .fill
+        stackView.translatesAutoresizingMaskIntoConstraints = false
         
         for child in node.children {
             let childView = renderInlineNodeWrapper(child, context: context)
+            childView.translatesAutoresizingMaskIntoConstraints = false
             if let label = childView as? UILabel {
                 label.attributedText = NSAttributedString(
                     string: label.text ?? "",
@@ -733,9 +753,11 @@ public class UIKitAutoLayoutRender {
         stackView.alignment = .top
         stackView.spacing = 0
         stackView.distribution = .fill
+        stackView.translatesAutoresizingMaskIntoConstraints = false
         
         for child in node.children {
             let childView = renderInlineNodeWrapper(child, context: context)
+            childView.translatesAutoresizingMaskIntoConstraints = false
             if let label = childView as? UILabel {
                 label.attributedText = NSAttributedString(
                     string: label.text ?? "",
@@ -813,9 +835,11 @@ public class UIKitAutoLayoutRender {
         stackView.alignment = .top
         stackView.spacing = 0
         stackView.distribution = .fill
+        stackView.translatesAutoresizingMaskIntoConstraints = false
         
         for child in node.children {
             let childView = renderInlineNodeWrapper(child, context: context)
+            childView.translatesAutoresizingMaskIntoConstraints = false
             if let label = childView as? UILabel {
                 label.textColor = context.theme.linkColor
             }
@@ -1015,9 +1039,11 @@ public class UIKitAutoLayoutRender {
         containerView.alignment = .leading
         containerView.spacing = context.theme.listItemSpacing
         containerView.distribution = .fill
+        containerView.translatesAutoresizingMaskIntoConstraints = false
         
         for (index, item) in node.items.enumerated() {
             let itemView = renderListItem(item, index: index, listType: node.listType, context: context, nestingLevel: nestingLevel)
+            itemView.translatesAutoresizingMaskIntoConstraints = false
             containerView.addArrangedSubview(itemView)
         }
         
@@ -1031,6 +1057,7 @@ public class UIKitAutoLayoutRender {
         stackView.alignment = .top
         stackView.spacing = 8
         stackView.distribution = .fill
+        stackView.translatesAutoresizingMaskIntoConstraints = false
         
         // 列表标记
         let markerView: UIView
@@ -1066,9 +1093,13 @@ public class UIKitAutoLayoutRender {
             }
             label.font = context.theme.font
             label.textColor = context.theme.textColor
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.setContentHuggingPriority(.required, for: .horizontal)
+            label.setContentCompressionResistancePriority(.required, for: .horizontal)
             markerView = label
         }
         
+        markerView.translatesAutoresizingMaskIntoConstraints = false
         stackView.addArrangedSubview(markerView)
         
         let hasNestedList = item.children.contains { wrapper in
@@ -1078,6 +1109,7 @@ public class UIKitAutoLayoutRender {
         
         if hasNestedList {
             let containerView = UIView()
+            containerView.translatesAutoresizingMaskIntoConstraints = false
             let contentStackView = UIStackView()
             contentStackView.axis = .vertical
             contentStackView.alignment = .leading
@@ -1100,6 +1132,7 @@ public class UIKitAutoLayoutRender {
             
             if !nonListNodes.isEmpty {
                 let inlineContentView = renderListItemInlineContent(nodes: nonListNodes, context: context)
+                inlineContentView.translatesAutoresizingMaskIntoConstraints = false
                 contentStackView.addArrangedSubview(inlineContentView)
             }
             
@@ -1118,6 +1151,7 @@ public class UIKitAutoLayoutRender {
             stackView.addArrangedSubview(containerView)
         } else {
             let inlineContentView = renderListItemInlineContent(nodes: item.children, context: context)
+            inlineContentView.translatesAutoresizingMaskIntoConstraints = false
             stackView.addArrangedSubview(inlineContentView)
         }
         
@@ -1126,6 +1160,44 @@ public class UIKitAutoLayoutRender {
     
     /// 渲染列表项的行内内容
     private func renderListItemInlineContent(nodes: [ASTNodeWrapper], context: UIKitRenderContext) -> UIView {
+        // 检查是否包含块级节点（段落、标题等）
+        let hasBlockLevelNodes = nodes.contains { wrapper in
+            switch wrapper {
+            case .paragraph, .heading, .codeBlock, .table, .blockquote, .horizontalRule:
+                return true
+            default:
+                return false
+            }
+        }
+        
+        // 如果包含块级节点，使用垂直堆栈布局
+        if hasBlockLevelNodes {
+            let containerView = UIView()
+            containerView.translatesAutoresizingMaskIntoConstraints = false
+            let contentStackView = UIStackView()
+            contentStackView.axis = .vertical
+            contentStackView.alignment = .leading
+            contentStackView.spacing = context.theme.paragraphSpacing
+            contentStackView.distribution = .fill
+            contentStackView.translatesAutoresizingMaskIntoConstraints = false
+            
+            containerView.addSubview(contentStackView)
+            NSLayoutConstraint.activate([
+                contentStackView.topAnchor.constraint(equalTo: containerView.topAnchor),
+                contentStackView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+                contentStackView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+                contentStackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
+            ])
+            
+            for child in nodes {
+                let childView = renderNodeWrapper(child, context: context)
+                childView.translatesAutoresizingMaskIntoConstraints = false
+                contentStackView.addArrangedSubview(childView)
+            }
+            
+            return containerView
+        }
+        
         // 检查是否包含块级特殊节点（图片、数学公式、Mermaid）
         let hasBlockLevelSpecialNodes = nodes.contains { wrapper in
             switch wrapper {
@@ -1148,6 +1220,7 @@ public class UIKitAutoLayoutRender {
         
         if hasBlockLevelSpecialNodes {
             let containerView = UIView()
+            containerView.translatesAutoresizingMaskIntoConstraints = false
             let contentStackView = UIStackView()
             contentStackView.axis = .vertical
             contentStackView.alignment = .leading
@@ -1172,6 +1245,11 @@ public class UIKitAutoLayoutRender {
                     label.attributedText = attributedString
                     label.numberOfLines = 0
                     label.lineBreakMode = .byWordWrapping
+                    label.translatesAutoresizingMaskIntoConstraints = false
+                    label.setContentHuggingPriority(.defaultLow, for: .vertical)
+                    label.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+                    label.setContentHuggingPriority(.required, for: .horizontal)
+                    label.setContentCompressionResistancePriority(.required, for: .horizontal)
                     contentStackView.addArrangedSubview(label)
                     currentTextNodes.removeAll()
                 }
@@ -1182,6 +1260,7 @@ public class UIKitAutoLayoutRender {
                 case .image, .math, .mermaid:
                     flushTextNodes()
                     let childView = renderInlineNodeWrapper(child, context: context)
+                    childView.translatesAutoresizingMaskIntoConstraints = false
                     contentStackView.addArrangedSubview(childView)
                 default:
                     currentTextNodes.append(child)
@@ -1223,44 +1302,7 @@ public class UIKitAutoLayoutRender {
                 }
             }
             
-            if hasLink || hasMention || hasEmoji {
-                let textView = UITextView()
-                textView.attributedText = attributedString
-                textView.isEditable = false
-                textView.isScrollEnabled = false
-                textView.isUserInteractionEnabled = true
-                textView.textContainerInset = .zero
-                textView.textContainer.lineFragmentPadding = 0
-                textView.backgroundColor = .clear
-                textView.translatesAutoresizingMaskIntoConstraints = false
-                
-                centerTextViewVertically(textView, attributedString: attributedString)
-                
-                if hasLink {
-                    let linkHandler = LinkHandler(onLinkTap: context.onLinkTap)
-                    textView.delegate = linkHandler
-                    objc_setAssociatedObject(textView, &AssociatedKeys.linkHandler, linkHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-                }
-                
-                if hasMention, let onMentionTap = context.onMentionTap {
-                    let mentionHandler = MentionTapHandler(
-                        textView: textView,
-                        attributedString: attributedString,
-                        context: context,
-                        onMentionTap: onMentionTap
-                    )
-                    objc_setAssociatedObject(textView, &AssociatedKeys.mentionHandler, mentionHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-                }
-                
-                return textView
-            } else {
-                let label = UILabel()
-                label.attributedText = attributedString
-                label.numberOfLines = 0
-                label.lineBreakMode = .byWordWrapping
-                label.translatesAutoresizingMaskIntoConstraints = false
-                return label
-            }
+            return renderAttributedString(attributedString, context: context)
         }
     }
     
@@ -1368,6 +1410,11 @@ public class UIKitAutoLayoutRender {
                     label.numberOfLines = 0
                     label.lineBreakMode = .byWordWrapping
                     label.textAlignment = cell.align?.textAlignment ?? .left
+                    label.translatesAutoresizingMaskIntoConstraints = false
+                    label.setContentHuggingPriority(.defaultLow, for: .vertical)
+                    label.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+                    label.setContentHuggingPriority(.required, for: .horizontal)
+                    label.setContentCompressionResistancePriority(.required, for: .horizontal)
                     contentStackView.addArrangedSubview(label)
                     currentTextNodes.removeAll()
                 }
@@ -1399,6 +1446,10 @@ public class UIKitAutoLayoutRender {
             label.lineBreakMode = .byWordWrapping
             label.textAlignment = cell.align?.textAlignment ?? .left
             label.translatesAutoresizingMaskIntoConstraints = false
+            label.setContentHuggingPriority(.defaultLow, for: .vertical)
+            label.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+            label.setContentHuggingPriority(.required, for: .horizontal)
+            label.setContentCompressionResistancePriority(.required, for: .horizontal)
             
             containerView.addSubview(label)
             NSLayoutConstraint.activate([
@@ -1506,17 +1557,17 @@ public class UIKitAutoLayoutRender {
                     // 保存尺寸到缓存（从图片中获取）
                     context.formulaSizeCacheDelegate?.setCachedSize(imageSize, for: cacheKey)
                     
-                    // 计算实际需要的总高度（图片高度 + padding）
-                    let padding = context.theme.codeBlockPadding
-                    let actualHeight = imageSize.height + padding * 2
+                    // 在 Auto Layout 模式下，图片加载完成后需要触发布局更新
+                    // 让 Auto Layout 重新计算高度
+                    containerView.setNeedsLayout()
+                    containerView.layoutIfNeeded()
                     
-                    // 获取当前容器的高度
-                    let currentHeight = containerView.frame.height
-                    
-                    // 如果实际高度与当前高度不同，触发高度刷新回调
-                    if abs(actualHeight - currentHeight) > 1.0, let onHeightChanged = context.onLayoutHeightChanged {
-                        let heightDiff = actualHeight - currentHeight
-                        onHeightChanged(heightDiff)
+                    // 触发高度刷新回调，让 tableView 重新计算 cell 高度
+                    if let onHeightChanged = context.onLayoutHeightChanged {
+                        // 计算高度变化（使用图片高度作为参考）
+                        let padding = context.theme.codeBlockPadding
+                        let imageHeight = imageSize.height + padding * 2
+                        onHeightChanged(imageHeight)
                     }
                 } else {
                     // 渲染失败时，像代码块一样展示原始内容
@@ -1622,17 +1673,17 @@ public class UIKitAutoLayoutRender {
                     // 保存尺寸到缓存（从图片中获取）
                     context.formulaSizeCacheDelegate?.setCachedSize(imageSize, for: cacheKey)
                     
-                    // 计算实际需要的总高度（图片高度 + padding）
-                    let padding = context.theme.codeBlockPadding
-                    let actualHeight = imageSize.height + padding * 2
+                    // 在 Auto Layout 模式下，图片加载完成后需要触发布局更新
+                    // 让 Auto Layout 重新计算高度
+                    containerView.setNeedsLayout()
+                    containerView.layoutIfNeeded()
                     
-                    // 获取当前容器的高度
-                    let currentHeight = containerView.frame.height
-                    
-                    // 如果实际高度与当前高度不同，触发高度刷新回调
-                    if abs(actualHeight - currentHeight) > 1.0, let onHeightChanged = context.onLayoutHeightChanged {
-                        let heightDiff = actualHeight - currentHeight
-                        onHeightChanged(heightDiff)
+                    // 触发高度刷新回调，让 tableView 重新计算 cell 高度
+                    if let onHeightChanged = context.onLayoutHeightChanged {
+                        // 计算高度变化（使用图片高度作为参考）
+                        let padding = context.theme.codeBlockPadding
+                        let imageHeight = imageSize.height + padding * 2
+                        onHeightChanged(imageHeight)
                     }
                 } else {
                     // 渲染失败时，像代码块一样展示原始内容
@@ -1854,6 +1905,11 @@ public class UIKitAutoLayoutRender {
                         label.attributedText = attributedString
                         label.numberOfLines = 0
                         label.lineBreakMode = .byWordWrapping
+                        label.translatesAutoresizingMaskIntoConstraints = false
+                        label.setContentHuggingPriority(.defaultLow, for: .vertical)
+                        label.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+                        label.setContentHuggingPriority(.required, for: .horizontal)
+                        label.setContentCompressionResistancePriority(.required, for: .horizontal)
                         contentStackView.addArrangedSubview(label)
                         currentTextNodes.removeAll()
                     }
@@ -1878,6 +1934,11 @@ public class UIKitAutoLayoutRender {
                 label.attributedText = attributedString
                 label.numberOfLines = 0
                 label.lineBreakMode = .byWordWrapping
+                label.translatesAutoresizingMaskIntoConstraints = false
+                label.setContentHuggingPriority(.defaultLow, for: .vertical)
+                label.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+                label.setContentHuggingPriority(.required, for: .horizontal)
+                label.setContentCompressionResistancePriority(.required, for: .horizontal)
                 stackView.addArrangedSubview(label)
             }
         }

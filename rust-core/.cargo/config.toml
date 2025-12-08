@@ -1,2 +1,18 @@
+# 项目级别的 Cargo 镜像配置
+# 如果全局配置不可用，可以使用此配置
+
+[source.crates-io]
+replace-with = 'tuna'
+
+[source.tuna]
+registry = "https://mirrors.tuna.tsinghua.edu.cn/git/crates.io-index.git"
+
+# 备选镜像源（如果清华镜像不可用）
+# [source.ustc]
+# registry = "https://mirrors.ustc.edu.cn/crates.io-index"
+
+# [source.rsproxy]
+# registry = "https://rsproxy.cn/crates.io-index"
+
 [target.aarch64-linux-android]
 linker = "/Users/lgq/Library/Android/sdk/ndk/25.1.8937393/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang"

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// SwiftUI 渲染器
-@available(iOS 15.0, *)
+@available(iOS 16.0, *)
 public struct SwiftUIRenderer {
     public init() {}
     
@@ -64,9 +64,9 @@ public struct SwiftUIRenderer {
         case .mermaid(let node):
             return AnyView(renderMermaid(node, context: context))
         case .mention(let node):
-            return AnyView(renderMention(node, context: context))
+            return AnyView(renderMention(node: node, context: context))
         case .emoji(let node):
-            return AnyView(renderEmoji(node, context: context))
+            return AnyView(renderEmoji(node: node, context: context))
         case .color(let node):
             return AnyView(renderColor(node, context: context))
         case .blockquote(let node):
@@ -81,7 +81,6 @@ public struct SwiftUIRenderer {
     @ViewBuilder
     private func renderParagraph(_ node: ParagraphNode, context: RenderContext) -> some View {
         // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
-        // 行内代码现在可以嵌入到 AttributedString 中，不需要单独处理
         let hasSpecialNodes = node.children.contains { wrapper in
             switch wrapper {
             case .image, .math, .mermaid:
@@ -95,9 +94,8 @@ public struct SwiftUIRenderer {
             // 如果包含特殊节点，使用混合布局
             renderParagraphWithSpecialNodes(node, context: context)
         } else {
-            // 否则使用组合的 Text 视图，支持正确换行
+            // 否则使用组合的原生控件视图，支持正确换行
             buildText(from: node.children, context: context)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
     
@@ -132,14 +130,14 @@ public struct SwiftUIRenderer {
         for node in nodes {
             switch node {
             case .image, .math, .mermaid:
-                // 行内代码现在可以嵌入到 AttributedString 中，不需要单独处理
+                // 特殊节点需要单独处理
                 if !currentTextNodes.isEmpty {
                     result.append(.textNodes(currentTextNodes))
                     currentTextNodes.removeAll()
                 }
                 result.append(.specialNode(node))
             default:
-                // 包括 .code，因为行内代码现在可以嵌入到 AttributedString 中
+                // 包括 .code，行内代码使用原生控件处理
                 currentTextNodes.append(node)
             }
         }
@@ -151,198 +149,124 @@ public struct SwiftUIRenderer {
         return result
     }
     
-    /// 从行内节点构建组合的 Text 视图（使用 AttributedString）
+    /// 从行内节点构建组合的 Text 视图（使用原生 SwiftUI 控件）
     @ViewBuilder
     private func buildText(from nodes: [ASTNodeWrapper], context: RenderContext) -> some View {
-        if #available(iOS 15.0, *) {
-            // iOS 15+ 使用 AttributedString
-            let attributedString = buildAttributedString(from: nodes, context: context)
-            Text(attributedString)
-        } else {
-            // iOS 14 及以下使用旧的 Text 组合方式（降级处理）
-            buildTextLegacy(from: nodes, context: context)
+        // 使用原生 SwiftUI 控件组合，不再使用 AttributedString
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            ForEach(Array(nodes.enumerated()), id: \.offset) { index, node in
+                buildInlineView(from: node, context: context)
+            }
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
     
-    /// 从行内节点构建 AttributedString（iOS 15+）
-    @available(iOS 15.0, *)
-    private func buildAttributedString(from nodes: [ASTNodeWrapper], context: RenderContext) -> AttributedString {
-        var result = AttributedString()
-        
-        for node in nodes {
-            let nodeString = buildAttributedString(from: node, context: context)
-            result.append(nodeString)
-        }
-        
-        return result
-    }
-    
-    /// 从单个行内节点构建 AttributedString（iOS 15+）
-    @available(iOS 15.0, *)
-    private func buildAttributedString(from node: ASTNodeWrapper, context: RenderContext) -> AttributedString {
+    /// 从单个行内节点构建原生 SwiftUI 视图
+    private func buildInlineView(from node: ASTNodeWrapper, context: RenderContext) -> AnyView {
         switch node {
         case .text(let textNode):
             let font = context.currentFont ?? context.theme.font
             let color = context.currentTextColor ?? context.theme.textColor
-            
-            var attributedString = AttributedString(textNode.content)
-            // AttributedString 可以直接使用 Font
-            attributedString.font = font
-            attributedString.foregroundColor = colorToSwiftUIColor(color)
-            return attributedString
+            return AnyView(
+                Text(textNode.content)
+                    .font(font)
+                    .foregroundColor(color)
+            )
             
         case .strong(let strongNode):
             let font = context.currentFont ?? context.theme.font
             let color = context.currentTextColor ?? context.theme.textColor
-            var result = AttributedString()
-            
-            for child in strongNode.children {
-                var childString = buildAttributedString(from: child, context: context)
-                // 应用粗体：使用 fontWeight
-                // 注意：需要保留子节点中可能已经应用的斜体（obliqueness）属性
-                let fontSize = getFontSize(from: font, context: context)
-                
-                // 检查子节点是否是 em 节点（嵌套的粗体+斜体）
-                var isEmNode = false
-                if case .em = child {
-                    isEmNode = true
+            return AnyView(
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    ForEach(Array(strongNode.children.enumerated()), id: \.offset) { _, child in
+                        buildInlineView(from: child, context: context)
+                    }
                 }
-                
-                // 应用粗体字体（如果是嵌套的 em 节点，需要同时应用斜体）
-                if isEmNode {
-                    // 粗体+斜体：使用 UIFont 创建
-                    let boldItalicUIFont = createBoldItalicFont(size: fontSize)
-                    childString.font = Font(boldItalicUIFont)
-                } else {
-                    // 仅粗体
-                    childString.font = .system(size: fontSize, weight: .bold)
-                }
-                childString.foregroundColor = colorToSwiftUIColor(color)
-                result.append(childString)
-            }
-            return result
+                .fontWeight(.bold)
+                .font(font)
+                .foregroundColor(color)
+            )
             
         case .em(let emNode):
             let font = context.currentFont ?? context.theme.font
             let color = context.currentTextColor ?? context.theme.textColor
-            var result = AttributedString()
-            
-            for child in emNode.children {
-                var childString = buildAttributedString(from: child, context: context)
-                // 应用斜体：使用 UIFont 的斜体字体实现
-                let fontSize = getFontSize(from: font, context: context)
-                
-                // 检查子节点是否是 strong 节点（嵌套的粗体+斜体）
-                let isStrongNode: Bool
-                if case .strong = child {
-                    isStrongNode = true
-                } else {
-                    isStrongNode = false
-                }
-                
-                // 检查子节点是否已经有字体设置（来自嵌套的 strong）
-                var hasFont = false
-                for run in childString.runs {
-                    if run.font != nil {
-                        hasFont = true
-                        break
+            return AnyView(
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    ForEach(Array(emNode.children.enumerated()), id: \.offset) { _, child in
+                        buildInlineView(from: child, context: context)
                     }
                 }
-                
-                // 创建斜体字体
-                let italicFont: Font
-                if isStrongNode {
-                    // 粗体+斜体：使用 UIFont 创建
-                    let boldItalicUIFont = createBoldItalicFont(size: fontSize)
-                    italicFont = Font(boldItalicUIFont)
-                } else if !hasFont {
-                    // 没有已有字体，使用系统斜体字体
-                    italicFont = .system(size: fontSize).italic()
-                } else {
-                    // 已有字体，尝试应用斜体
-                    // 由于 Font 到 UIFont 的转换比较复杂，这里简化处理
-                    // 对于已有字体，我们使用系统斜体字体
-                    italicFont = .system(size: fontSize).italic()
-                }
-                
-                // 应用斜体字体
-                childString.font = italicFont
-                childString.foregroundColor = colorToSwiftUIColor(color)
-                result.append(childString)
-            }
-            return result
+                .italic()
+                .font(font)
+                .foregroundColor(color)
+            )
             
         case .underline(let underlineNode):
             let font = context.currentFont ?? context.theme.font
             let color = context.currentTextColor ?? context.theme.textColor
-            var result = AttributedString()
-            for child in underlineNode.children {
-                var childString = buildAttributedString(from: child, context: context)
-                childString.underlineStyle = .single
-                let fontSize = getFontSize(from: font, context: context)
-                childString.font = .system(size: fontSize)
-                childString.foregroundColor = colorToSwiftUIColor(color)
-                result.append(childString)
-            }
-            return result
+            return AnyView(
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    ForEach(Array(underlineNode.children.enumerated()), id: \.offset) { _, child in
+                        buildInlineView(from: child, context: context)
+                    }
+                }
+                .underline()
+                .font(font)
+                .foregroundColor(color)
+            )
             
         case .strike(let strikeNode):
             let font = context.currentFont ?? context.theme.font
             let color = context.currentTextColor ?? context.theme.textColor
-            var result = AttributedString()
-            for child in strikeNode.children {
-                var childString = buildAttributedString(from: child, context: context)
-                // 应用删除线：使用 strikethroughStyle 和 strikethroughColor
-                var attributes = AttributeContainer()
-                attributes.strikethroughStyle = .single
-                // strikethroughColor 需要 UIColor 类型
-                if let uiColor = colorToUIKitColor(color) {
-                    attributes.strikethroughColor = uiColor
+            return AnyView(
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    ForEach(Array(strikeNode.children.enumerated()), id: \.offset) { _, child in
+                        buildInlineView(from: child, context: context)
+                    }
                 }
-                childString.mergeAttributes(attributes)
-                let fontSize = getFontSize(from: font, context: context)
-                childString.font = .system(size: fontSize)
-                childString.foregroundColor = colorToSwiftUIColor(color)
-                result.append(childString)
-            }
-            return result
-            
-        case .link(let linkNode):
-            let font = context.currentFont ?? context.theme.font
-            var result = AttributedString()
-            for child in linkNode.children {
-                var childString = buildAttributedString(from: child, context: context)
-                childString.foregroundColor = colorToSwiftUIColor(context.theme.linkColor)
-                let fontSize = getFontSize(from: font, context: context)
-                childString.font = .system(size: fontSize)
-                if let url = URL(string: linkNode.url) {
-                    childString.link = url
-                }
-                result.append(childString)
-            }
-            return result
+                .strikethrough()
+                .font(font)
+                .foregroundColor(color)
+            )
             
         case .code(let codeNode):
             // 行内代码：使用等宽字体和背景色
-            var attributedString = AttributedString(codeNode.content)
-            // 使用 codeFontSize，如果没有则使用默认值
             let fontSize = context.theme.fontSize * 0.875 // 通常代码字体稍小
-            attributedString.font = .system(size: fontSize, design: .monospaced)
-            attributedString.foregroundColor = colorToSwiftUIColor(context.theme.codeTextColor)
-            attributedString.backgroundColor = colorToSwiftUIColor(context.theme.codeBackgroundColor)
-            return attributedString
+            return AnyView(
+                Text(codeNode.content)
+                    .font(.system(size: fontSize, design: .monospaced))
+                    .foregroundColor(context.theme.codeTextColor)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(context.theme.codeBackgroundColor)
+                    .cornerRadius(3)
+            )
             
-        case .emoji(let emojiNode):
-            // 表情：直接显示内容
-            // 注意：SwiftUI 的 AttributedString 不支持 NSTextAttachment
-            // 如果需要显示 emoji 图片，需要在 SwiftUI 层面使用其他方式（如 Image）
-            // 这里暂时只返回文本，图片加载需要在 renderEmoji 中处理
-            var attributedString = AttributedString(emojiNode.content)
+        case .link(let linkNode):
             let font = context.currentFont ?? context.theme.font
-            let fontSize = getFontSize(from: font, context: context)
-            attributedString.font = .system(size: fontSize)
-            attributedString.foregroundColor = colorToSwiftUIColor(context.currentTextColor ?? context.theme.textColor)
-            return attributedString
+            if let url = URL(string: linkNode.url) {
+                return AnyView(
+                    Link(destination: url) {
+                        HStack(alignment: .firstTextBaseline, spacing: 0) {
+                            ForEach(Array(linkNode.children.enumerated()), id: \.offset) { _, child in
+                                buildInlineView(from: child, context: context)
+                            }
+                        }
+                        .font(font)
+                        .foregroundColor(context.theme.linkColor)
+                    }
+                )
+            } else {
+                return AnyView(
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        ForEach(Array(linkNode.children.enumerated()), id: \.offset) { _, child in
+                            buildInlineView(from: child, context: context)
+                        }
+                    }
+                    .font(font)
+                    .foregroundColor(context.theme.linkColor)
+                )
+            }
             
         case .color(let colorNode):
             // 颜色节点：应用颜色到子节点
@@ -356,53 +280,27 @@ public struct SwiftUIRenderer {
                 currentFont: context.currentFont,
                 currentTextColor: color
             )
-            var result = AttributedString()
-            for child in colorNode.children {
-                let childString = buildAttributedString(from: child, context: colorContext)
-                result.append(childString)
-            }
-            return result
+            return AnyView(
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    ForEach(Array(colorNode.children.enumerated()), id: \.offset) { _, child in
+                        buildInlineView(from: child, context: colorContext)
+                    }
+                }
+            )
+            
+        case .emoji(let emojiNode):
+            // 表情：使用 renderEmoji 方法处理（支持图片加载）
+            return AnyView(renderEmoji(node: emojiNode, context: context))
             
         case .mention(let mentionNode):
-            // 提及：在 AttributedString 中显示为文本，但可以添加特殊样式
-            var attributedString = AttributedString("@\(mentionNode.name)")
-            let font = context.currentFont ?? context.theme.font
-            let fontSize = getFontSize(from: font, context: context)
-            attributedString.font = .system(size: fontSize)
-            attributedString.foregroundColor = colorToSwiftUIColor(context.theme.mentionTextColor)
-            
-            // 注意：SwiftUI 的 AttributedString 不支持 NSTextAttachment
-            // 如果需要显示 mention 状态图片，需要在 SwiftUI 层面使用其他方式（如 HStack）
-            // 这里暂时只返回文本，状态图片需要在 renderMention 中处理
-            
-            return attributedString
+            // 提及：使用 renderMention 方法处理（支持状态图片）
+            return AnyView(renderMention(node: mentionNode, context: context))
             
         default:
-            // 对于其他类型（图片、数学公式、Mermaid），返回空字符串
+            // 对于其他类型（图片、数学公式、Mermaid），返回空视图
             // 这些节点会在 renderParagraphWithSpecialNodes 中单独处理
-            return AttributedString()
+            return AnyView(EmptyView())
         }
-    }
-    
-    /// 从 Font 和 Context 获取字体大小（用于 AttributedString）
-    @available(iOS 15.0, *)
-    private func getFontSize(from font: Font, context: RenderContext) -> CGFloat {
-        // 优先使用 context 中的 fontSize
-        // 注意：Font 类型无法直接提取大小，所以使用 theme.fontSize
-        return context.theme.fontSize
-    }
-    
-    /// 将 Color 转换为 SwiftUI Color（AttributedString 直接支持 Color）
-    @available(iOS 15.0, *)
-    private func colorToSwiftUIColor(_ color: Color?) -> Color? {
-        return color
-    }
-    
-    /// 将 Color 转换为 UIColor（用于 AttributedString 的 UIKit 属性）
-    @available(iOS 15.0, *)
-    private func colorToUIKitColor(_ color: Color?) -> UIColor? {
-        guard let color = color else { return nil }
-        return UIColor(color)
     }
     
     /// 创建粗体+斜体字体（使用 UIFont）
@@ -418,23 +316,6 @@ public struct SwiftUIRenderer {
         
         // 如果无法创建，回退到系统粗体字体
         return UIFont.boldSystemFont(ofSize: size)
-    }
-    
-    /// 旧版 Text 组合方式（iOS 14 及以下降级处理）
-    @ViewBuilder
-    private func buildTextLegacy(from nodes: [ASTNodeWrapper], context: RenderContext) -> some View {
-        // 简化的降级实现
-        let text = nodes.compactMap { node -> String? in
-            switch node {
-            case .text(let textNode):
-                return textNode.content
-            default:
-                return nil
-            }
-        }.joined()
-        Text(text)
-            .font(context.currentFont ?? context.theme.font)
-            .foregroundColor(context.currentTextColor ?? context.theme.textColor)
     }
     
     @ViewBuilder
@@ -453,7 +334,6 @@ public struct SwiftUIRenderer {
         let headingContext = createHeadingContext(from: context, font: font, color: color)
         
         // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
-        // 行内代码现在可以嵌入到 AttributedString 中，不需要单独处理
         let hasSpecialNodes = node.children.contains { wrapper in
             switch wrapper {
             case .image, .math, .mermaid:
@@ -467,9 +347,8 @@ public struct SwiftUIRenderer {
             // 如果包含特殊节点，使用混合布局
             renderHeadingWithSpecialNodes(node, context: headingContext)
         } else {
-            // 否则使用组合的 Text 视图
+            // 否则使用组合的原生控件视图
             buildText(from: node.children, context: headingContext)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
     
@@ -482,7 +361,6 @@ public struct SwiftUIRenderer {
                 switch group {
                 case .textNodes(let nodes):
                     buildText(from: nodes, context: context)
-                        .fixedSize(horizontal: false, vertical: true)
                 case .specialNode(let node):
                     renderInlineNodeWrapper(node, context: context)
                 }
@@ -638,7 +516,6 @@ public struct SwiftUIRenderer {
     @ViewBuilder
     private func renderListItemInlineContent(nodes: [ASTNodeWrapper], context: RenderContext) -> some View {
         // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
-        // 行内代码现在可以嵌入到 AttributedString 中，不需要单独处理
         let hasSpecialNodes = nodes.contains { wrapper in
             switch wrapper {
             case .image, .math, .mermaid:
@@ -656,16 +533,14 @@ public struct SwiftUIRenderer {
                     switch group {
                     case .textNodes(let textNodes):
                         buildText(from: textNodes, context: context)
-                            .fixedSize(horizontal: false, vertical: true)
                     case .specialNode(let node):
                         renderInlineNodeWrapper(node, context: context)
                     }
                 }
             }
         } else {
-            // 否则使用 AttributedString 渲染，支持正确换行
+            // 否则使用原生控件渲染，支持正确换行
             buildText(from: nodes, context: context)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
     
@@ -696,7 +571,6 @@ public struct SwiftUIRenderer {
     @ViewBuilder
     private func renderTableCellContent(cell: TableCell, context: RenderContext, alignment: Alignment) -> some View {
         // 检查是否包含需要单独渲染的节点（图片、数学公式、Mermaid、提及）
-        // 行内代码现在可以嵌入到 AttributedString 中，不需要单独处理
         let hasSpecialNodes = cell.children.contains { wrapper in
             switch wrapper {
             case .image, .math, .mermaid:
@@ -714,7 +588,6 @@ public struct SwiftUIRenderer {
                     switch group {
                     case .textNodes(let nodes):
                         buildText(from: nodes, context: context)
-                            .fixedSize(horizontal: false, vertical: true)
                             .multilineTextAlignment(alignment == .center ? .center : (alignment == .trailing ? .trailing : .leading))
                     case .specialNode(let node):
                         renderInlineNodeWrapper(node, context: context)
@@ -722,9 +595,8 @@ public struct SwiftUIRenderer {
                 }
             }
         } else {
-            // 否则使用 AttributedString 渲染，支持正确换行
+            // 否则使用原生控件渲染，支持正确换行
             buildText(from: cell.children, context: context)
-                .fixedSize(horizontal: false, vertical: true)
                 .multilineTextAlignment(alignment == .center ? .center : (alignment == .trailing ? .trailing : .leading))
         }
     }
@@ -841,7 +713,7 @@ public struct SwiftUIRenderer {
     }
     
     @ViewBuilder
-    private func renderMention(_ node: MentionNode, context: RenderContext) -> some View {
+    private func renderMention(node: MentionNode, context: RenderContext) -> some View {
         HStack(spacing: 4) {
             Text("@\(node.name)")
                 .font(context.theme.font)
@@ -861,7 +733,7 @@ public struct SwiftUIRenderer {
     }
     
     @ViewBuilder
-    private func renderEmoji(_ node: EmojiNode, context: RenderContext) -> some View {
+    private func renderEmoji(node: EmojiNode, context: RenderContext) -> some View {
         // 表情内容通常是表情符号字符串，直接显示
         // 注意：SwiftUI 中无法直接使用 UIKit 的 inlineImageLoaderDelegate
         // 如果需要显示 emoji 图片，需要在 RenderContext 中添加 SwiftUI 版本的代理
@@ -933,7 +805,7 @@ public struct SwiftUIRenderer {
                 .fill(context.theme.blockquoteBorderColor)
                 .frame(width: context.theme.blockquoteBorderWidth)
             
-            // 引用块内容：使用 AttributedString 组合所有行内节点
+            // 引用块内容：使用原生控件组合所有行内节点
             renderBlockquoteContent(node: node, context: context)
         }
         .padding(.leading, 16)
@@ -982,16 +854,14 @@ public struct SwiftUIRenderer {
                         switch group {
                         case .textNodes(let nodes):
                             buildText(from: nodes, context: blockquoteContext)
-                                .fixedSize(horizontal: false, vertical: true)
                         case .specialNode(let node):
                             renderInlineNodeWrapper(node, context: blockquoteContext)
                         }
                     }
                 }
             } else {
-                // 否则使用 AttributedString 渲染，支持正确换行
+                // 否则使用原生控件渲染，支持正确换行
                 buildText(from: node.children, context: blockquoteContext)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -1046,73 +916,60 @@ public struct SwiftUIRenderer {
     
     @ViewBuilder
     private func renderStrong(_ node: StrongNode, context: RenderContext) -> some View {
-        // 使用 AttributedString 来支持嵌套样式（粗体中的斜体）
-        if #available(iOS 15.0, *) {
-            let attributedString = buildAttributedString(from: .strong(node), context: context)
-            Text(attributedString)
-        } else {
-            // Fallback on earlier versions
-            HStack(spacing: 0) {
-                ForEach(Array(node.children.enumerated()), id: \.offset) { _, child in
-                    renderInlineNodeWrapper(child, context: context)
-                }
+        // 使用原生控件来支持嵌套样式（粗体中的斜体）
+        let font = context.currentFont ?? context.theme.font
+        let color = context.currentTextColor ?? context.theme.textColor
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            ForEach(Array(node.children.enumerated()), id: \.offset) { _, child in
+                renderInlineNodeWrapper(child, context: context)
             }
-            .fontWeight(.bold)
-            .font(context.currentFont)
-            .foregroundColor(context.currentTextColor)
         }
+        .fontWeight(.bold)
+        .font(font)
+        .foregroundColor(color)
     }
     
     @ViewBuilder
     private func renderEm(_ node: EmNode, context: RenderContext) -> some View {
-        // 使用 AttributedString 来支持嵌套样式（斜体中的粗体）
-        if #available(iOS 15.0, *) {
-            let attributedString = buildAttributedString(from: .em(node), context: context)
-            Text(attributedString)
-        } else {
-            // Fallback on earlier versions
-            HStack(spacing: 0) {
-                ForEach(Array(node.children.enumerated()), id: \.offset) { _, child in
-                    renderInlineNodeWrapper(child, context: context)
-                }
+        // 使用原生控件来支持嵌套样式（斜体中的粗体）
+        let font = context.currentFont ?? context.theme.font
+        let color = context.currentTextColor ?? context.theme.textColor
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            ForEach(Array(node.children.enumerated()), id: \.offset) { _, child in
+                renderInlineNodeWrapper(child, context: context)
             }
-            .font(context.currentFont)
-            .foregroundColor(context.currentTextColor)
-            // 使用仿射变换实现斜体效果，对中英文都有效
-            .transformEffect(CGAffineTransform(a: 1, b: 0, c: -0.21, d: 1, tx: 2.5, ty: 0))
         }
+        .italic()
+        .font(font)
+        .foregroundColor(color)
     }
     
     @ViewBuilder
     private func renderUnderline(_ node: UnderlineNode, context: RenderContext) -> some View {
-        if #available(iOS 16.0, *) {
-            HStack(spacing: 0) {
-                ForEach(Array(node.children.enumerated()), id: \.offset) { _, child in
-                    renderInlineNodeWrapper(child, context: context)
-                }
+        let font = context.currentFont ?? context.theme.font
+        let color = context.currentTextColor ?? context.theme.textColor
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            ForEach(Array(node.children.enumerated()), id: \.offset) { _, child in
+                renderInlineNodeWrapper(child, context: context)
             }
-            .underline()
-            .font(context.currentFont)
-            .foregroundColor(context.currentTextColor)
-        } else {
-            // Fallback on earlier versions
         }
+        .underline()
+        .font(font)
+        .foregroundColor(color)
     }
     
     @ViewBuilder
     private func renderStrike(_ node: StrikeNode, context: RenderContext) -> some View {
-        if #available(iOS 16.0, *) {
-            HStack(spacing: 0) {
-                ForEach(Array(node.children.enumerated()), id: \.offset) { _, child in
-                    renderInlineNodeWrapper(child, context: context)
-                }
+        let font = context.currentFont ?? context.theme.font
+        let color = context.currentTextColor ?? context.theme.textColor
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            ForEach(Array(node.children.enumerated()), id: \.offset) { _, child in
+                renderInlineNodeWrapper(child, context: context)
             }
-            .strikethrough()
-            .font(context.currentFont)
-            .foregroundColor(context.currentTextColor)
-        } else {
-            // Fallback on earlier versions
         }
+        .strikethrough()
+        .font(font)
+        .foregroundColor(color)
     }
     
     @ViewBuilder
@@ -1143,9 +1000,9 @@ public struct SwiftUIRenderer {
         case .link(let node):
             return AnyView(renderLink(node, context: context))
         case .mention(let node):
-            return AnyView(renderMention(node, context: context))
+            return AnyView(renderMention(node: node, context: context))
         case .emoji(let node):
-            return AnyView(renderEmoji(node, context: context))
+            return AnyView(renderEmoji(node: node, context: context))
         case .color(let node):
             return AnyView(renderColor(node, context: context))
         case .math(let node):
@@ -1173,11 +1030,60 @@ extension TextAlign {
     }
 }
 
+// MARK: - iOS 15 兼容性辅助视图
+
+/// 下划线视图（用于 iOS 15 及以下版本）
+@available(iOS 16.0, *)
+struct UnderlineView<Content: View>: View {
+    let content: Content
+    
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+    
+    var body: some View {
+        content
+            .overlay(
+                GeometryReader { geometry in
+                    Path { path in
+                        path.move(to: CGPoint(x: 0, y: geometry.size.height))
+                        path.addLine(to: CGPoint(x: geometry.size.width, y: geometry.size.height))
+                    }
+                    .stroke(style: StrokeStyle(lineWidth: 1))
+                }
+            )
+    }
+}
+
+/// 删除线视图（用于 iOS 15 及以下版本）
+@available(iOS 15.0, *)
+struct StrikethroughView<Content: View>: View {
+    let content: Content
+    
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+    
+    var body: some View {
+        content
+            .overlay(
+                GeometryReader { geometry in
+                    Path { path in
+                        let midY = geometry.size.height / 2
+                        path.move(to: CGPoint(x: 0, y: midY))
+                        path.addLine(to: CGPoint(x: geometry.size.width, y: midY))
+                    }
+                    .stroke(style: StrokeStyle(lineWidth: 1))
+                }
+            )
+    }
+}
+
 // MARK: - Math HTML View
 
 /// 数学公式 HTML 渲染视图（使用 WebView 渲染为图片）
 /// 从 Rust Core 获取 KaTeX HTML，然后使用 MathHTMLRenderer 渲染为图片
-@available(iOS 15.0, *)
+@available(iOS 16.0, *)
 struct MathSVGView: View {
     let mathContent: String
     let display: Bool
@@ -1244,7 +1150,7 @@ struct MathSVGView: View {
 
 /// Mermaid 图表 HTML 渲染视图（使用 WebView 渲染为图片）
 /// 使用 MermaidHTMLRenderer 将 Mermaid 代码渲染为图片
-@available(iOS 15.0, *)
+@available(iOS 16.0, *)
 struct MermaidSVGView: View {
     let mermaidContent: String
     let context: RenderContext

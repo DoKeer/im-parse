@@ -25,22 +25,39 @@ struct MainTabView: View {
                     Label("SwiftUI", systemImage: "square.stack.3d.up")
                 }
             
-            UIKitMessageListWrapper()
+            UIKitFrameMessageListWrapper()
                 .tabItem {
-                    Label("UIKit", systemImage: "list.bullet")
+                    Label("UIKit Frame", systemImage: "rectangle.grid.1x2")
+                }
+            
+            UIKitAutoLayoutMessageListWrapper()
+                .tabItem {
+                    Label("UIKit Auto Layout", systemImage: "list.bullet")
                 }
         }
     }
 }
 
-// MARK: - UIKit Wrapper
+// MARK: - UIKit Frame Wrapper
 
-struct UIKitMessageListWrapper: UIViewControllerRepresentable {
+struct UIKitFrameMessageListWrapper: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIKitFrameMessageListViewController {
         return UIKitFrameMessageListViewController()
     }
     
     func updateUIViewController(_ uiViewController: UIKitFrameMessageListViewController, context: Context) {
+        // 不需要更新
+    }
+}
+
+// MARK: - UIKit Auto Layout Wrapper
+
+struct UIKitAutoLayoutMessageListWrapper: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> UIKitAutoLayoutMessageListViewController {
+        return UIKitAutoLayoutMessageListViewController()
+    }
+    
+    func updateUIViewController(_ uiViewController: UIKitAutoLayoutMessageListViewController, context: Context) {
         // 不需要更新
     }
 }

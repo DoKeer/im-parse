@@ -22,6 +22,18 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+        debug {
+            // 禁用调试构建的符号剥离以保留JNI符号
+            jniDebuggable true
+        }
+    }
+    
+    // 禁止剥离 native 库符号（保留 JNI 符号）
+    packaging {
+        jniLibs {
+            keepDebugSymbols += ['**/*.so']
+        }
+        doNotStrip '**/*.so'
     }
     
     compileOptions {
@@ -35,6 +47,13 @@ android {
     
     buildFeatures {
         viewBinding true
+    }
+}
+
+// 禁用符号剥离任务以保留 JNI 符号
+tasks.whenTaskAdded { task ->
+    if (task.name.contains("stripDebugDebugSymbols") || task.name.contains("stripReleaseDebugSymbols")) {
+        task.enabled = false
     }
 }
 

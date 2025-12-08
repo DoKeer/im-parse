@@ -16,7 +16,32 @@ android {
         
         // 指定 NDK 架构
         ndk {
-            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
+        }
+        
+        // 配置 CMake
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++17"
+                abiFilters 'armeabi-v7a', 'arm64-v8a'
+                // 保留所有符号，包括 JNI 符号
+                // Android NDK 默认使用 --gc-sections 会移除"未使用"的符号
+                // JNI 符号在链接时被认为是"未使用"的，所以会被移除
+                // 方法1：移除编译时的 section 分割
+                cFlags "-fno-function-sections -fno-data-sections"
+                cppFlags "-std=c++17 -fno-function-sections -fno-data-sections"
+                // 方法2：在链接时移除 --gc-sections
+                // 通过设置 CMAKE_SHARED_LINKER_FLAGS 来覆盖默认值
+                // 注意：需要移除 Android 工具链自动添加的 --gc-sections
+                arguments "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,--no-gc-sections"
+            }
+        }
+    }
+    
+    // CMake 构建配置
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
         }
     }
 
@@ -25,6 +50,18 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+        debug {
+            // 禁用调试构建的符号剥离以保留JNI符号
+            jniDebuggable true
+        }
+    }
+    
+    // 禁止打包配置以避免符号丢失（使用旧版 API 兼容性更好）
+    packagingOptions {
+        jniLibs {
+            keepDebugSymbols += ['**/*.so']
+        }
+        doNotStrip '**/*.so'
     }
     
     compileOptions {
@@ -49,6 +86,13 @@ android {
         main {
             jniLibs.srcDirs = ['src/main/jniLibs']
         }
+    }
+}
+
+// 禁用符号剥离任务以保留 JNI 符号
+tasks.whenTaskAdded { task ->
+    if (task.name.contains("stripDebugDebugSymbols") || task.name.contains("stripReleaseDebugSymbols")) {
+        task.enabled = false
     }
 }
 

@@ -7,6 +7,9 @@ pub mod style_config;
 
 pub mod ffi;
 
+#[cfg(feature = "jni")]
+pub mod jni;
+
 pub use ast::*;
 pub use markdown_parser::*;
 pub use delta_parser::*;

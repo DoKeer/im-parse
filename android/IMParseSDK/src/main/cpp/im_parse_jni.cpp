@@ -1,31 +1,23 @@
+// 必须在 jni.h 之前包含系统头文件，以确保类型定义正确
+#include <cstdint>
+#include <cstring>
 #include <jni.h>
 #include <string>
-#include <cstring>
-#include <stdint.h>
-#include <string.h>
 
-// 声明 Rust FFI 函数
+// 包含自动生成的 Rust FFI 头文件
+// 如果头文件不存在，则使用手动声明（向后兼容）
+#ifdef __cplusplus
 extern "C" {
-    // ParseResult 结构体
-    struct ParseResult {
-        bool success;
-        const char* ast_json;
-        int error_code;
-        const char* error_message;
-    };
-    
-    // Rust FFI 函数
-    ParseResult* parse_markdown_to_json(const char* input);
-    ParseResult* parse_delta_to_json(const char* input);
-    void free_parse_result(ParseResult* result);
-    ParseResult* markdown_to_html_with_config(const char* input, const char* config_json);
-    ParseResult* delta_to_html_with_config(const char* input, const char* config_json);
-    char* get_default_style_config();
-    char* get_dark_style_config();
-    ParseResult* math_to_html(const char* formula, bool display);
-    ParseResult* mermaid_to_html(const char* mermaid_code, const char* text_color, const char* background_color);
-    void free_string(char* ptr);
+#endif
+
+// 尝试包含生成的头文件（如果存在）
+// 注意：如果头文件不存在，编译会失败，这是预期的行为
+// 构建脚本会在构建 Rust 库时自动生成此头文件
+#include "im_parse_core.h"
+
+#ifdef __cplusplus
 }
+#endif
 
 // 辅助函数：将 jstring 转换为 C 字符串
 std::string jstring_to_string(JNIEnv* env, jstring jstr) {
@@ -56,7 +48,8 @@ ParseResult* get_parse_result_ptr(jlong ptr) {
     return reinterpret_cast<ParseResult*>(ptr);
 }
 
-extern "C" JNIEXPORT jlong JNICALL
+// 使用 __attribute__((used)) 确保符号不被链接器移除
+extern "C" JNIEXPORT jlong JNICALL __attribute__((used))
 Java_com_imparse_core_IMParseCore_parseMarkdown(JNIEnv* env, jclass clazz, jstring input) {
     std::string input_str = jstring_to_string(env, input);
     ParseResult* result = parse_markdown_to_json(input_str.c_str());
@@ -194,15 +187,15 @@ Java_com_imparse_core_IMParseCore_getParseResultErrorCode(JNIEnv* env, jclass cl
     if (result == nullptr) {
         return 0;
     }
-    return result->error_code;
+    return result->error.code;
 }
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_imparse_core_IMParseCore_getParseResultErrorMessage(JNIEnv* env, jclass clazz, jlong ptr) {
     ParseResult* result = get_parse_result_ptr(ptr);
-    if (result == nullptr || result->error_message == nullptr) {
+    if (result == nullptr || result->error.message == nullptr) {
         return nullptr;
     }
-    return string_to_jstring(env, result->error_message);
+    return string_to_jstring(env, result->error.message);
 }
 
