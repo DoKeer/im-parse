@@ -1252,7 +1252,7 @@ class MathSVGCache {
     private func extractMathFromSVG(_ svg: String) -> String? {
         // 简单提取：查找 SVG 中的文本内容
         // 这只是临时方案，无法正确渲染复杂公式
-        if let range = svg.range(of: "class=\"katex\"") {
+        if svg.contains("class=\"katex\"") {
             // 这是一个非常简化的实现
             return nil
         }

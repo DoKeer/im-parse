@@ -556,7 +556,7 @@ public class UIKitFrameAsyncCalculator {
         let contentLength = node.content.count
         
         // 基础高度（根据常见图表类型）
-        var baseHeight: CGFloat = 300
+        let baseHeight: CGFloat = 300
         
         // 根据内容长度调整（粗略估算）
         // 每增加约 100 个字符，高度增加约 50px

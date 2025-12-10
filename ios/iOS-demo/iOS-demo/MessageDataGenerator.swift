@@ -74,7 +74,14 @@ class MessageDataGenerator {
     /// 生成 Markdown 模板
     private static func generateMarkdownTemplates() -> [String] {
         return [
+            #"""
+            $\int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$
+            $$
+            \int_{0}^{\infty} e^{-x^2} \, dx = \frac{\sqrt{\pi}}{2}
+            $$
+            """#,
             """
+            
             您好，您2025年12月福利餐补已到账，可打开Teams-工作台-智慧食堂查看餐补余额。
 
             **温馨提示：**

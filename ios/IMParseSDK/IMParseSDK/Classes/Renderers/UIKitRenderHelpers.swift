@@ -11,9 +11,9 @@ import UIKit
 // MARK: - 辅助结构
 
 internal struct AssociatedKeys {
-    static var linkHandler = "linkHandler"
-    static var mentionHandler = "mentionHandler"
-    static var tapHandler = "tapHandler"
+    static var linkHandler: UInt8 = 0
+    static var mentionHandler: UInt8 = 0
+    static var tapHandler: UInt8 = 0
 }
 
 // MARK: - Emoji 文本附件

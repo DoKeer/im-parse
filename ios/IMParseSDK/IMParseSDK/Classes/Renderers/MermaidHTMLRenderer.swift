@@ -8,6 +8,7 @@
 
 import UIKit
 import WebKit
+import ObjectiveC
 
 /// Mermaid 图表 HTML 渲染器
 /// 使用独立的 WKWebView 将 Mermaid 图表渲染为图片，支持 mermaid.js
@@ -140,9 +141,16 @@ class MermaidHTMLRenderer {
                 }
                 
                 // 等待 mermaid.js 加载和渲染完成
-                // Mermaid 需要更多时间初始化和渲染
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    // 获取 Mermaid 图表的精确边界
+                // iOS 14 需要更多时间从 CDN 加载脚本，使用轮询检测
+                self.waitForMermaidReady(webView: webView, maxAttempts: 20) { ready in
+                    if !ready {
+                        print("MermaidHTMLRenderer: Mermaid.js failed to load (timeout or iOS 14 compatibility issue)")
+                        self.returnWebViewToPool(webView)
+                        completion(nil)
+                        return
+                    }
+                    
+                    // Mermaid 已就绪，获取图表的精确边界
                     webView.evaluateJavaScript("""
                         (function() {
                             const mermaidElement = document.querySelector('.mermaid');
@@ -242,30 +250,152 @@ class MermaidHTMLRenderer {
         webView.navigationDelegate = delegate
     }
     
-    /// 构建完整的 HTML（包含 mermaid.js）
-    /// 使用 rust-core 生成 HTML，保证多平台样式统一
-    private func buildFullHTML(mermaidCode: String, textColor: String, backgroundColor: String) -> String {
-        // 从 Rust Core 获取 HTML
-        let result = IMParseCore.mermaidToHTML(mermaidCode, textColor: textColor, backgroundColor: backgroundColor)
+    /// 轮询等待 Mermaid.js 加载完成（iOS 14 兼容性修复）
+    /// - Parameters:
+    ///   - webView: WebView 实例
+    ///   - maxAttempts: 最大尝试次数（默认 20 次，每次 0.2 秒，共 4 秒）
+    ///   - completion: 完成回调，返回是否成功加载
+    private func waitForMermaidReady(webView: WKWebView, maxAttempts: Int, completion: @escaping (Bool) -> Void) {
+        checkMermaidReady(webView: webView, attempt: 0, maxAttempts: maxAttempts, completion: completion)
+    }
+    
+    /// 递归检查 Mermaid.js 是否加载完成
+    private func checkMermaidReady(webView: WKWebView, attempt: Int, maxAttempts: Int, completion: @escaping (Bool) -> Void) {
+        guard attempt < maxAttempts else {
+            // 超时
+            completion(false)
+            return
+        }
         
-        guard result.success, let html = result.astJSON else {
-            // 如果生成失败，回退到简单的 HTML（不应该发生）
-            print("MermaidHTMLRenderer: Failed to generate HTML from rust-core: \(result.error?.message ?? "Unknown error")")
+        // 检查 mermaid 对象和渲染是否完成
+        webView.evaluateJavaScript("""
+            (function() {
+                // 检查 mermaid.js 是否加载
+                if (typeof mermaid === 'undefined') {
+                    return { ready: false, reason: 'mermaid not loaded' };
+                }
+                
+                // 检查 SVG 元素是否已渲染（Mermaid 会将代码转换为 SVG）
+                const mermaidElement = document.querySelector('.mermaid');
+                if (!mermaidElement) {
+                    return { ready: false, reason: 'mermaid element not found' };
+                }
+                
+                // 检查是否包含 SVG（已渲染）
+                const hasSVG = mermaidElement.querySelector('svg') !== null;
+                if (hasSVG) {
+                    return { ready: true, reason: 'rendered' };
+                }
+                
+                return { ready: false, reason: 'not rendered yet' };
+            })();
+        """) { result, error in
+            if let error = error {
+                print("MermaidHTMLRenderer: Check ready error (attempt \(attempt + 1)/\(maxAttempts)): \(error)")
+                // 继续重试
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    self.checkMermaidReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts, completion: completion)
+                }
+                return
+            }
+            
+            if let statusDict = result as? [String: Any],
+               let ready = statusDict["ready"] as? Bool,
+               let reason = statusDict["reason"] as? String {
+                if ready {
+                    print("MermaidHTMLRenderer: Mermaid ready after \(attempt + 1) attempts - \(reason)")
+                    completion(true)
+                } else {
+                    // 未就绪，继续等待
+                    if attempt == 0 || (attempt + 1) % 5 == 0 {
+                        print("MermaidHTMLRenderer: Waiting for mermaid (attempt \(attempt + 1)/\(maxAttempts)) - \(reason)")
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        self.checkMermaidReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts, completion: completion)
+                    }
+                }
+            } else {
+                // 未知错误，继续重试
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    self.checkMermaidReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts, completion: completion)
+                }
+            }
+        }
+    }
+    
+    /// 构建完整的 HTML（包含 mermaid.js）
+    /// 优先使用本地资源，失败时自动降级到 CDN
+    private func buildFullHTML(mermaidCode: String, textColor: String, backgroundColor: String) -> String {
+        // 使用本地资源管理器生成带降级的脚本标签
+        let scriptTag = LocalResourceManager.shared.mermaidScriptTag(onLoad: "initMermaid()")
+        
+        // 转义 HTML 特殊字符（简化版，与 Rust Core 一致）
+        let escapedCode = mermaidCode
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
+        
+        // 生成完整的 HTML（不依赖 Rust Core，避免兼容性问题）
             return """
             <!DOCTYPE html>
             <html>
             <head>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    background: \(backgroundColor);
+                    margin: 0;
+                    padding: 20px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 100vh;
+                }
+                .mermaid {
+                    color: \(textColor);
+                }
+            </style>
             </head>
             <body>
-                <div class="mermaid">\(mermaidCode)</div>
+            <div class="mermaid">
+                \(escapedCode)
+            </div>
+            \(scriptTag)
+            <script>
+                // 初始化 Mermaid
+                function initMermaid() {
+                    if (typeof mermaid !== 'undefined') {
+                        console.log('Initializing Mermaid...');
+                        mermaid.initialize({ 
+                            startOnLoad: true,
+                            theme: 'default',
+                            themeVariables: {
+                                primaryColor: '\(textColor)',
+                                primaryTextColor: '\(textColor)',
+                                primaryBorderColor: '\(textColor)',
+                                lineColor: '\(textColor)',
+                                secondaryColor: '\(backgroundColor)',
+                                tertiaryColor: '\(backgroundColor)'
+                            }
+                        });
+                        console.log('Mermaid initialized successfully');
+                    } else {
+                        console.error('Mermaid is not defined');
+                    }
+                }
+            </script>
             </body>
             </html>
             """
-        }
-        
-        return html
     }
     
     /// 截图 WebView（使用 WKWebView 的 takeSnapshot 方法，避免触发重新渲染）
@@ -339,6 +469,15 @@ private class MermaidWebViewDelegate: NSObject, WKNavigationDelegate {
         self.onFinish = onFinish
     }
     
+    // iOS 13 兼容：使用旧的方法签名
+    // 注意：在 iOS 13 中，这个方法存在但没有 preferences 参数
+    // 在 iOS 14+ 中，新方法（带 preferences）优先，但旧方法仍然可用
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        // iOS 13 中 JavaScript 通过 WKPreferences.javaScriptEnabled 控制（已在 SharedWebViewPool 中设置）
+        // 直接允许导航
+        decisionHandler(.allow)
+    }
+    
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         onFinish()
     }
@@ -352,7 +491,7 @@ private class MermaidWebViewDelegate: NSObject, WKNavigationDelegate {
 // MARK: - Associated Keys
 
 fileprivate struct MermaidAssociatedKeys {
-    static var delegate = "mermaidWebViewDelegate"
-    static var processing = "mermaidWebViewProcessing"
+    static var delegate: UInt8 = 0
+    static var processing: UInt8 = 0
 }
 

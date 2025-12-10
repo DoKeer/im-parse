@@ -21,9 +21,12 @@ public class MathHTMLRenderer {
     // 使用共享的 WebView 池（与 MermaidHTMLRenderer 共享，减少资源占用）
     private let webViewPool = SharedWebViewPool.shared
     
-    // KaTeX CSS（从 CDN 加载，避免本地文件）
+    // KaTeX CSS（优先从本地加载，降级到 CDN）
     static let katexCSSURL = "https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"
     private let katexCSSURL = MathHTMLRenderer.katexCSSURL
+    
+    // 本地资源管理器
+    private let resourceManager = LocalResourceManager.shared
     
     private init() {
         // 监听内存警告，清理缓存
@@ -146,7 +149,13 @@ public class MathHTMLRenderer {
                 }
                 
                 // 等待 KaTeX CSS 加载和渲染完成
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                // iOS 14 兼容性：增加轮询检测
+                self.waitForKaTeXReady(webView: webView, maxAttempts: 10) { ready in
+                    if !ready {
+                        print("MathHTMLRenderer: KaTeX CSS failed to load (timeout or iOS 14 compatibility issue)")
+                        // 即使 CSS 未加载，也尝试渲染（可能只是样式问题）
+                    }
+                    
                 // 获取数学公式容器的精确边界（相对于视口）
                 webView.evaluateJavaScript("""
                     (function() {
@@ -258,9 +267,13 @@ public class MathHTMLRenderer {
     }
     
     /// 构建完整的 HTML（包含 KaTeX CSS）
+    /// 优先使用本地资源，失败时自动降级到 CDN
     private func buildFullHTML(html: String, display: Bool, textColor: String, fontSize: CGFloat) -> String {
         let displayStyle = display ? "block" : "inline-block"
         let textAlign = display ? "center" : "left"
+        
+        // 使用本地资源管理器生成带降级的 CSS 链接
+        let cssLink = resourceManager.katexCSSLink()
         
         return """
         <!DOCTYPE html>
@@ -268,7 +281,7 @@ public class MathHTMLRenderer {
         <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <link rel="stylesheet" href="\(katexCSSURL)">
+            \(cssLink)
             <style>
                 * {
                     margin: 0;
@@ -391,18 +404,147 @@ public class MathHTMLRenderer {
     
     // MARK: - HTML 工具方法
     
+    /// 轮询等待 KaTeX CSS 加载完成（iOS 14 兼容性修复）
+    /// - Parameters:
+    ///   - webView: WebView 实例
+    ///   - maxAttempts: 最大尝试次数（默认 10 次，每次 0.1 秒，共 1 秒）
+    ///   - completion: 完成回调，返回是否成功加载
+    private func waitForKaTeXReady(webView: WKWebView, maxAttempts: Int, completion: @escaping (Bool) -> Void) {
+        checkKaTeXReady(webView: webView, attempt: 0, maxAttempts: maxAttempts, completion: completion)
+    }
+    
+    /// 递归检查 KaTeX CSS 是否加载完成
+    /// 核心问题分析：
+    /// 1. **字体加载延迟**：KaTeX 使用 Web 字体（KaTeX_Main, KaTeX_Math），字体未加载时尺寸基于回退字体，字体加载后尺寸会变化
+    /// 2. **渲染时序**：didFinish 触发时，JavaScript 可能还在执行，DOM 还未完全构建
+    /// 3. **布局计算**：浏览器布局引擎需要时间完成 reflow/repaint
+    /// 解决方案：等待字体加载 + 检查 DOM 完整性 + 验证布局稳定性
+    private func checkKaTeXReady(webView: WKWebView, attempt: Int, maxAttempts: Int, completion: @escaping (Bool) -> Void) {
+        guard attempt < maxAttempts else {
+            // 超时，但不阻止渲染（使用当前状态）
+            print("MathHTMLRenderer: Timeout waiting for KaTeX, proceeding with current state")
+            completion(false)
+            return
+        }
+        
+        // 综合检查：元素存在 + DOM 完整 + 字体加载 + 尺寸合理
+        webView.evaluateJavaScript("""
+            (function() {
+                // 1. 检查元素是否存在
+                const katexElement = document.querySelector('.katex') || document.querySelector('.math-container');
+                if (!katexElement) {
+                    return { ready: false, reason: 'element not found' };
+                }
+                
+                // 2. 检查 KaTeX 是否真正渲染完成（有实际的 DOM 子元素）
+                // KaTeX 渲染后会生成包含 .katex-html, .katex-mathml 等子元素的结构
+                const hasKaTeXStructure = katexElement.querySelector('.katex-html, .katex-mathml, span.katex, span.base') !== null;
+                const hasChildren = katexElement.children.length > 0;
+                
+                if (!hasKaTeXStructure && !hasChildren) {
+                    return { ready: false, reason: 'DOM not complete' };
+                }
+                
+                // 3. 检查尺寸是否合理（不是初始状态或异常值）
+                const rect = katexElement.getBoundingClientRect();
+                const hasValidDimensions = rect.width > 0 && rect.height > 0;
+                
+                if (!hasValidDimensions) {
+                    return { ready: false, reason: 'no dimensions' };
+                }
+                
+                // 4. 检查字体是否加载完成（关键：避免字体未加载导致尺寸错误）
+                // 使用 Font Loading API (document.fonts.ready)
+                if (document.fonts && document.fonts.ready) {
+                    // 检查特定 KaTeX 字体是否已加载
+                    // document.fonts.check() 同步检查字体
+                    const mainFontLoaded = document.fonts.check('1em KaTeX_Main-Regular') || 
+                                          document.fonts.check('16px KaTeX_Main');
+                    const mathFontLoaded = document.fonts.check('1em KaTeX_Math-Italic') || 
+                                          document.fonts.check('16px KaTeX_Math');
+                    
+                    // 如果字体检查失败，但尺寸合理（高度 > 12px），可能字体已加载或使用系统字体
+                    const fontsReady = mainFontLoaded || mathFontLoaded || rect.height > 12;
+                    
+                    if (!fontsReady) {
+                        return { 
+                            ready: false, 
+                            reason: 'fonts not loaded',
+                            width: Math.ceil(rect.width),
+                            height: Math.ceil(rect.height)
+                        };
+                    }
+                }
+                
+                // 5. 所有检查通过，认为就绪
+                return { 
+                    ready: true, 
+                    reason: 'fully rendered',
+                    width: Math.ceil(rect.width),
+                    height: Math.ceil(rect.height)
+                };
+            })();
+        """) { result, error in
+            if let error = error {
+                print("MathHTMLRenderer: Check ready error (attempt \(attempt + 1)/\(maxAttempts)): \(error)")
+                // 继续重试
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    self.checkKaTeXReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts, completion: completion)
+                }
+                return
+            }
+            
+            if let statusDict = result as? [String: Any],
+               let ready = statusDict["ready"] as? Bool,
+               let reason = statusDict["reason"] as? String {
+                if ready {
+                    // 就绪，但还需验证布局稳定性（延迟一小段时间后再次测量）
+                    if attempt >= 2 {
+                        // 已经检查过多次，认为稳定
+                        let width = statusDict["width"] as? CGFloat ?? 0
+                        let height = statusDict["height"] as? CGFloat ?? 0
+                        print("MathHTMLRenderer: KaTeX ready after \(attempt + 1) attempts - \(reason) (size: \(Int(width))×\(Int(height)))")
+                        completion(true)
+                    } else {
+                        // 第一次检测到就绪，等待一小段时间后再次验证（确保布局稳定）
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            self.checkKaTeXReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts, completion: completion)
+                        }
+                    }
+                } else {
+                    // 未就绪，继续等待
+                    // 根据原因调整等待时间：字体加载通常需要更长时间
+                    let delay: TimeInterval = reason.contains("fonts") ? 0.15 : 0.1
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                        self.checkKaTeXReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts, completion: completion)
+                    }
+                }
+            } else {
+                // 未知错误，继续重试
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    self.checkKaTeXReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts, completion: completion)
+                }
+            }
+        }
+    }
+    
+    // MARK: - HTML 工具方法
+    
     /// 为 HTML 内容添加 KaTeX CSS 支持
     /// 用于在 WebView 中显示包含数学公式的 HTML
     /// - Parameter html: 原始 HTML 内容
     /// - Returns: 包含 KaTeX CSS 的完整 HTML
     public static func wrapHTMLWithKaTeX(_ html: String) -> String {
+        // 使用本地资源管理器生成带降级的 CSS 链接
+        let cssLink = LocalResourceManager.shared.katexCSSLink()
+        
         return """
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <link rel="stylesheet" href="\(katexCSSURL)">
+            \(cssLink)
             <style>
                 * {
                     margin: 0;
@@ -450,6 +592,15 @@ private class MathWebViewDelegate: NSObject, WKNavigationDelegate {
         self.onFinish = onFinish
     }
     
+    // iOS 13 兼容：使用旧的方法签名
+    // 注意：在 iOS 13 中，这个方法存在但没有 preferences 参数
+    // 在 iOS 14+ 中，新方法（带 preferences）优先，但旧方法仍然可用
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        // iOS 13 中 JavaScript 通过 WKPreferences.javaScriptEnabled 控制（已在 SharedWebViewPool 中设置）
+        // 直接允许导航
+        decisionHandler(.allow)
+    }
+    
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         onFinish()
     }
@@ -463,7 +614,7 @@ private class MathWebViewDelegate: NSObject, WKNavigationDelegate {
 // MARK: - Associated Keys
 
 fileprivate struct MathAssociatedKeys {
-    static var delegate = "mathWebViewDelegate"
-    static var processing = "mathWebViewProcessing"
+    static var delegate: UInt8 = 0
+    static var processing: UInt8 = 0
 }
 

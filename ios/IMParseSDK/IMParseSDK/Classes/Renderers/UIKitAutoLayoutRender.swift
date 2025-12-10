@@ -1208,8 +1208,8 @@ public class UIKitAutoLayoutRender {
             }
         }
         
-        // 检查是否包含行内特殊节点（mention、emoji）
-        let hasInlineSpecialNodes = nodes.contains { wrapper in
+        // 检查是否包含行内特殊节点（mention、emoji）- 当前未使用，但保留用于未来扩展
+        let _ = nodes.contains { wrapper in
             switch wrapper {
             case .mention, .emoji:
                 return true
@@ -1273,31 +1273,24 @@ public class UIKitAutoLayoutRender {
             // 使用包含 mention 和 emoji 的 NSAttributedString
             let attributedString = buildAttributedStringWithInlineNodes(from: nodes, context: context)
             
-            // 检查是否包含链接、mention 或 emoji attachment
-            var hasLink = false
-            var hasMention = false
-            var hasEmoji = false
-            
-            attributedString.enumerateAttribute(.link, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
+            // 检查是否包含链接、mention 或 emoji attachment（用于调试，但当前未使用）
+            let _ = attributedString.enumerateAttribute(.link, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
                 if value != nil {
-                    hasLink = true
                     stop.pointee = true
                 }
             }
             
-            attributedString.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attributedString.length), options: []) { value, range, stop in
+            let _ = attributedString.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attributedString.length), options: []) { value, range, stop in
                 if let color = value as? UIColor, color == context.theme.mentionTextColor {
                     let text = attributedString.attributedSubstring(from: range).string
                     if text.hasPrefix("@") {
-                        hasMention = true
                         stop.pointee = true
                     }
                 }
             }
             
-            attributedString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
+            let _ = attributedString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
                 if value is EmojiTextAttachment {
-                    hasEmoji = true
                     stop.pointee = true
                 }
             }

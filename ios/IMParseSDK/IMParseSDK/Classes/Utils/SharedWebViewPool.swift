@@ -51,8 +51,40 @@ class SharedWebViewPool {
         } else {
             // 创建新的 WebView（必须在主线程）
             let config = WKWebViewConfiguration()
+            
+            // 配置 WKPreferences
+            // iOS 14+ 中 javaScriptEnabled 已弃用，默认启用且通过 WKWebpagePreferences 控制
+            // iOS 13 及以下需要使用 javaScriptEnabled
+            let preferences = WKPreferences()
+            if #available(iOS 14.0, *) {
+                // iOS 14+ 默认启用 JavaScript，无需设置
+                // 如果需要禁用，可以通过 WKNavigationDelegate 的 decidePolicyFor 方法
+                // 使用 WKWebpagePreferences.allowsContentJavaScript 来控制
+            } else {
+                // iOS 13 及以下，显式启用 JavaScript
+                preferences.javaScriptEnabled = true
+            }
+            config.preferences = preferences
+            
+            // 允许内联播放和压缩增量渲染
             config.suppressesIncrementalRendering = true
             config.allowsInlineMediaPlayback = true
+            
+            // 配置 WebsiteDataStore（允许加载远程资源）
+            // 使用默认的 dataStore 确保能访问网络
+            config.websiteDataStore = WKWebsiteDataStore.default()
+            
+            // iOS 10+ 支持媒体类型
+            if #available(iOS 10.0, *) {
+                config.mediaTypesRequiringUserActionForPlayback = []
+            }
+            
+            // iOS 11+ 注册自定义 Scheme Handler（本地资源加载）
+            if #available(iOS 11.0, *) {
+                let schemeHandler = LocalResourceSchemeHandler()
+                config.setURLSchemeHandler(schemeHandler, forURLScheme: LocalResourceManager.customScheme)
+                print("SharedWebViewPool: Registered custom scheme handler for '\(LocalResourceManager.customScheme)'")
+            }
             
             let webView = WKWebView(frame: .zero, configuration: config)
             webView.isOpaque = false

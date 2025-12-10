@@ -605,7 +605,16 @@ extension UIKitFrameMessageListViewController: UIKitFormulaSizeCacheDelegate {
         ImageCache.default.store(image, forKey: cacheKey, toDisk: true)
     }
     
-    /// 从 Kingfisher 缓存获取公式图片
+    /// 获取缓存的公式图片（同步方法，用于协议实现）
+    /// - Parameter key: 缓存键（公式或Mermaid的内容字符串）
+    /// - Returns: 缓存的图片，如果不存在则返回nil
+    func getFormulaImage(for key: String) -> UIImage? {
+        let cacheKey = generateCacheKey(for: key)
+        // 从 Kingfisher 内存缓存中同步读取图片
+        return ImageCache.default.retrieveImageInMemoryCache(forKey: cacheKey)
+    }
+    
+    /// 从 Kingfisher 缓存获取公式图片（异步方法，用于内部调用）
     /// - Parameters:
     ///   - key: 缓存键
     ///   - completion: 完成回调，返回缓存的图片

@@ -495,7 +495,6 @@ public class UIKitFrameRender {
         containerView.frame = CGRect(origin: .zero, size: layout.frame.size)
         
         // 列表项通过 children 渲染（每个列表项包含 marker 和 content）
-        var currentY: CGFloat = 0
         var itemIndex = 0
         
         // children 是成对出现的：marker 和 content
