@@ -679,23 +679,66 @@ public class UIKitFrameRender {
         containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
         containerView.clipsToBounds = true
         
+        let cacheKey = "math:\(node.content):\(node.display)"
+        
+        // 先尝试从缓存获取图片
+        if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey) {
+            // 缓存命中，直接使用缓存的图片
+            let imageView = UIImageView()
+            imageView.image = cachedImage
+            imageView.contentMode = .scaleAspectFit
+            imageView.frame = CGRect(
+                x: 4,
+                y: 4,
+                width: frame.size.width - 8,
+                height: frame.size.height - 8
+            )
+            containerView.addSubview(imageView)
+            
+            // 添加点击手势
+            if let onMathTap = context.onMathTap {
+                containerView.addTapAction {
+                    onMathTap(node)
+                }
+            }
+            
+            return containerView
+        }
+        
         let result = IMParseCore.mathToHTML(node.content, display: node.display)
         
         guard result.success, let html = result.astJSON else {
-            // 渲染失败时，像代码块一样展示原始内容
+            // 语法错误时，显示错误信息
             let padding = context.theme.codeBlockPadding
-            let label = UILabel()
-            label.text = node.content
-            label.font = context.theme.codeFont
-            label.textColor = context.theme.codeTextColor
-            label.numberOfLines = 0
-            label.frame = CGRect(
+            
+            // 错误提示标签
+            let errorLabel = UILabel()
+            errorLabel.text = "数学公式语法错误"
+            errorLabel.font = UIFont.systemFont(ofSize: 12, weight: .medium)
+            errorLabel.textColor = .systemRed
+            errorLabel.numberOfLines = 1
+            errorLabel.frame = CGRect(
                 x: padding,
                 y: padding,
                 width: frame.size.width - padding * 2,
-                height: frame.size.height - padding * 2
+                height: 16
             )
-            containerView.addSubview(label)
+            containerView.addSubview(errorLabel)
+            
+            // 原始内容标签
+            let contentLabel = UILabel()
+            contentLabel.text = node.content
+            contentLabel.font = context.theme.codeFont
+            contentLabel.textColor = context.theme.codeTextColor.withAlphaComponent(0.6)
+            contentLabel.numberOfLines = 0
+            contentLabel.frame = CGRect(
+                x: padding,
+                y: padding + 20,
+                width: frame.size.width - padding * 2,
+                height: max(frame.size.height - padding * 2 - 20, 0)
+            )
+            containerView.addSubview(contentLabel)
+            
             return containerView
         }
         
@@ -736,7 +779,6 @@ public class UIKitFrameRender {
         }
         
         let fontSize = node.display ? 16.0 : 14.0
-        let cacheKey = "math:\(node.content):\(node.display)"
         
         MathHTMLRenderer.shared.render(
             html: html,
@@ -806,6 +848,87 @@ public class UIKitFrameRender {
         containerView.clipsToBounds = true
         
         let padding = context.theme.codeBlockPadding
+        let cacheKey = "mermaid:\(node.content)"
+        
+        // 先尝试从缓存获取图片
+        if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey) {
+            // 缓存命中，直接使用缓存的图片
+            let imageView = UIImageView()
+            imageView.image = cachedImage
+            imageView.contentMode = .scaleAspectFit
+            imageView.frame = CGRect(
+                x: padding,
+                y: padding,
+                width: frame.size.width - padding * 2,
+                height: frame.size.height - padding * 2
+            )
+            containerView.addSubview(imageView)
+            
+            // 添加点击手势
+            if let onMermaidTap = context.onMermaidTap {
+                containerView.addTapAction {
+                    onMermaidTap(node)
+                }
+            }
+            
+            return containerView
+        }
+        
+        // 先验证语法
+        let textColor = context.theme.textColor
+        let backgroundColor = context.theme.codeBackgroundColor
+        
+        let textComponents = textColor.cgColor.components ?? [0, 0, 0, 1]
+        let textColorHex = String(format: "#%02X%02X%02X",
+                                  Int(textComponents[0] * 255),
+                                  Int(textComponents[1] * 255),
+                                  Int(textComponents[2] * 255)
+        )
+        
+        let bgComponents = backgroundColor.cgColor.components ?? [1, 1, 1, 1]
+        let backgroundColorHex = String(format: "#%02X%02X%02X",
+                                        Int(bgComponents[0] * 255),
+                                        Int(bgComponents[1] * 255),
+                                        Int(bgComponents[2] * 255)
+        )
+        
+        let validationResult = IMParseCore.mermaidToHTML(node.content, textColor: textColorHex, backgroundColor: backgroundColorHex)
+        
+        guard validationResult.success else {
+            // 语法错误时，显示错误信息
+            
+            // 错误提示标签
+            let errorLabel = UILabel()
+            errorLabel.text = "Mermaid 语法错误"
+            errorLabel.font = UIFont.systemFont(ofSize: 12, weight: .medium)
+            errorLabel.textColor = .systemRed
+            errorLabel.numberOfLines = 1
+            errorLabel.frame = CGRect(
+                x: padding,
+                y: padding,
+                width: frame.size.width - padding * 2,
+                height: 16
+            )
+            containerView.addSubview(errorLabel)
+            
+            // 原始内容标签
+            let contentLabel = UILabel()
+            contentLabel.text = node.content
+            contentLabel.font = context.theme.codeFont
+            contentLabel.textColor = context.theme.codeTextColor.withAlphaComponent(0.6)
+            contentLabel.numberOfLines = 0
+            contentLabel.frame = CGRect(
+                x: padding,
+                y: padding + 20,
+                width: frame.size.width - padding * 2,
+                height: max(frame.size.height - padding * 2 - 20, 0)
+            )
+            containerView.addSubview(contentLabel)
+            
+            return containerView
+        }
+        
+        // 语法正确，继续渲染
         let imageView = UIImageView()
         imageView.contentMode = .scaleAspectFit
         imageView.frame = CGRect(
@@ -833,25 +956,6 @@ public class UIKitFrameRender {
                 onMermaidTap(node)
             }
         }
-        
-        let textColor = context.theme.textColor
-        let backgroundColor = context.theme.codeBackgroundColor
-        
-        let textComponents = textColor.cgColor.components ?? [0, 0, 0, 1]
-        let textColorHex = String(format: "#%02X%02X%02X",
-                                  Int(textComponents[0] * 255),
-                                  Int(textComponents[1] * 255),
-                                  Int(textComponents[2] * 255)
-        )
-        
-        let bgComponents = backgroundColor.cgColor.components ?? [1, 1, 1, 1]
-        let backgroundColorHex = String(format: "#%02X%02X%02X",
-                                        Int(bgComponents[0] * 255),
-                                        Int(bgComponents[1] * 255),
-                                        Int(bgComponents[2] * 255)
-        )
-        
-        let cacheKey = "mermaid:\(node.content)"
         
         MermaidHTMLRenderer.shared.render(
             mermaidCode: node.content,

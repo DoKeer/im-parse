@@ -436,6 +436,8 @@ public class UIKitFrameAsyncCalculator {
     /// 估算数学公式的尺寸
     /// 根据 MathHTMLRenderer 的处理逻辑，尝试获取更精确的尺寸
     private static func estimateMathSize(node: MathNode, context: UIKitRenderContext, width: CGFloat) -> CGSize {
+        let padding = context.theme.codeBlockPadding
+        
         // 生成缓存键（使用内容字符串作为key）
         let cacheKey = "math:\(node.content):\(node.display)"
         
@@ -443,7 +445,6 @@ public class UIKitFrameAsyncCalculator {
         if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey) {
             // 如果缓存中有尺寸，使用缓存的尺寸
             // 注意：缓存的尺寸可能是图片的实际尺寸，需要加上padding
-            let padding = context.theme.codeBlockPadding
             let totalHeight = cachedSize.height + padding * 2
             // 宽度使用传入的width（限制最大宽度）
             return CGSize(width: width, height: totalHeight)
@@ -453,8 +454,8 @@ public class UIKitFrameAsyncCalculator {
         let result = IMParseCore.mathToHTML(node.content, display: node.display)
         
         guard result.success, let _ = result.astJSON else {
-            // 如果获取 HTML 失败，像代码块一样计算高度（基于文本内容）
-            let padding = context.theme.codeBlockPadding
+            // 语法错误时，显示错误信息的高度
+            // 错误提示行（16px）+ 间距（4px）+ 原始内容高度
             let contentWidth = width - padding * 2
             
             let font = context.theme.codeFont
@@ -466,8 +467,11 @@ public class UIKitFrameAsyncCalculator {
                 context: nil
             ).size
             
-            let height = ceil(size.height) + padding * 2
-            return CGSize(width: width, height: height)
+            let contentHeight = ceil(size.height)
+            let errorLabelHeight: CGFloat = 16
+            let spacing: CGFloat = 4
+            let totalHeight = padding + errorLabelHeight + spacing + contentHeight + padding
+            return CGSize(width: width, height: totalHeight)
         }
         
         // 根据 HTML 内容和 display 模式估算尺寸
@@ -527,7 +531,8 @@ public class UIKitFrameAsyncCalculator {
         let result = IMParseCore.mermaidToHTML(node.content, textColor: textColorHex, backgroundColor: backgroundColorHex)
         
         guard result.success else {
-            // 如果获取 HTML 失败，像代码块一样计算高度（基于文本内容）
+            // 语法错误时，显示错误信息的高度
+            // 错误提示行（16px）+ 间距（4px）+ 原始内容高度
             let contentWidth = width - padding * 2
             
             let font = context.theme.codeFont
@@ -539,8 +544,11 @@ public class UIKitFrameAsyncCalculator {
                 context: nil
             ).size
             
-            let height = ceil(size.height) + padding * 2
-            return CGSize(width: width, height: height)
+            let contentHeight = ceil(size.height)
+            let errorLabelHeight: CGFloat = 16
+            let spacing: CGFloat = 4
+            let totalHeight = padding + errorLabelHeight + spacing + contentHeight + padding
+            return CGSize(width: width, height: totalHeight)
         }
         
         // 根据 Mermaid 代码长度和类型估算尺寸

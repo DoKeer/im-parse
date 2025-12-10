@@ -69,7 +69,17 @@ public class MathHTMLRenderer {
                 return
             }
             
-            // 缓存未命中，进行渲染（必须在主线程）
+            // 缓存未命中，验证 HTML 是否有效（检查是否包含 KaTeX 相关类）
+            if html.isEmpty || (!html.contains("katex") && !html.contains("math-container")) {
+                // HTML 无效或不包含数学公式内容
+                print("MathHTMLRenderer: Invalid HTML content")
+                DispatchQueue.main.async {
+                    completion(nil)
+                }
+                return
+            }
+            
+            // HTML 有效，进行渲染（必须在主线程）
             DispatchQueue.main.async {
                 self?.renderHTML(
                     html: html,

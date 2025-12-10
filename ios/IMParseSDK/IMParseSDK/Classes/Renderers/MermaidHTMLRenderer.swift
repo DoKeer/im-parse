@@ -63,7 +63,19 @@ class MermaidHTMLRenderer {
                 return
             }
             
-            // 缓存未命中，进行渲染（必须在主线程）
+            // 缓存未命中，先验证语法
+            let result = IMParseCore.mermaidToHTML(mermaidCode, textColor: textColor, backgroundColor: backgroundColor)
+            
+            guard result.success, let _ = result.astJSON else {
+                // 语法错误或生成失败，直接返回 nil
+                print("MermaidHTMLRenderer: Syntax error or generation failed: \(result.error?.message ?? "Unknown error")")
+                DispatchQueue.main.async {
+                    completion(nil)
+                }
+                return
+            }
+            
+            // 语法正确，进行渲染（必须在主线程）
             DispatchQueue.main.async {
                 self?.renderMermaid(
                     mermaidCode: mermaidCode,

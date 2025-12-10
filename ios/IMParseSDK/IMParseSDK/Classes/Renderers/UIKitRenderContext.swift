@@ -30,7 +30,12 @@ public protocol UIKitFormulaSizeCacheDelegate: AnyObject {
     ///   - key: 缓存键（公式或Mermaid的内容字符串）
     func setCachedSize(_ size: CGSize, for key: String)
     
-    /// 保存公式图片到缓存（可选实现）
+    /// 获取缓存的公式图片
+    /// - Parameter key: 缓存键（公式或Mermaid的内容字符串）
+    /// - Returns: 缓存的图片，如果不存在则返回nil
+    func getFormulaImage(for key: String) -> UIImage?
+    
+    /// 保存公式图片到缓存
     /// - Parameters:
     ///   - image: 要缓存的图片
     ///   - key: 缓存键（公式或Mermaid的内容字符串）
