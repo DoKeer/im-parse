@@ -88,7 +88,21 @@ class AndroidViewRenderer {
         val textView = TextView(context.context)
         textView.textSize = context.theme.fontSize
         textView.setTextColor(context.theme.textColor)
-        textView.lineHeight = (context.theme.fontSize * context.theme.lineHeight).toInt()
+        // 设置行高，确保换行时有足够的间距
+        // lineHeight 需要是像素值，fontSize 已经是 sp 单位，需要转换为 px
+        val fontSizePx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP,
+            context.theme.fontSize,
+            textView.context.resources.displayMetrics
+        )
+        val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
+        textView.lineHeight = lineHeightPx
+        // 设置额外的行间距，避免换行时拥挤
+        val extraSpacing = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, 2f,
+            textView.context.resources.displayMetrics
+        )
+        textView.setLineSpacing(extraSpacing, 1.0f)
         
         val spannable = SpannableStringBuilder()
         for (child in node.children) {
@@ -124,6 +138,23 @@ class AndroidViewRenderer {
                 context.theme.textColor
             }
         )
+        // 设置行高，确保换行时有足够的间距
+        // lineHeight 需要是像素值，fontSize 已经是 sp 单位，需要转换为 px
+        val fontSizePx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP,
+            fontSize,
+            textView.context.resources.displayMetrics
+        )
+        val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
+        textView.lineHeight = lineHeightPx
+        // 设置额外的行间距，避免换行时拥挤
+        // 标题需要更大的行间距，根据字体大小调整
+        val extraSpacing = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, 
+            if (level == 1) 4f else if (level == 2) 3f else 2f,
+            textView.context.resources.displayMetrics
+        )
+        textView.setLineSpacing(extraSpacing, 1.0f)
         
         val spannable = SpannableStringBuilder()
         for (child in node.children) {
@@ -413,7 +444,15 @@ class AndroidViewRenderer {
         
         for (child in node.children) {
             val childView = renderNode(child, context)
-            contentContainer.addView(childView)
+            val params = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            // 为段落等块级元素添加底部间距，避免换行时拥挤
+            if (child is ParagraphNode || child is HeadingNode) {
+                params.bottomMargin = (context.theme.paragraphSpacing * 0.5f).toInt()
+            }
+            contentContainer.addView(childView, params)
         }
         
         row.addView(contentContainer, LinearLayout.LayoutParams(
@@ -545,30 +584,361 @@ class AndroidViewRenderer {
      * 渲染数学公式
      */
     private fun renderMath(node: MathNode, context: AndroidRenderContext): View {
-        // 使用 WebView 渲染 HTML（简化处理）
-        val webView = android.webkit.WebView(context.context)
-        val html = "<html><head><link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.css\"></head><body>$$${node.content}$$</body></html>"
-        webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
-        webView.layoutParams = ViewGroup.LayoutParams(
+        val containerView = android.widget.FrameLayout(context.context)
+        containerView.setBackgroundColor(context.theme.codeBackgroundColor)
+        containerView.setPadding(context.theme.codeBlockPadding)
+        
+        // 设置圆角
+        val radius = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            context.theme.codeBlockBorderRadius.toFloat(),
+            context.context.resources.displayMetrics
+        )
+        containerView.background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(context.theme.codeBackgroundColor)
+            cornerRadius = radius
+        }
+        
+        val cacheKey = "math:${node.content}:${node.display}"
+        
+        // 先尝试从缓存获取图片
+        val cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(cacheKey)
+        if (cachedImage != null) {
+            // 缓存命中，直接使用缓存的图片
+            val imageView = android.widget.ImageView(context.context)
+            imageView.setImageBitmap(cachedImage)
+            imageView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            imageView.adjustViewBounds = true
+            val params = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            params.setMargins(4, 4, 4, 4)
+            containerView.addView(imageView, params)
+            
+            // 添加点击手势
+            if (context.onMathTap != null) {
+                containerView.setOnClickListener {
+                    context.onMathTap?.invoke(node)
+                }
+            }
+            
+            return containerView
+        }
+        
+        // 验证语法
+        val result = com.imparse.core.IMParseCore.mathToHTMLResult(node.content, node.display)
+        
+        if (!result.success || result.astJSON == null) {
+            // 语法错误时，显示错误信息
+            val padding = context.theme.codeBlockPadding
+            
+            // 错误提示标签
+            val errorLabel = TextView(context.context)
+            errorLabel.text = "数学公式语法错误"
+            errorLabel.textSize = 12f
+            errorLabel.setTextColor(android.graphics.Color.RED)
+            errorLabel.setTypeface(null, android.graphics.Typeface.BOLD)
+            errorLabel.maxLines = 1
+            val errorParams = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            errorParams.setMargins(padding, padding, padding, 0)
+            containerView.addView(errorLabel, errorParams)
+            
+            // 原始内容标签
+            val contentLabel = TextView(context.context)
+            contentLabel.text = node.content
+            contentLabel.textSize = context.theme.codeFontSize
+            contentLabel.setTextColor(context.theme.codeTextColor)
+            contentLabel.alpha = 0.6f
+            contentLabel.maxLines = Int.MAX_VALUE
+            val contentParams = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            contentParams.setMargins(padding, padding + 20, padding, padding)
+            containerView.addView(contentLabel, contentParams)
+            
+            return containerView
+        }
+        
+        // 转换颜色为十六进制
+        val textColor = context.theme.textColor
+        val colorHex = String.format(
+            "#%02X%02X%02X",
+            android.graphics.Color.red(textColor),
+            android.graphics.Color.green(textColor),
+            android.graphics.Color.blue(textColor)
+        )
+        
+        val imageView = android.widget.ImageView(context.context)
+        imageView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+        imageView.adjustViewBounds = true
+        val imageParams = android.widget.FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
-        return webView
+        imageParams.setMargins(4, 4, 4, 4)
+        containerView.addView(imageView, imageParams)
+        
+        val progressBar = android.widget.ProgressBar(context.context)
+        progressBar.layoutParams = android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = android.view.Gravity.CENTER
+        }
+        containerView.addView(progressBar)
+        
+        // 添加点击手势
+        if (context.onMathTap != null) {
+            containerView.setOnClickListener {
+                context.onMathTap?.invoke(node)
+            }
+        }
+        
+        val fontSize = if (node.display) 16f else 14f
+        
+        // 使用 MathHTMLRenderer 渲染
+        AndroidMathHTMLRenderer.getInstance().render(
+            context = context.context,
+            html = result.astJSON!!,
+            display = node.display,
+            textColor = colorHex,
+            fontSize = fontSize
+        ) { image ->
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                progressBar.visibility = View.GONE
+                
+                if (image != null) {
+                    imageView.setImageBitmap(image)
+                    
+                    // 保存图片到缓存
+                    context.formulaSizeCacheDelegate?.saveFormulaImage(image, cacheKey)
+                    
+                    // 获取图片的实际尺寸
+                    val imageSize = android.graphics.PointF(image.width.toFloat(), image.height.toFloat())
+                    
+                    // 保存尺寸到缓存
+                    context.formulaSizeCacheDelegate?.setCachedSize(imageSize, cacheKey)
+                    
+                    // 计算实际需要的总高度（图片高度 + padding）
+                    val padding = context.theme.codeBlockPadding
+                    val actualHeight = imageSize.y + padding * 2
+                    
+                    // 如果实际高度与当前高度不同，触发高度刷新回调
+                    val currentHeight = containerView.height.toFloat()
+                    if (kotlin.math.abs(actualHeight - currentHeight) > 1.0f) {
+                        context.onLayoutHeightChanged?.invoke(actualHeight)
+                    }
+                } else {
+                    // 渲染失败时，像代码块一样展示原始内容
+                    imageView.visibility = View.GONE
+                    
+                    val label = TextView(context.context)
+                    label.text = node.content
+                    label.textSize = context.theme.codeFontSize
+                    label.setTextColor(context.theme.codeTextColor)
+                    label.maxLines = Int.MAX_VALUE
+                    val padding = context.theme.codeBlockPadding
+                    val labelParams = android.widget.FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    )
+                    labelParams.setMargins(padding, padding, padding, padding)
+                    containerView.addView(label, labelParams)
+                }
+            }
+        }
+        
+        return containerView
     }
     
     /**
      * 渲染 Mermaid 图表
      */
     private fun renderMermaid(node: MermaidNode, context: AndroidRenderContext): View {
-        // 使用 WebView 渲染（简化处理）
-        val webView = android.webkit.WebView(context.context)
-        val html = "<html><head><script src=\"https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js\"></script></head><body><div class=\"mermaid\">${node.content}</div><script>mermaid.initialize({startOnLoad:true});</script></body></html>"
-        webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
-        webView.layoutParams = ViewGroup.LayoutParams(
+        val containerView = android.widget.FrameLayout(context.context)
+        containerView.setBackgroundColor(context.theme.codeBackgroundColor)
+        containerView.setPadding(context.theme.codeBlockPadding)
+        
+        // 设置圆角
+        val radius = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            context.theme.codeBlockBorderRadius.toFloat(),
+            context.context.resources.displayMetrics
+        )
+        containerView.background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(context.theme.codeBackgroundColor)
+            cornerRadius = radius
+        }
+        
+        val padding = context.theme.codeBlockPadding
+        val cacheKey = "mermaid:${node.content}"
+        
+        // 先尝试从缓存获取图片
+        val cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(cacheKey)
+        if (cachedImage != null) {
+            // 缓存命中，直接使用缓存的图片
+            val imageView = android.widget.ImageView(context.context)
+            imageView.setImageBitmap(cachedImage)
+            imageView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            imageView.adjustViewBounds = true
+            val params = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            params.setMargins(padding, padding, padding, padding)
+            containerView.addView(imageView, params)
+            
+            // 添加点击手势
+            if (context.onMermaidTap != null) {
+                containerView.setOnClickListener {
+                    context.onMermaidTap?.invoke(node)
+                }
+            }
+            
+            return containerView
+        }
+        
+        // 先验证语法
+        val textColor = context.theme.textColor
+        val backgroundColor = context.theme.codeBackgroundColor
+        
+        val textColorHex = String.format(
+            "#%02X%02X%02X",
+            android.graphics.Color.red(textColor),
+            android.graphics.Color.green(textColor),
+            android.graphics.Color.blue(textColor)
+        )
+        
+        val backgroundColorHex = String.format(
+            "#%02X%02X%02X",
+            android.graphics.Color.red(backgroundColor),
+            android.graphics.Color.green(backgroundColor),
+            android.graphics.Color.blue(backgroundColor)
+        )
+        
+        val validationResult = com.imparse.core.IMParseCore.mermaidToHTMLResult(
+            node.content,
+            textColorHex,
+            backgroundColorHex
+        )
+        
+        if (!validationResult.success) {
+            // 语法错误时，显示错误信息
+            
+            // 错误提示标签
+            val errorLabel = TextView(context.context)
+            errorLabel.text = "Mermaid 语法错误"
+            errorLabel.textSize = 12f
+            errorLabel.setTextColor(android.graphics.Color.RED)
+            errorLabel.setTypeface(null, android.graphics.Typeface.BOLD)
+            errorLabel.maxLines = 1
+            val errorParams = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            errorParams.setMargins(padding, padding, padding, 0)
+            containerView.addView(errorLabel, errorParams)
+            
+            // 原始内容标签
+            val contentLabel = TextView(context.context)
+            contentLabel.text = node.content
+            contentLabel.textSize = context.theme.codeFontSize
+            contentLabel.setTextColor(context.theme.codeTextColor)
+            contentLabel.alpha = 0.6f
+            contentLabel.maxLines = Int.MAX_VALUE
+            val contentParams = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            contentParams.setMargins(padding, padding + 20, padding, padding)
+            containerView.addView(contentLabel, contentParams)
+            
+            return containerView
+        }
+        
+        // 语法正确，继续渲染
+        val imageView = android.widget.ImageView(context.context)
+        imageView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+        imageView.adjustViewBounds = true
+        val imageParams = android.widget.FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
-        return webView
+        imageParams.setMargins(padding, padding, padding, padding)
+        containerView.addView(imageView, imageParams)
+        
+        val progressBar = android.widget.ProgressBar(context.context)
+        progressBar.layoutParams = android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = android.view.Gravity.CENTER
+        }
+        containerView.addView(progressBar)
+        
+        // 添加点击手势
+        if (context.onMermaidTap != null) {
+            containerView.setOnClickListener {
+                context.onMermaidTap?.invoke(node)
+            }
+        }
+        
+        // 使用 MermaidHTMLRenderer 渲染
+        AndroidMermaidHTMLRenderer.getInstance().render(
+            context = context.context,
+            mermaidCode = node.content,
+            textColor = textColorHex,
+            backgroundColor = backgroundColorHex
+        ) { image ->
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                progressBar.visibility = View.GONE
+                
+                if (image != null) {
+                    imageView.setImageBitmap(image)
+                    
+                    // 保存图片到缓存
+                    context.formulaSizeCacheDelegate?.saveFormulaImage(image, cacheKey)
+                    
+                    // 获取图片的实际尺寸
+                    val imageSize = android.graphics.PointF(image.width.toFloat(), image.height.toFloat())
+                    
+                    // 保存尺寸到缓存
+                    context.formulaSizeCacheDelegate?.setCachedSize(imageSize, cacheKey)
+                    
+                    // 计算实际需要的总高度（图片高度 + padding）
+                    val padding = context.theme.codeBlockPadding
+                    val actualHeight = imageSize.y + padding * 2
+                    
+                    // 如果实际高度与当前高度不同，触发高度刷新回调
+                    val currentHeight = containerView.height.toFloat()
+                    if (kotlin.math.abs(actualHeight - currentHeight) > 1.0f) {
+                        context.onLayoutHeightChanged?.invoke(actualHeight)
+                    }
+                } else {
+                    // 渲染失败时，像代码块一样展示原始内容
+                    imageView.visibility = View.GONE
+                    
+                    val label = TextView(context.context)
+                    label.text = node.content
+                    label.textSize = context.theme.codeFontSize
+                    label.setTextColor(context.theme.codeTextColor)
+                    label.maxLines = Int.MAX_VALUE
+                    val labelParams = android.widget.FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    )
+                    labelParams.setMargins(padding, padding, padding, padding)
+                    containerView.addView(label, labelParams)
+                }
+            }
+        }
+        
+        return containerView
     }
     
     /**

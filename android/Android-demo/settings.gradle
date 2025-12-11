@@ -11,11 +11,19 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // 本地 AAR 仓库（用于 IMParseSDK AAR 依赖）
+        flatDir {
+            dirs 'app/libs'
+        }
     }
 }
 
 rootProject.name = "Android-demo"
 include ':app'
+// 使用 AAR 依赖，不需要模块依赖
+// include ':IMParseSDK'
+// project(':IMParseSDK').projectDir = new File('../IMParseSDK')
+
+
 include ':IMParseSDK'
 project(':IMParseSDK').projectDir = new File('../IMParseSDK')
-

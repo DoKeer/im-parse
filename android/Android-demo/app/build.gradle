@@ -15,6 +15,11 @@ android {
         versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        
+        // 指定支持的架构
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
+        }
     }
 
     buildTypes {
@@ -23,17 +28,15 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
-            // 禁用调试构建的符号剥离以保留JNI符号
             jniDebuggable true
         }
     }
     
-    // 禁止剥离 native 库符号（保留 JNI 符号）
+    // 确保 .so 文件不被剥离
     packaging {
         jniLibs {
-            keepDebugSymbols += ['**/*.so']
+            useLegacyPackaging = true
         }
-        doNotStrip '**/*.so'
     }
     
     compileOptions {
@@ -50,15 +53,9 @@ android {
     }
 }
 
-// 禁用符号剥离任务以保留 JNI 符号
-tasks.whenTaskAdded { task ->
-    if (task.name.contains("stripDebugDebugSymbols") || task.name.contains("stripReleaseDebugSymbols")) {
-        task.enabled = false
-    }
-}
-
 dependencies {
-    implementation project(':IMParseSDK')
+    // 使用本地 AAR 文件依赖
+    implementation(name: 'IMParseSDK-debug', ext: 'aar')
     
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
@@ -77,4 +74,3 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }
-

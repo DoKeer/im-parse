@@ -1,13 +1,16 @@
 package com.imparse.renderers
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
 import android.text.TextPaint
 import android.view.View
 import com.imparse.models.ASTNode
 import com.imparse.models.ImageNode
+import com.imparse.models.MathNode
 import com.imparse.models.MentionNode
+import com.imparse.models.MermaidNode
 
 /**
  * Android 渲染上下文
@@ -19,13 +22,44 @@ data class AndroidRenderContext(
     val onLinkTap: ((String) -> Unit)? = null,
     val onImageTap: ((ImageNode) -> Unit)? = null,
     val onMentionTap: ((MentionNode) -> Unit)? = null,
-    val imageLoader: ImageLoader? = null
+    val onCodeBlockTap: ((com.imparse.models.CodeBlockNode) -> Unit)? = null,
+    val onMathTap: ((MathNode) -> Unit)? = null,
+    val onMermaidTap: ((MermaidNode) -> Unit)? = null,
+    val imageLoader: ImageLoader? = null,
+    val formulaSizeCacheDelegate: FormulaSizeCacheDelegate? = null,
+    val onLayoutHeightChanged: ((Float) -> Unit)? = null
 ) {
     /**
      * 图片加载器接口
      */
     interface ImageLoader {
         fun loadImage(url: String, imageView: android.widget.ImageView, callback: (Boolean) -> Unit)
+    }
+    
+    /**
+     * 公式尺寸缓存代理
+     * 用于缓存数学公式和 Mermaid 图表的渲染结果和尺寸
+     */
+    interface FormulaSizeCacheDelegate {
+        /**
+         * 获取缓存的公式图片
+         */
+        fun getFormulaImage(cacheKey: String): Bitmap?
+        
+        /**
+         * 保存公式图片到缓存
+         */
+        fun saveFormulaImage(image: Bitmap, cacheKey: String)
+        
+        /**
+         * 获取缓存的尺寸
+         */
+        fun getCachedSize(cacheKey: String): android.graphics.PointF?
+        
+        /**
+         * 保存尺寸到缓存
+         */
+        fun setCachedSize(size: android.graphics.PointF, cacheKey: String)
     }
 }
 

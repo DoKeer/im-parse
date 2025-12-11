@@ -11,7 +11,8 @@ set +e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 RUST_CORE_DIR="$PROJECT_ROOT/rust-core"
-SDK_LIB_DIR="$SCRIPT_DIR/IMParseSDK/src/main/jniLibs.backup"
+SDK_MAIN_LIB_DIR="$SCRIPT_DIR/IMParseSDK/src/main/jniLibs"
+SDK_BACKUP_LIB_DIR="$SCRIPT_DIR/IMParseSDK/src/main/jniLibs.backup"
 BUILD_DIR="$SCRIPT_DIR/build"
 HEADER_OUTPUT_DIR="$SCRIPT_DIR/IMParseSDK/src/main/cpp"
 HEADER_FILE="$HEADER_OUTPUT_DIR/im_parse_core.h"
@@ -23,7 +24,8 @@ cd "$RUST_CORE_DIR"
 # 清理之前的构建
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
-mkdir -p "$SDK_LIB_DIR"
+mkdir -p "$SDK_MAIN_LIB_DIR"
+mkdir -p "$SDK_BACKUP_LIB_DIR"
 mkdir -p "$HEADER_OUTPUT_DIR"
 
 # 检查并安装 cbindgen（如果未安装）
@@ -79,8 +81,6 @@ fi
 ANDROID_TARGETS=(
     "aarch64-linux-android"      # arm64-v8a
     "armv7-linux-androideabi"    # armeabi-v7a
-    "i686-linux-android"         # x86
-    "x86_64-linux-android"       # x86_64
 )
 
 # 架构映射函数（兼容旧版 bash）
@@ -271,11 +271,12 @@ EOF
         
         JNI_LIB_PATH="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/$(uname -s | tr '[:upper:]' '[:lower:]')-x86_64/sysroot/usr/lib/$JNI_LIB_ARCH/$NDK_API_LEVEL"
         
+        # NDK 不再提供独立的 libjni.so，JNI 符号由 libandroid 加载，去掉 -ljni 避免找不到库
         if [ -n "$CARGO_NDK_CMD" ]; then
-            RUSTFLAGS="-C link-arg=-Wl,-soname,libim_parse_core.so -C link-arg=-L$JNI_LIB_PATH -C link-arg=-ljni" \
+            RUSTFLAGS="-C link-arg=-Wl,-soname,libim_parse_core.so -C link-arg=-L$JNI_LIB_PATH" \
             "$CARGO_NDK_CMD" --target "$target" --android-platform "$NDK_API_LEVEL" build --release --features jni
         else
-            RUSTFLAGS="-C link-arg=-Wl,-soname,libim_parse_core.so -C link-arg=-L$JNI_LIB_PATH -C link-arg=-ljni" \
+            RUSTFLAGS="-C link-arg=-Wl,-soname,libim_parse_core.so -C link-arg=-L$JNI_LIB_PATH" \
             cargo build --release --target "$target" --features jni
         fi
     elif [ -n "$CARGO_NDK_CMD" ]; then
@@ -345,13 +346,16 @@ EOF
         fi
     fi
     
-    # 复制 .so 文件到对应目录
-    DEST_DIR="$SDK_LIB_DIR/$arch"
+    # 复制 .so 文件到对应目录（主目录 + 备份目录）
+    DEST_DIR="$SDK_MAIN_LIB_DIR/$arch"
+    BACKUP_DEST_DIR="$SDK_BACKUP_LIB_DIR/$arch"
     
     if [ -f "$SOURCE_LIB" ]; then
-        mkdir -p "$DEST_DIR"
+        mkdir -p "$DEST_DIR" "$BACKUP_DEST_DIR"
         cp "$SOURCE_LIB" "$DEST_DIR/libim_parse_core.so"
+        cp "$SOURCE_LIB" "$BACKUP_DEST_DIR/libim_parse_core.so"
         echo "   ✅ 已复制到: $DEST_DIR/libim_parse_core.so"
+        echo "   ✅ 已复制到: $BACKUP_DEST_DIR/libim_parse_core.so (备份)"
         
         # 显示文件信息
         file "$DEST_DIR/libim_parse_core.so" | head -1
@@ -362,12 +366,12 @@ done
 
 echo ""
 echo "✨ 构建完成！"
-echo "📁 .so 文件位置: $SDK_LIB_DIR"
+echo "📁 .so 文件位置: $SDK_MAIN_LIB_DIR"
 echo ""
 echo "📊 构建结果:"
 for target in "${ANDROID_TARGETS[@]}"; do
     arch=$(get_arch "$target")
-    lib_path="$SDK_LIB_DIR/$arch/libim_parse_core.so"
+    lib_path="$SDK_MAIN_LIB_DIR/$arch/libim_parse_core.so"
     if [ -f "$lib_path" ]; then
         size=$(du -h "$lib_path" | cut -f1)
         echo "   ✅ $arch: $size"

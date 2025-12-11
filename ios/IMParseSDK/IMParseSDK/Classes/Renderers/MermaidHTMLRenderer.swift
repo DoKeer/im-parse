@@ -469,15 +469,6 @@ private class MermaidWebViewDelegate: NSObject, WKNavigationDelegate {
         self.onFinish = onFinish
     }
     
-    // iOS 13 兼容：使用旧的方法签名
-    // 注意：在 iOS 13 中，这个方法存在但没有 preferences 参数
-    // 在 iOS 14+ 中，新方法（带 preferences）优先，但旧方法仍然可用
-    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        // iOS 13 中 JavaScript 通过 WKPreferences.javaScriptEnabled 控制（已在 SharedWebViewPool 中设置）
-        // 直接允许导航
-        decisionHandler(.allow)
-    }
-    
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         onFinish()
     }

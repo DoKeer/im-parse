@@ -294,7 +294,11 @@ data class CodeBlockNode(
     
     companion object {
         fun fromJSON(json: JSONObject): CodeBlockNode {
-            val language = if (json.has("language")) json.getString("language") else null
+            val language = if (json.has("language") && !json.isNull("language")) {
+                json.getString("language")
+            } else {
+                null
+            }
             return CodeBlockNode(language, json.getString("content"))
         }
     }
@@ -352,9 +356,22 @@ data class ImageNode(
     companion object {
         fun fromJSON(json: JSONObject): ImageNode {
             val url = json.getString("url")
-            val width = if (json.has("width")) json.getDouble("width").toFloat() else null
-            val height = if (json.has("height")) json.getDouble("height").toFloat() else null
-            val alt = if (json.has("alt")) json.getString("alt") else null
+            // 检查字段是否存在且不为 null
+            val width = if (json.has("width") && !json.isNull("width")) {
+                json.getDouble("width").toFloat()
+            } else {
+                null
+            }
+            val height = if (json.has("height") && !json.isNull("height")) {
+                json.getDouble("height").toFloat()
+            } else {
+                null
+            }
+            val alt = if (json.has("alt") && !json.isNull("alt")) {
+                json.getString("alt")
+            } else {
+                null
+            }
             return ImageNode(url, width, height, alt)
         }
     }
@@ -424,7 +441,12 @@ data class ListItemNode(
             for (i in 0 until childrenArray.length()) {
                 children.add(ASTNodeWrapper.fromJSON(childrenArray.getJSONObject(i)))
             }
-            val checked = if (json.has("checked")) json.getBoolean("checked") else null
+            // 使用 optBoolean 处理 null 值：如果字段不存在或值为 null，返回 null
+            val checked = if (json.has("checked") && !json.isNull("checked")) {
+                json.getBoolean("checked")
+            } else {
+                null
+            }
             return ListItemNode(children, checked)
         }
     }
@@ -508,7 +530,11 @@ data class TableCellNode(
             for (i in 0 until childrenArray.length()) {
                 children.add(ASTNodeWrapper.fromJSON(childrenArray.getJSONObject(i)))
             }
-            val align = if (json.has("align")) json.getString("align") else null
+            val align = if (json.has("align") && !json.isNull("align")) {
+                json.getString("align")
+            } else {
+                null
+            }
             return TableCellNode(children, align)
         }
     }
@@ -635,7 +661,11 @@ data class EmojiNode(
     companion object {
         fun fromJSON(json: JSONObject): EmojiNode {
             val emoji = json.getString("emoji")
-            val shortcode = if (json.has("shortcode")) json.getString("shortcode") else null
+            val shortcode = if (json.has("shortcode") && !json.isNull("shortcode")) {
+                json.getString("shortcode")
+            } else {
+                null
+            }
             return EmojiNode(emoji, shortcode)
         }
     }
@@ -694,10 +724,22 @@ data class CardNode(
     companion object {
         fun fromJSON(json: JSONObject): CardNode {
             val url = json.getString("url")
-            val title = if (json.has("title")) json.getString("title") else null
-            val description = if (json.has("description")) json.getString("description") else null
-            val image = if (json.has("image")) json.getString("image") else null
-            val children = if (json.has("children")) {
+            val title = if (json.has("title") && !json.isNull("title")) {
+                json.getString("title")
+            } else {
+                null
+            }
+            val description = if (json.has("description") && !json.isNull("description")) {
+                json.getString("description")
+            } else {
+                null
+            }
+            val image = if (json.has("image") && !json.isNull("image")) {
+                json.getString("image")
+            } else {
+                null
+            }
+            val children = if (json.has("children") && !json.isNull("children")) {
                 val childrenArray = json.getJSONArray("children")
                 val childrenList = mutableListOf<ASTNode>()
                 for (i in 0 until childrenArray.length()) {
