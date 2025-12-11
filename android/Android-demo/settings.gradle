@@ -20,10 +20,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "Android-demo"
 include ':app'
-// 使用 AAR 依赖，不需要模块依赖
-// include ':IMParseSDK'
-// project(':IMParseSDK').projectDir = new File('../IMParseSDK')
 
-
+// 开发时：直接依赖模块（方便调试和修改 SDK）
 include ':IMParseSDK'
 project(':IMParseSDK').projectDir = new File('../IMParseSDK')

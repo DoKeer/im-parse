@@ -54,8 +54,11 @@ android {
 }
 
 dependencies {
-    // 使用本地 AAR 文件依赖
-    implementation(name: 'IMParseSDK-debug', ext: 'aar')
+    // 开发时：直接依赖模块（方便调试和修改）
+    implementation project(':IMParseSDK')
+    
+    // 发布时：如果需要使用 AAR，可以注释掉上面一行，取消注释下面一行
+    // implementation(name: 'IMParseSDK-debug', ext: 'aar')
     
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'

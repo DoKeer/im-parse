@@ -467,14 +467,43 @@ class AndroidViewRenderer {
      * 渲染表格
      */
     private fun renderTable(node: TableNode, context: AndroidRenderContext): View {
+        // 创建横向滚动容器
+        val scrollView = android.widget.HorizontalScrollView(context.context)
+        scrollView.isFillViewport = false
+        
         val tableLayout = TableLayout(context.context)
+        tableLayout.isStretchAllColumns = false
+        tableLayout.isShrinkAllColumns = false
+        
+        // 设置表格边框
+        val borderWidth = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, 1f,
+            context.context.resources.displayMetrics
+        ).toInt()
+        
+        val borderDrawable = android.graphics.drawable.GradientDrawable()
+        borderDrawable.setStroke(borderWidth, context.theme.tableBorderColor)
+        borderDrawable.setColor(android.graphics.Color.TRANSPARENT)
+        tableLayout.background = borderDrawable
         
         for ((rowIndex, row) in node.rows.withIndex()) {
             val tableRow = renderTableRow(row, context, rowIndex == 0)
             tableLayout.addView(tableRow)
+            
+            // 为每一行添加底部分割线（最后一行除外）
+            if (rowIndex < node.rows.size - 1) {
+                val divider = View(context.context)
+                divider.setBackgroundColor(context.theme.tableBorderColor)
+                val dividerParams = TableLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    borderWidth
+                )
+                tableLayout.addView(divider, dividerParams)
+            }
         }
         
-        return tableLayout
+        scrollView.addView(tableLayout)
+        return scrollView
     }
     
     /**
@@ -503,7 +532,29 @@ class AndroidViewRenderer {
      */
     private fun renderTableCell(node: TableCellNode, context: AndroidRenderContext): View {
         val textView = TextView(context.context)
-        textView.setPadding(context.theme.tableCellPadding)
+        
+        // 设置单元格边框
+        val borderWidth = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, 1f,
+            context.context.resources.displayMetrics
+        ).toInt()
+        
+        val borderDrawable = android.graphics.drawable.GradientDrawable()
+        borderDrawable.setStroke(borderWidth, context.theme.tableBorderColor)
+        borderDrawable.setColor(android.graphics.Color.TRANSPARENT)
+        textView.background = borderDrawable
+        
+        // 设置内边距
+        val padding = context.theme.tableCellPadding
+        textView.setPadding(padding, padding, padding, padding)
+        
+        // 最小宽度，确保单元格不会太窄
+        val minWidth = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, 80f,
+            context.context.resources.displayMetrics
+        ).toInt()
+        textView.minimumWidth = minWidth
+        
         textView.gravity = when (node.align) {
             "center" -> Gravity.CENTER
             "right" -> Gravity.END
@@ -610,9 +661,9 @@ class AndroidViewRenderer {
             imageView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
             imageView.adjustViewBounds = true
             val params = android.widget.FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
             params.setMargins(4, 4, 4, 4)
             containerView.addView(imageView, params)
             
@@ -787,9 +838,9 @@ class AndroidViewRenderer {
             imageView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
             imageView.adjustViewBounds = true
             val params = android.widget.FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
             params.setMargins(padding, padding, padding, padding)
             containerView.addView(imageView, params)
             

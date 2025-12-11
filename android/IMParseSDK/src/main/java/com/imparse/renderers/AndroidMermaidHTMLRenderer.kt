@@ -102,17 +102,24 @@ class AndroidMermaidHTMLRenderer private constructor() {
         // WebView 必须被添加到视图层次结构中才能渲染
         // 创建一个隐藏的容器来放置 WebView
         val container = android.widget.FrameLayout(context)
-        container.layoutParams = android.view.ViewGroup.LayoutParams(
-            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-            android.view.ViewGroup.LayoutParams.MATCH_PARENT
+        container.layoutParams = android.widget.FrameLayout.LayoutParams(
+            width,
+            height
         )
-        container.visibility = View.GONE // 隐藏容器
-        container.alpha = 0f // 完全透明
+        // 使用 INVISIBLE 而不是 GONE，确保视图参与布局和绘制
+        container.visibility = View.INVISIBLE
+        // 将容器移到屏幕外，避免用户看到
+        container.translationX = -10000f
+        container.translationY = -10000f
         
         // 将 WebView 添加到容器中
+        // 确保 WebView 没有父视图
+        val oldParent = webView.parent as? android.view.ViewGroup
+        oldParent?.removeView(webView)
+        
         webView.layoutParams = android.view.ViewGroup.LayoutParams(width, height)
         webView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        webView.setLayerType(View.LAYER_TYPE_SOFTWARE, null) // 使用软件渲染确保可以截图
         container.addView(webView)
         
         // 将容器添加到窗口（需要 Activity 的根视图）

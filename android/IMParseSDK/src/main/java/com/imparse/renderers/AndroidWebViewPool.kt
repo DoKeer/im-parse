@@ -46,6 +46,10 @@ class AndroidWebViewPool private constructor() {
         webView.clearCache(true)
         webView.loadUrl("about:blank")
         
+        // 从父视图中移除
+        val parent = webView.parent as? android.view.ViewGroup
+        parent?.removeView(webView)
+        
         // 如果池未满，返回池中；否则销毁
         if (webViewPool.size < MAX_POOL_SIZE) {
             webViewPool.offer(webView)

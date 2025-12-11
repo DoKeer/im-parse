@@ -1,10 +1,14 @@
 #!/bin/bash
 
-# 完整的 Android 构建脚本
+# 完整的 Android 开发构建脚本（使用模块依赖）
 # 1. 构建 Rust 核心库
-# 2. 构建 IMParseSDK AAR
-# 3. 构建 Demo 应用
-# 使用方法: ./build-all.sh [clean]
+# 2. 构建 Demo 应用（直接依赖 IMParseSDK 模块，方便调试）
+# 
+# 使用方法: 
+#   ./build-all.sh          # 开发模式（使用模块依赖）
+#   ./build-all.sh clean    # 清理后构建
+#
+# 注意：如需构建 AAR 用于发布，请使用: ./build-aar.sh
 
 set -e
 
@@ -77,22 +81,35 @@ build_rust_library() {
     fi
 }
 
-# 步骤 2: 构建 IMParseSDK AAR
-build_sdk_aar() {
-    log_step "步骤 2: 构建 IMParseSDK AAR"
+# 步骤 2: 验证模块依赖配置
+verify_module_dependency() {
+    log_step "步骤 2: 验证模块依赖配置"
     
-    local settings_file="$DEMO_DIR/settings.gradle"
-    local has_sdk_module=false
+    cd "$DEMO_DIR"
     
-    # 检查是否已有 IMParseSDK 模块配置
-    if ! grep -q "^[^/]*include ':IMParseSDK'" "$settings_file"; then
-        # 临时添加模块
-        echo "" >> "$settings_file"
-        echo "include ':IMParseSDK'" >> "$settings_file"
-        echo "project(':IMParseSDK').projectDir = new File('../IMParseSDK')" >> "$settings_file"
-        log_info "已临时添加 IMParseSDK 模块"
-        has_sdk_module=true
+    # 检查 settings.gradle 是否包含 IMParseSDK
+    if grep -q "^[^/]*include ':IMParseSDK'" settings.gradle; then
+        log_success "settings.gradle 已配置 IMParseSDK 模块"
+    else
+        log_error "settings.gradle 中未找到 IMParseSDK 模块"
+        log_info "请确保 settings.gradle 包含："
+        log_info "  include ':IMParseSDK'"
+        log_info "  project(':IMParseSDK').projectDir = new File('../IMParseSDK')"
+        exit 1
     fi
+    
+    # 检查 app/build.gradle 是否使用模块依赖
+    if grep -q "implementation project(':IMParseSDK')" app/build.gradle; then
+        log_success "app/build.gradle 使用模块依赖（开发模式）"
+    else
+        log_warning "app/build.gradle 可能未使用模块依赖"
+        log_info "请确保 dependencies 中包含：implementation project(':IMParseSDK')"
+    fi
+}
+
+# 步骤 3: 构建 Demo 应用
+build_demo_app() {
+    log_step "步骤 3: 构建 Demo 应用（使用模块依赖）"
     
     cd "$DEMO_DIR"
     
@@ -102,53 +119,7 @@ build_sdk_aar() {
         ./gradlew clean :IMParseSDK:clean
     fi
     
-    log_info "构建 IMParseSDK AAR..."
-    
-    if ./gradlew :IMParseSDK:assembleDebug; then
-        log_success "IMParseSDK AAR 构建完成"
-        
-        # 复制 AAR 到 app/libs
-        local aar_debug="$SDK_DIR/build/outputs/aar/IMParseSDK-debug.aar"
-        local app_libs_dir="$DEMO_DIR/app/libs"
-        
-        mkdir -p "$app_libs_dir"
-        
-        if [ -f "$aar_debug" ]; then
-            cp "$aar_debug" "$app_libs_dir/"
-            local size=$(du -h "$aar_debug" | cut -f1)
-            log_success "Debug AAR 已复制到 app/libs ($size)"
-            
-            # 验证 AAR 是否包含 .so 文件
-            if unzip -l "$aar_debug" 2>/dev/null | grep -q "jni/.*/libim_parse_core.so"; then
-                log_success "AAR 包含 native 库"
-            else
-                log_warning "AAR 中未找到 native 库"
-            fi
-        fi
-    else
-        log_error "IMParseSDK AAR 构建失败"
-        exit 1
-    fi
-    
-    # 恢复 settings.gradle
-    if [ "$has_sdk_module" = true ]; then
-        # 移除最后 3 行（空行 + 两行 IMParseSDK 配置）
-        # 使用兼容 macOS 的方式
-        local total_lines=$(wc -l < "$settings_file" | tr -d ' ')
-        local keep_lines=$((total_lines - 3))
-        head -n "$keep_lines" "$settings_file" > "$settings_file.tmp"
-        mv "$settings_file.tmp" "$settings_file"
-        log_info "已恢复 settings.gradle"
-    fi
-}
-
-# 步骤 3: 构建 Demo 应用
-build_demo_app() {
-    log_step "步骤 3: 构建 Demo 应用"
-    
-    cd "$DEMO_DIR"
-    
-    log_info "使用 AAR 依赖构建 Demo 应用..."
+    log_info "使用模块依赖构建 Demo 应用（方便调试 SDK）..."
     
     if ./gradlew :app:assembleDebug; then
         log_success "Demo 应用构建完成"
@@ -176,7 +147,7 @@ build_demo_app() {
 main() {
     echo ""
     echo -e "${GREEN}╔════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║        Android 构建脚本 (Rust + JNI + AAR)        ║${NC}"
+    echo -e "${GREEN}║     Android 开发构建脚本 (模块依赖模式)          ║${NC}"
     echo -e "${GREEN}╚════════════════════════════════════════════════════╝${NC}"
     echo ""
     
@@ -186,10 +157,14 @@ main() {
         log_info "将执行清理构建"
     fi
     
+    log_info "开发模式：使用模块依赖，方便调试和修改 SDK"
+    log_info "如需构建 AAR 用于发布，请运行: ./build-aar.sh"
+    echo ""
+    
     # 执行构建步骤
     build_rust_library
-    build_sdk_aar "$clean_flag"
-    build_demo_app
+    verify_module_dependency
+    build_demo_app "$clean_flag"
     
     echo ""
     echo -e "${GREEN}╔════════════════════════════════════════════════════╗${NC}"
@@ -201,6 +176,10 @@ main() {
     log_info "下一步："
     echo "  1. 安装: cd Android-demo && ./gradlew :app:installDebug"
     echo "  2. 运行: adb shell am start -n com.imparse.demo/.ui.MainActivity"
+    echo ""
+    log_info "💡 提示："
+    echo "  - 修改 IMParseSDK 代码后，直接重新构建即可生效（无需重新构建 AAR）"
+    echo "  - 如需发布 AAR，运行: ./build-aar.sh"
     echo ""
 }
 
