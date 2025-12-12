@@ -21,7 +21,6 @@ class AndroidMermaidHTMLRenderer private constructor() {
     
     companion object {
         private const val TAG = "MermaidHTMLRenderer"
-        private const val MERMAID_JS_URL = "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"
         
         @Volatile
         private var INSTANCE: AndroidMermaidHTMLRenderer? = null
@@ -29,6 +28,18 @@ class AndroidMermaidHTMLRenderer private constructor() {
         fun getInstance(): AndroidMermaidHTMLRenderer {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: AndroidMermaidHTMLRenderer().also { INSTANCE = it }
+            }
+        }
+        
+        /**
+         * 从 assets 读取 Mermaid JS 内容
+         */
+        private fun loadMermaidJS(context: Context): String {
+            return try {
+                context.assets.open("mermaid.min.js").bufferedReader().use { it.readText() }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to load Mermaid JS from assets", e)
+                "" // 返回空字符串
             }
         }
     }
@@ -93,7 +104,7 @@ class AndroidMermaidHTMLRenderer private constructor() {
         val webView = webViewPool.getOrCreateWebView(context)
         
         // 构建完整的 HTML（包含 mermaid.js）
-        val fullHTML = buildFullHTML(mermaidCode, textColor, backgroundColor)
+        val fullHTML = buildFullHTML(context, mermaidCode, textColor, backgroundColor)
         
         // 设置 WebView 配置（使用较大的初始尺寸，确保内容能完全渲染）
         val width = 1000
@@ -261,14 +272,14 @@ class AndroidMermaidHTMLRenderer private constructor() {
             }
         }
         
-        // 加载 HTML
-        webView.loadDataWithBaseURL(null, fullHTML, "text/html", "UTF-8", null)
+        // 加载 HTML，使用 file:///android_asset/ 作为 baseURL
+        webView.loadDataWithBaseURL("file:///android_asset/", fullHTML, "text/html", "UTF-8", null)
     }
     
     /**
-     * 构建完整的 HTML（包含 mermaid.js）
+     * 构建完整的 HTML（包含内联的 mermaid.js）
      */
-    private fun buildFullHTML(mermaidCode: String, textColor: String, backgroundColor: String): String {
+    private fun buildFullHTML(context: Context, mermaidCode: String, textColor: String, backgroundColor: String): String {
         // 转义 HTML 特殊字符
         val escapedCode = mermaidCode
             .replace("&", "&amp;")
@@ -277,13 +288,16 @@ class AndroidMermaidHTMLRenderer private constructor() {
             .replace("\"", "&quot;")
             .replace("'", "&#39;")
         
+        // 从 assets 加载 Mermaid JS 并内联
+        val mermaidJS = loadMermaidJS(context)
+        
         return """
             <!DOCTYPE html>
             <html>
             <head>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <script src="$MERMAID_JS_URL"></script>
+                ${if (mermaidJS.isNotEmpty()) "<script>$mermaidJS</script>" else "<script src=\"file:///android_asset/mermaid.min.js\"></script>"}
                 <style>
                     * {
                         margin: 0;

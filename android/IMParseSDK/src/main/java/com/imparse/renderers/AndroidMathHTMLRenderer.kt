@@ -21,7 +21,6 @@ class AndroidMathHTMLRenderer private constructor() {
     
     companion object {
         private const val TAG = "MathHTMLRenderer"
-        private const val KATEX_CSS_URL = "https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"
         
         @Volatile
         private var INSTANCE: AndroidMathHTMLRenderer? = null
@@ -29,6 +28,18 @@ class AndroidMathHTMLRenderer private constructor() {
         fun getInstance(): AndroidMathHTMLRenderer {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: AndroidMathHTMLRenderer().also { INSTANCE = it }
+            }
+        }
+        
+        /**
+         * 从 assets 读取 KaTeX CSS 内容
+         */
+        private fun loadKaTeXCSS(context: Context): String {
+            return try {
+                context.assets.open("katex.min.css").bufferedReader().use { it.readText() }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to load KaTeX CSS from assets", e)
+                "" // 返回空字符串，使用内联样式
             }
         }
     }
@@ -94,7 +105,7 @@ class AndroidMathHTMLRenderer private constructor() {
         val webView = webViewPool.getOrCreateWebView(context)
         
         // 构建完整的 HTML（包含 KaTeX CSS）
-        val fullHTML = buildFullHTML(html, display, textColor, fontSize)
+        val fullHTML = buildFullHTML(context, html, display, textColor, fontSize)
         
         // 设置 WebView 配置（使用较大的初始尺寸，确保内容能完全渲染）
         val width = 1000
@@ -252,16 +263,19 @@ class AndroidMathHTMLRenderer private constructor() {
             }
         }
         
-        // 加载 HTML
-        webView.loadDataWithBaseURL(null, fullHTML, "text/html", "UTF-8", null)
+        // 加载 HTML，使用 file:///android_asset/ 作为 baseURL，这样 CSS 中的字体路径可以正确解析
+        webView.loadDataWithBaseURL("file:///android_asset/", fullHTML, "text/html", "UTF-8", null)
     }
     
     /**
-     * 构建完整的 HTML（包含 KaTeX CSS）
+     * 构建完整的 HTML（包含内联的 KaTeX CSS）
      */
-    private fun buildFullHTML(html: String, display: Boolean, textColor: String, fontSize: Float): String {
+    private fun buildFullHTML(context: Context, html: String, display: Boolean, textColor: String, fontSize: Float): String {
         val displayStyle = if (display) "block" else "inline-block"
         val textAlign = if (display) "center" else "left"
+        
+        // 从 assets 加载 KaTeX CSS 并内联
+        val katexCSS = loadKaTeXCSS(context)
         
         return """
             <!DOCTYPE html>
@@ -269,7 +283,7 @@ class AndroidMathHTMLRenderer private constructor() {
             <head>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <link rel="stylesheet" href="$KATEX_CSS_URL">
+                ${if (katexCSS.isNotEmpty()) "<style>$katexCSS</style>" else "<link rel=\"stylesheet\" href=\"file:///android_asset/katex.min.css\">"}
                 <style>
                     * {
                         margin: 0;
