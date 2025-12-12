@@ -114,8 +114,8 @@ class AndroidMermaidHTMLRenderer private constructor() {
         val screenHeight = displayMetrics.heightPixels
         
         // 设置 WebView 配置（使用较大的初始尺寸，确保内容能完全渲染）
-        val width = 1000
-        val height = 600
+        val width = 2000
+        val height = 2000
         
         // WebView 必须被添加到视图层次结构中才能渲染
         // 创建一个隐藏的容器来放置 WebView
