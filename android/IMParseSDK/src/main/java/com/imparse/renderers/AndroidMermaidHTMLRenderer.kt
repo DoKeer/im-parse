@@ -11,6 +11,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.imparse.core.IMParseCore
 import java.util.concurrent.ConcurrentHashMap
+import androidx.core.graphics.createBitmap
 
 /**
  * Mermaid 图表 HTML 渲染器
@@ -106,6 +107,12 @@ class AndroidMermaidHTMLRenderer private constructor() {
         // 构建完整的 HTML（包含 mermaid.js）
         val fullHTML = buildFullHTML(context, mermaidCode, textColor, backgroundColor)
         
+        // 获取屏幕尺寸
+        val activity = getActivityFromContext(context)
+        val displayMetrics = context.resources.displayMetrics
+        val screenWidth = displayMetrics.widthPixels
+        val screenHeight = displayMetrics.heightPixels
+        
         // 设置 WebView 配置（使用较大的初始尺寸，确保内容能完全渲染）
         val width = 1000
         val height = 600
@@ -134,24 +141,65 @@ class AndroidMermaidHTMLRenderer private constructor() {
         container.addView(webView)
         
         // 将容器添加到窗口（需要 Activity 的根视图）
-        val activity = (context as? android.app.Activity) ?: run {
-            var ctx: Context? = context
-            while (ctx is android.content.ContextWrapper) {
-                if (ctx is android.app.Activity) {
-                    return@run ctx
-                }
-                ctx = ctx.baseContext
-            }
-            null
-        }
+        // WebView 必须被添加到视图层次结构中才能正确渲染
         
         if (activity != null && activity.window != null) {
             val rootView = activity.window.decorView.rootView as? android.view.ViewGroup
-            rootView?.addView(container)
+            if (rootView != null) {
+                rootView.addView(container)
+                Log.d(TAG, "Container added to Activity root view")
+            } else {
+                Log.w(TAG, "Root view is null, WebView may not render correctly")
+            }
         } else {
-            // 如果无法获取 Activity，使用应用级别的根视图
-            // 这需要从 Application 获取，暂时使用备用方案
-            Log.w(TAG, "Cannot get Activity, WebView may not render correctly")
+            // 如果无法获取 Activity，尝试使用 Application 的根视图
+            // 或者创建一个临时的隐藏窗口
+            Log.w(TAG, "Cannot get Activity, trying alternative approach")
+            try {
+                val application = context.applicationContext as? android.app.Application
+                if (application != null) {
+                    // 尝试通过反射获取当前 Activity
+                    val activityThread = Class.forName("android.app.ActivityThread")
+                    val currentActivityThread = activityThread.getMethod("currentActivityThread").invoke(null)
+                    val activitiesField = activityThread.getDeclaredField("mActivities")
+                    activitiesField.isAccessible = true
+                    val activities = activitiesField.get(currentActivityThread) as? java.util.Map<*, *>
+                    
+                    if (activities != null && !activities.isEmpty) {
+                        // 获取第一个 Activity
+                        val activityRecord = activities.values().first()
+                        val activityField = activityRecord?.javaClass?.getDeclaredField("activity")
+                        activityField?.isAccessible = true
+                        val foundActivity = activityField?.get(activityRecord) as? android.app.Activity
+                        
+                        if (foundActivity != null && foundActivity.window != null) {
+                            val rootView = foundActivity.window.decorView.rootView as? android.view.ViewGroup
+                            rootView?.addView(container)
+                            Log.d(TAG, "Container added to Activity root view via reflection")
+                        } else {
+                            throw Exception("No valid Activity found via reflection")
+                        }
+                    } else {
+                        throw Exception("No activities found")
+                    }
+                } else {
+                    throw Exception("Cannot get Application context")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to add container to view hierarchy: ${e.message}", e)
+                Log.e(TAG, "WebView 必须被添加到 Activity 的视图层次结构中才能正确渲染")
+                Log.e(TAG, "请确保传入的 Context 是 Activity 实例，或者使用 Activity 的 Context")
+                // 清理资源
+                try {
+                    val parent = container.parent as? android.view.ViewGroup
+                    parent?.removeView(container)
+                } catch (ex: Exception) {
+                    Log.e(TAG, "Error removing container", ex)
+                }
+                webViewPool.returnWebView(webView)
+                completion(null)
+                return
+            }
         }
         
         // 强制布局，确保 WebView 完成测量和布局
@@ -160,6 +208,19 @@ class AndroidMermaidHTMLRenderer private constructor() {
             android.view.View.MeasureSpec.makeMeasureSpec(height, android.view.View.MeasureSpec.EXACTLY)
         )
         container.layout(0, 0, width, height)
+        
+        // 确保 WebView 能够绘制（虽然容器是 INVISIBLE，但 WebView 本身需要能够绘制）
+        webView.visibility = View.VISIBLE
+        webView.requestLayout()
+        webView.invalidate()
+        
+        // 等待布局完成后再继续
+        container.post {
+            webView.post {
+                // WebView 布局完成，可以继续加载内容
+                Log.d(TAG, "WebView layout completed, width: ${webView.width}, height: ${webView.height}")
+            }
+        }
         
         // 使用标记防止重复执行
         var isProcessing = false
@@ -359,7 +420,7 @@ class AndroidMermaidHTMLRenderer private constructor() {
     }
     
     /**
-     * 截图 WebView
+     * 截图 WebView - 简化版本，直接返回整个 WebView 的截图
      */
     private fun captureWebView(
         webView: WebView,
@@ -370,36 +431,100 @@ class AndroidMermaidHTMLRenderer private constructor() {
         height: Int,
         completion: (Bitmap?) -> Unit
     ) {
-        // 等待一小段时间确保渲染完成
+        // 简单延迟后截图
         Handler(Looper.getMainLooper()).postDelayed({
             try {
-                // 创建 Bitmap
-                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(bitmap)
+                val webViewWidth = webView.width
+                val webViewHeight = webView.height
                 
-                // 绘制 WebView 的指定区域
-                canvas.save()
-                canvas.translate(-x.toFloat(), -y.toFloat())
-                webView.draw(canvas)
-                canvas.restore()
+                if (webViewWidth <= 0 || webViewHeight <= 0) {
+                    Log.w(TAG, "WebView has invalid size: ${webViewWidth}x${webViewHeight}")
+                    completion(null)
+                    return@postDelayed
+                }
                 
-                // 清理：从父视图中移除容器
-                val parent = container.parent as? android.view.ViewGroup
-                parent?.removeView(container)
+                // 强制布局和绘制（保持 INVISIBLE 状态）
+                container.requestLayout()
+                container.invalidate()
+                webView.requestLayout()
+                webView.invalidate()
                 
-                completion(bitmap)
+                // 等待布局完成
+                webView.post {
+                    // 直接截取整个 WebView（INVISIBLE 状态也可以绘制）
+                    val fullBitmap = createBitmap(webViewWidth, webViewHeight)
+                    val fullCanvas = Canvas(fullBitmap)
+                    webView.draw(fullCanvas)
+                    
+                    Log.d(TAG, "Captured full WebView, size: ${fullBitmap.width}x${fullBitmap.height}")
+                    
+                    // 清理：从父视图中移除容器
+                    try {
+                        val parent = container.parent as? android.view.ViewGroup
+                        parent?.removeView(container)
+                    } catch (ex: Exception) {
+                        Log.e(TAG, "Error removing container", ex)
+                    }
+                    
+                    // 将 WebView 返回池中
+                    webViewPool.returnWebView(webView)
+                    
+                    // 返回截图
+                    completion(fullBitmap)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Snapshot error", e)
-                // 确保清理容器
-                try {
-                    val parent = container.parent as? android.view.ViewGroup
-                    parent?.removeView(container)
-                } catch (ex: Exception) {
-                    Log.e(TAG, "Error removing container", ex)
-                }
                 completion(null)
             }
-        }, 200) // 延迟 200ms 确保渲染完成
+        }, 500) // 延迟 500ms 确保渲染完成
+    }
+    
+    /**
+     * 检查 Bitmap 是否有内容（不是全透明或全黑）
+     */
+    private fun checkBitmapHasContent(bitmap: Bitmap): Boolean {
+        if (bitmap.width <= 0 || bitmap.height <= 0) {
+            return false
+        }
+        
+        // 更全面的采样检查
+        val samplePoints = mutableListOf<Pair<Int, Int>>()
+        
+        // 中心点
+        samplePoints.add(Pair(bitmap.width / 2, bitmap.height / 2))
+        
+        // 四个角落
+        samplePoints.add(Pair(0, 0))
+        samplePoints.add(Pair(bitmap.width - 1, 0))
+        samplePoints.add(Pair(0, bitmap.height - 1))
+        samplePoints.add(Pair(bitmap.width - 1, bitmap.height - 1))
+        
+        // 四边中点
+        samplePoints.add(Pair(bitmap.width / 2, 0))
+        samplePoints.add(Pair(bitmap.width / 2, bitmap.height - 1))
+        samplePoints.add(Pair(0, bitmap.height / 2))
+        samplePoints.add(Pair(bitmap.width - 1, bitmap.height / 2))
+        
+        // 检查所有采样点
+        var nonTransparentCount = 0
+        for ((x, y) in samplePoints) {
+            if (x >= 0 && x < bitmap.width && y >= 0 && y < bitmap.height) {
+                val pixel = bitmap.getPixel(x, y)
+                val alpha = android.graphics.Color.alpha(pixel)
+                // 如果像素不是完全透明，认为有内容
+                if (alpha > 10) { // 允许一些透明度误差
+                    nonTransparentCount++
+                }
+            }
+        }
+        
+        // 如果至少有一个点不是完全透明，认为有内容
+        val hasContent = nonTransparentCount > 0
+        if (!hasContent) {
+            Log.d(TAG, "Bitmap check: all ${samplePoints.size} sample points are transparent")
+        }
+        
+        return hasContent
     }
     
     /**
@@ -488,6 +613,27 @@ class AndroidMermaidHTMLRenderer private constructor() {
             Log.e(TAG, "Error parsing JavaScript result: $result", e)
             emptyMap()
         }
+    }
+    
+    /**
+     * 从 Context 中获取 Activity
+     */
+    private fun getActivityFromContext(context: Context): android.app.Activity? {
+        // 直接检查是否是 Activity
+        if (context is android.app.Activity) {
+            return context
+        }
+        
+        // 检查是否是 ContextWrapper，尝试获取 baseContext
+        var ctx: Context? = context
+        while (ctx is android.content.ContextWrapper) {
+            if (ctx is android.app.Activity) {
+                return ctx
+            }
+            ctx = ctx.baseContext
+        }
+        
+        return null
     }
     
     /**
