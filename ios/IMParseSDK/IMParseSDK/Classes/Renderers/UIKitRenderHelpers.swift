@@ -281,6 +281,164 @@ internal class MentionStatusImageAttachment: NSTextAttachment {
     }
 }
 
+// MARK: - 行内数学公式文本附件
+
+/// 行内数学公式文本附件，用于在 NSAttributedString 中嵌入行内数学公式
+internal class MathTextAttachment: NSTextAttachment {
+    let mathNode: MathNode
+    let context: UIKitRenderContext
+    private var cachedImage: UIImage?
+    private var isLoading = false
+    private let font: UIFont // 保存字体，用于计算 attachmentBounds
+    
+    init(mathNode: MathNode, context: UIKitRenderContext) {
+        self.mathNode = mathNode
+        self.context = context
+        // 保存当前字体，用于后续计算 attachmentBounds
+        self.font = context.currentFont ?? context.theme.font
+        super.init(data: nil, ofType: nil)
+        
+        // 行内公式的初始尺寸（使用字体行高）
+        let lineHeight = font.lineHeight
+        let attachmentSize = CGSize(width: lineHeight * 1.5, height: lineHeight)
+        
+        // 设置初始 bounds（会在 attachmentBounds 方法中动态调整）
+        self.bounds = CGRect(origin: .zero, size: attachmentSize)
+        
+        // 尝试从缓存获取图片
+        let cacheKey = "math:\(mathNode.content):\(mathNode.display)"
+        if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey) {
+            // 缓存命中，使用缓存的图片
+            self.image = cachedImage
+            self.cachedImage = cachedImage
+            // 调整 bounds 以适应图片尺寸
+            updateBoundsForImage(cachedImage)
+        } else {
+            // 创建占位图片
+            createPlaceholderImage(size: attachmentSize)
+            // 异步加载公式图片
+            loadMathImageAsync(cacheKey: cacheKey)
+        }
+    }
+    
+    /// 动态计算 attachment 的 bounds，确保与文本垂直居中
+    override func attachmentBounds(for textContainer: NSTextContainer?, proposedLineFragment lineFrag: CGRect, glyphPosition position: CGPoint, characterIndex charIndex: Int) -> CGRect {
+        // 获取图片的实际尺寸（如果已加载）
+        let imageSize = self.image?.size ?? bounds.size
+        
+        // 计算垂直居中的偏移量
+        let yOffset = (font.capHeight - imageSize.height) / 2
+        
+        // 返回调整后的 bounds
+        return CGRect(origin: CGPoint(x: 0, y: yOffset), size: imageSize)
+    }
+    
+    /// 更新 bounds 以适应图片尺寸
+    private func updateBoundsForImage(_ image: UIImage) {
+        let imageSize = image.size
+        let baselineOffset = (font.capHeight - imageSize.height) / 2
+        self.bounds = CGRect(origin: CGPoint(x: 0, y: baselineOffset), size: imageSize)
+    }
+    
+    /// 创建占位图片（使用文本渲染）
+    private func createPlaceholderImage(size: CGSize) {
+        let color = context.currentTextColor ?? context.theme.textColor
+        
+        let renderer = UIGraphicsImageRenderer(size: size)
+        self.image = renderer.image { context in
+            // 绘制文本占位符
+            let attrString = NSAttributedString(
+                string: mathNode.content,
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: font.pointSize * 0.8),
+                    .foregroundColor: color.withAlphaComponent(0.6)
+                ]
+            )
+            let textSize = attrString.boundingRect(
+                with: size,
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).size
+            let textRect = CGRect(
+                x: (size.width - textSize.width) / 2,
+                y: (size.height - textSize.height) / 2,
+                width: textSize.width,
+                height: textSize.height
+            )
+            attrString.draw(in: textRect)
+        }
+    }
+    
+    /// 异步加载数学公式图片
+    private func loadMathImageAsync(cacheKey: String) {
+        guard !isLoading else { return }
+        
+        isLoading = true
+        
+        // 在后台线程渲染公式
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self else { return }
+            
+            // 从 rust-core 获取 HTML
+            let result = IMParseCore.mathToHTML(self.mathNode.content, display: false) // 行内公式
+            
+            guard result.success, let html = result.astJSON else {
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                }
+                return
+            }
+            
+            // 转换颜色为十六进制
+            let textColor = self.context.currentTextColor ?? self.context.theme.textColor
+            let components = textColor.cgColor.components ?? [0, 0, 0, 1]
+            let colorHex = String(format: "#%02X%02X%02X",
+                                  Int(components[0] * 255),
+                                  Int(components[1] * 255),
+                                  Int(components[2] * 255))
+            
+            let fontSize = self.font.pointSize
+            
+            // 使用 MathHTMLRenderer 渲染（行内公式）
+            MathHTMLRenderer.shared.render(
+                html: html,
+                display: false, // 行内公式
+                textColor: colorHex,
+                fontSize: fontSize
+            ) { image in
+                DispatchQueue.main.async {
+                    if let image = image {
+                        // 调整图片尺寸以适应行高
+                        let targetHeight = self.font.lineHeight
+                        let scale = targetHeight / image.size.height
+                        let scaledWidth = image.size.width * scale
+                        let scaledSize = CGSize(width: scaledWidth, height: targetHeight)
+                        
+                        // 缩放图片
+                        let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                        let scaledImage = renderer.image { context in
+                            image.draw(in: CGRect(origin: .zero, size: scaledSize))
+                        }
+                        
+                        self.image = scaledImage
+                        self.cachedImage = scaledImage
+                        self.updateBoundsForImage(scaledImage)
+                        
+                        // 保存到缓存
+                        self.context.formulaSizeCacheDelegate?.saveFormulaImage(scaledImage, for: cacheKey)
+                        self.context.formulaSizeCacheDelegate?.setCachedSize(scaledSize, for: cacheKey)
+                    }
+                    self.isLoading = false
+                }
+            }
+        }
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
 // MARK: - UITextView 事件处理
 
 /// 用于处理 UITextView 链接点击的代理

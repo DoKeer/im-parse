@@ -16,10 +16,7 @@ enum ToolbarButtonType: Int {
 
 /// 工具栏组件
 class UIKitToolbar: UIView {
-    private let buttonSize: CGFloat = 32
-    private let buttonSpacing: CGFloat = 8
-    private let containerPadding: CGFloat = 8
-    
+    private let theme: UIKitTheme
     private var copyButton: UIButton!
     private var downloadButton: UIButton!
     private var fullscreenButton: UIButton!
@@ -28,17 +25,20 @@ class UIKitToolbar: UIView {
     var onDownload: (() -> Void)?
     var onFullscreen: (() -> Void)?
     
-    override init(frame: CGRect) {
+    init(theme: UIKitTheme, frame: CGRect = .zero) {
+        self.theme = theme
         super.init(frame: frame)
         setupToolbar()
     }
     
     required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        setupToolbar()
+        fatalError("init(coder:) has not been implemented. Use init(theme:) instead.")
     }
     
     private func setupToolbar() {
+        let buttonSize = theme.toolbarButtonSize
+        let buttonSpacing = theme.toolbarButtonSpacing
+        let containerPadding = theme.toolbarPadding
         backgroundColor = UIColor.systemBackground.withAlphaComponent(0.9)
         layer.cornerRadius = 6
         layer.shadowColor = UIColor.black.cgColor
@@ -47,9 +47,9 @@ class UIKitToolbar: UIView {
         layer.shadowOpacity = 0.1
         
         // 创建按钮
-        copyButton = createButton(icon: "doc.on.doc", type: .copy)
-        downloadButton = createButton(icon: "arrow.down.circle", type: .download)
-        fullscreenButton = createButton(icon: "arrow.up.left.and.arrow.down.right", type: .fullscreen)
+        copyButton = createButton(icon: "doc.on.doc", type: .copy, size: buttonSize)
+        downloadButton = createButton(icon: "arrow.down.circle", type: .download, size: buttonSize)
+        fullscreenButton = createButton(icon: "arrow.up.left.and.arrow.down.right", type: .fullscreen, size: buttonSize)
         
         // 布局按钮
         let stackView = UIStackView(arrangedSubviews: [copyButton, downloadButton, fullscreenButton])
@@ -70,22 +70,34 @@ class UIKitToolbar: UIView {
         ])
     }
     
-    private func createButton(icon: String, type: ToolbarButtonType) -> UIButton {
+    private func createButton(icon: String, type: ToolbarButtonType, size: CGFloat) -> UIButton {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
         
         // 使用 SF Symbols
         if let image = UIImage(systemName: icon) {
-            button.setImage(image, for: .normal)
+            // 配置图片渲染模式，确保图标不被压扁
+            let config = UIImage.SymbolConfiguration(pointSize: size * 0.6, weight: .regular, scale: .medium)
+            let configuredImage = image.withConfiguration(config)
+            button.setImage(configuredImage, for: .normal)
         }
         
         button.tintColor = UIColor.label
         button.backgroundColor = UIColor.clear
         
+        // 设置图片内容模式，确保图标保持宽高比
+        button.imageView?.contentMode = .scaleAspectFit
+        button.contentHorizontalAlignment = .center
+        button.contentVerticalAlignment = .center
+        
+        // 移除默认的内边距，让图标居中显示
+        button.imageEdgeInsets = .zero
+        button.contentEdgeInsets = .zero
+        
         // 按钮尺寸
         NSLayoutConstraint.activate([
-            button.widthAnchor.constraint(equalToConstant: buttonSize),
-            button.heightAnchor.constraint(equalToConstant: buttonSize)
+            button.widthAnchor.constraint(equalToConstant: size),
+            button.heightAnchor.constraint(equalToConstant: size)
         ])
         
         // 添加点击事件
@@ -114,6 +126,7 @@ class MermaidViewModeSwitcher: UIView {
     private let previewButton: UIButton!
     private let codeButton: UIButton!
     private let indicatorView: UIView!
+    private let theme: UIKitTheme
     
     // 保存指示器的约束引用
     private var indicatorLeadingConstraint: NSLayoutConstraint?
@@ -130,7 +143,8 @@ class MermaidViewModeSwitcher: UIView {
         }
     }
     
-    override init(frame: CGRect) {
+    init(theme: UIKitTheme, frame: CGRect = .zero) {
+        self.theme = theme
         previewButton = UIButton(type: .system)
         codeButton = UIButton(type: .system)
         indicatorView = UIView()
@@ -140,12 +154,7 @@ class MermaidViewModeSwitcher: UIView {
     }
     
     required init?(coder: NSCoder) {
-        previewButton = UIButton(type: .system)
-        codeButton = UIButton(type: .system)
-        indicatorView = UIView()
-        
-        super.init(coder: coder)
-        setupSwitcher()
+        fatalError("init(coder:) has not been implemented. Use init(theme:) instead.")
     }
     
     private func setupSwitcher() {
@@ -157,12 +166,16 @@ class MermaidViewModeSwitcher: UIView {
         previewButton.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
         previewButton.translatesAutoresizingMaskIntoConstraints = false
         previewButton.addTarget(self, action: #selector(previewTapped), for: .touchUpInside)
+        previewButton.layer.cornerRadius = 4
+        previewButton.clipsToBounds = true
         
         // 代码按钮
         codeButton.setTitle("代码", for: .normal)
         codeButton.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
         codeButton.translatesAutoresizingMaskIntoConstraints = false
         codeButton.addTarget(self, action: #selector(codeTapped), for: .touchUpInside)
+        codeButton.layer.cornerRadius = 4
+        codeButton.clipsToBounds = true
         
         // 指示器
         indicatorView.backgroundColor = UIColor.systemBlue
@@ -173,20 +186,24 @@ class MermaidViewModeSwitcher: UIView {
         addSubview(codeButton)
         addSubview(indicatorView)
         
-        // 设置按钮约束
+        // 设置按钮约束（使用 theme 配置）
+        let buttonSpacing = theme.toolbarSwitcherButtonSpacing
+        let buttonWidth = theme.toolbarSwitcherButtonWidth
+        let switcherPadding = theme.toolbarPadding
+        
         NSLayoutConstraint.activate([
-            previewButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-            previewButton.topAnchor.constraint(equalTo: topAnchor, constant: 4),
-            previewButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
-            previewButton.widthAnchor.constraint(equalToConstant: 60),
+            previewButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: switcherPadding),
+            previewButton.topAnchor.constraint(equalTo: topAnchor, constant: switcherPadding),
+            previewButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -switcherPadding),
+            previewButton.widthAnchor.constraint(equalToConstant: buttonWidth),
             
-            codeButton.leadingAnchor.constraint(equalTo: previewButton.trailingAnchor, constant: 4),
-            codeButton.topAnchor.constraint(equalTo: topAnchor, constant: 4),
-            codeButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
-            codeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
-            codeButton.widthAnchor.constraint(equalToConstant: 60),
+            codeButton.leadingAnchor.constraint(equalTo: previewButton.trailingAnchor, constant: buttonSpacing),
+            codeButton.topAnchor.constraint(equalTo: topAnchor, constant: switcherPadding),
+            codeButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -switcherPadding),
+            codeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -switcherPadding),
+            codeButton.widthAnchor.constraint(equalToConstant: buttonWidth),
             
-            heightAnchor.constraint(equalToConstant: 32)
+            heightAnchor.constraint(equalToConstant: theme.toolbarSwitcherHeight)
         ])
         
         // 设置指示器的初始约束（默认在预览按钮下方）
@@ -219,15 +236,22 @@ class MermaidViewModeSwitcher: UIView {
         indicatorTrailingConstraint?.isActive = false
         
         if isPreviewMode {
-            previewButton.setTitleColor(.white, for: .normal)
-            codeButton.setTitleColor(.label, for: .normal)
+            // 选中状态：使用深色文字，确保在浅灰色背景上有足够的对比度
+            previewButton.setTitleColor(.label, for: .normal)
+            previewButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.1) // 浅蓝色背景
+            codeButton.setTitleColor(.secondaryLabel, for: .normal)
+            codeButton.backgroundColor = .clear
             
             // 移动指示器到预览按钮下方
             indicatorLeadingConstraint = indicatorView.leadingAnchor.constraint(equalTo: previewButton.leadingAnchor)
             indicatorTrailingConstraint = indicatorView.trailingAnchor.constraint(equalTo: previewButton.trailingAnchor)
         } else {
-            previewButton.setTitleColor(.label, for: .normal)
-            codeButton.setTitleColor(.white, for: .normal)
+            // 未选中状态
+            previewButton.setTitleColor(.secondaryLabel, for: .normal)
+            previewButton.backgroundColor = .clear
+            // 选中状态：使用深色文字
+            codeButton.setTitleColor(.label, for: .normal)
+            codeButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.1) // 浅蓝色背景
             
             // 移动指示器到代码按钮下方
             indicatorLeadingConstraint = indicatorView.leadingAnchor.constraint(equalTo: codeButton.leadingAnchor)

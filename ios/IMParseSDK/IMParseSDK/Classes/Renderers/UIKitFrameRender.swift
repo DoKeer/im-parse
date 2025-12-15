@@ -556,13 +556,13 @@ public class UIKitFrameRender {
         containerView.layer.borderWidth = 1
         containerView.layer.borderColor = context.theme.tableBorderColor.cgColor
         
-        let toolbarHeight: CGFloat = 48
-        let toolbarWidth: CGFloat = 120
-        let padding: CGFloat = 8
+        let toolbarHeight = context.theme.toolbarHeight
+        let toolbarWidth = context.theme.toolbarWidth
+        let padding = context.theme.toolbarPadding
         
         // 添加工具栏（如果有代理）
         if context.toolbarActionDelegate != nil {
-            let toolbar = UIKitToolbar()
+            let toolbar = UIKitToolbar(theme: context.theme)
             toolbar.frame = CGRect(
                 x: layout.frame.size.width - toolbarWidth - padding,
                 y: padding,
@@ -750,6 +750,10 @@ public class UIKitFrameRender {
     
     /// 渲染数学公式
     static func renderMath(_ node: MathNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
+        // 行内公式不应该调用这个方法，应该在 NSAttributedString 中作为附件处理
+        // 这里只处理块级公式
+        assert(node.display, "行内数学公式应该使用 MathTextAttachment 在 NSAttributedString 中处理")
+        
         let containerView = UIView()
         containerView.frame = CGRect(origin: .zero, size: frame.size)
         containerView.backgroundColor = context.theme.codeBackgroundColor
@@ -757,15 +761,17 @@ public class UIKitFrameRender {
         containerView.clipsToBounds = true
         
         let cacheKey = "math:\(node.content):\(node.display)"
-        let toolbarHeight: CGFloat = 48
-        let toolbarWidth: CGFloat = 120 // 3个按钮 + 间距
+        let toolbarHeight = context.theme.toolbarHeight
+        let toolbarWidth = context.theme.toolbarWidth
+        let toolbarPadding = context.theme.toolbarPadding
+        let contentPadding = context.theme.codeBlockPadding
         
-        // 添加工具栏（如果有代理）
+        // 添加工具栏（如果有代理，只对块级公式显示）
         if context.toolbarActionDelegate != nil {
-            let toolbar = UIKitToolbar()
+            let toolbar = UIKitToolbar(theme: context.theme)
             toolbar.frame = CGRect(
-                x: frame.size.width - toolbarWidth - 8,
-                y: 8,
+                x: frame.size.width - toolbarWidth - toolbarPadding,
+                y: toolbarPadding,
                 width: toolbarWidth,
                 height: toolbarHeight
             )
@@ -783,18 +789,21 @@ public class UIKitFrameRender {
             containerView.addSubview(toolbar)
         }
         
+        // 计算图片区域（工具栏在顶部，图片在下方，不挤占图片高度）
+        let imageAreaY: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : contentPadding
+        let imageAreaHeight = frame.size.height - imageAreaY - contentPadding
+        
         // 先尝试从缓存获取图片
         if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey) {
             // 缓存命中，直接使用缓存的图片
             let imageView = UIImageView()
             imageView.image = cachedImage
             imageView.contentMode = .scaleAspectFit
-            let imageY: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + 12 : 4
             imageView.frame = CGRect(
-                x: 4,
-                y: imageY,
-                width: frame.size.width - 8,
-                height: frame.size.height - imageY - 4
+                x: contentPadding,
+                y: imageAreaY,
+                width: frame.size.width - contentPadding * 2,
+                height: imageAreaHeight
             )
             containerView.addSubview(imageView)
             
@@ -855,12 +864,11 @@ public class UIKitFrameRender {
         
         let imageView = UIImageView()
         imageView.contentMode = .scaleAspectFit
-        let imageY: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + 12 : 4
         imageView.frame = CGRect(
-            x: 4,
-            y: imageY,
-            width: frame.size.width - 8,
-            height: frame.size.height - imageY - 4
+            x: contentPadding,
+            y: imageAreaY,
+            width: frame.size.width - contentPadding * 2,
+            height: imageAreaHeight
         )
         
         let activityIndicator = UIActivityIndicatorView(style: .medium)
@@ -906,9 +914,12 @@ public class UIKitFrameRender {
                     // 保存尺寸到缓存
                     context.formulaSizeCacheDelegate?.setCachedSize(imageSize, for: cacheKey)
                     
-                    // 计算实际需要的总高度（图片高度 + padding）
-                    let padding = context.theme.codeBlockPadding
-                    let actualHeight = imageSize.height + padding * 2
+                    // 计算实际需要的总高度（图片高度 + padding + 工具栏高度）
+                    // 工具栏高度不应该挤占图片高度，所以总高度 = 图片高度 + padding + 工具栏高度
+                    let contentPadding = context.theme.codeBlockPadding
+                    let toolbarPadding = context.theme.toolbarPadding
+                    let toolbarHeightForCalc = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : 0
+                    let actualHeight = imageSize.height + contentPadding * 2 + toolbarHeightForCalc
                     
                     // 获取当前容器的高度
                     let currentHeight = containerView.frame.height
@@ -929,9 +940,9 @@ public class UIKitFrameRender {
                     let padding = context.theme.codeBlockPadding
                     label.frame = CGRect(
                         x: padding,
-                        y: padding,
+                        y: imageAreaY,
                         width: frame.size.width - padding * 2,
-                        height: frame.size.height - padding * 2
+                        height: imageAreaHeight
                     )
                     containerView.addSubview(label)
                 }
@@ -953,27 +964,31 @@ public class UIKitFrameRender {
         
         let padding = context.theme.codeBlockPadding
         let cacheKey = "mermaid:\(node.content)"
-        let toolbarHeight: CGFloat = 48
-        let toolbarWidth: CGFloat = 120
-        let switcherHeight: CGFloat = 32
-        let topAreaHeight: CGFloat = max(toolbarHeight, switcherHeight) + 16
+        let toolbarHeight = context.theme.toolbarHeight
+        let toolbarWidth = context.theme.toolbarWidth
+        let toolbarPadding = context.theme.toolbarPadding
+        let switcherHeight = context.theme.toolbarSwitcherHeight
+        let switcherButtonWidth = context.theme.toolbarSwitcherButtonWidth
+        let switcherButtonSpacing = context.theme.toolbarSwitcherButtonSpacing
+        let switcherWidth = switcherButtonWidth * 2 + switcherButtonSpacing + toolbarPadding * 2
+        let topAreaHeight: CGFloat = max(toolbarHeight, switcherHeight) + toolbarPadding * 2
         
         // 添加预览/代码切换器（左侧）
-        let modeSwitcher = MermaidViewModeSwitcher()
+        let modeSwitcher = MermaidViewModeSwitcher(theme: context.theme)
         modeSwitcher.frame = CGRect(
             x: padding,
-            y: 8,
-            width: 128,
+            y: toolbarPadding,
+            width: switcherWidth,
             height: switcherHeight
         )
         containerView.addSubview(modeSwitcher)
         
         // 添加工具栏（右侧，如果有代理）
         if context.toolbarActionDelegate != nil {
-            let toolbar = UIKitToolbar()
+            let toolbar = UIKitToolbar(theme: context.theme)
             toolbar.frame = CGRect(
-                x: frame.size.width - toolbarWidth - padding,
-                y: 8,
+                x: frame.size.width - toolbarWidth - toolbarPadding,
+                y: toolbarPadding,
                 width: toolbarWidth,
                 height: toolbarHeight
             )

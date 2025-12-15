@@ -118,22 +118,28 @@ public class UIKitFrameAsyncCalculator {
     private static func calculateNodeLayout(_ node: ASTNodeWrapper, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
         switch node {
         case .paragraph(let pNode):
-            // 段落布局：检查是否包含块级特殊节点（图片、数学公式、Mermaid）
-            // 注意：mention 和 emoji 应该作为行内元素，与文本在同一行显示
+            // 段落布局：检查是否包含块级特殊节点（图片、块级数学公式、Mermaid）
+            // 注意：行内数学公式（display=false）应该作为行内元素，与文本在同一行显示
             let hasBlockLevelSpecialNodes = pNode.children.contains { wrapper in
                 switch wrapper {
-                case .image, .math, .mermaid:
+                case .image, .mermaid:
                     return true
+                case .math(let mathNode):
+                    // 只有块级数学公式才是块级节点
+                    return mathNode.display
                 default:
                     return false
                 }
             }
             
-            // 检查是否包含 mention 或 emoji（行内特殊节点）
+            // 检查是否包含行内特殊节点（mention、emoji、行内数学公式）
             let hasInlineSpecialNodes = pNode.children.contains { wrapper in
                 switch wrapper {
                 case .mention, .emoji:
                     return true
+                case .math(let mathNode):
+                    // 行内数学公式（display=false）是行内节点
+                    return !mathNode.display
                 default:
                     return false
                 }
@@ -143,7 +149,7 @@ public class UIKitFrameAsyncCalculator {
                 // 包含块级特殊节点，需要混合布局计算
                 return calculateParagraphWithSpecialNodes(pNode, context: context, origin: origin, width: width)
             } else if hasInlineSpecialNodes {
-                // 只包含行内特殊节点（mention、emoji），使用行内布局计算
+                // 包含行内特殊节点（mention、emoji、行内数学公式），使用行内布局计算
                 return calculateParagraphWithInlineNodes(pNode, context: context, origin: origin, width: width)
             } else {
                 // 纯文本段落，使用 NSAttributedString 计算
@@ -436,8 +442,20 @@ public class UIKitFrameAsyncCalculator {
     /// 估算数学公式的尺寸
     /// 根据 MathHTMLRenderer 的处理逻辑，尝试获取更精确的尺寸
     private static func estimateMathSize(node: MathNode, context: UIKitRenderContext, width: CGFloat) -> CGSize {
+        // 行内公式不需要工具栏，直接返回行高相关的尺寸
+        if !node.display {
+            // 行内公式：使用字体行高作为高度
+            let font = context.currentFont ?? context.theme.font
+            let lineHeight = font.lineHeight
+            // 宽度使用估算值（根据内容长度）
+            let estimatedWidth = min(CGFloat(node.content.count * 8), width)
+            return CGSize(width: estimatedWidth, height: lineHeight)
+        }
+        
+        // 块级公式：需要工具栏和padding
         let padding = context.theme.codeBlockPadding
-        let toolbarHeight: CGFloat = context.toolbarActionDelegate != nil ? 48 + 16 : 0 // 工具栏高度 + 间距
+        let toolbarPadding = context.theme.toolbarPadding
+        let toolbarHeight: CGFloat = context.toolbarActionDelegate != nil ? context.theme.toolbarHeight + toolbarPadding * 2 : 0 // 工具栏高度 + 间距
         
         // 生成缓存键（使用内容字符串作为key）
         let cacheKey = "math:\(node.content):\(node.display)"
@@ -445,8 +463,10 @@ public class UIKitFrameAsyncCalculator {
         // 优先从缓存获取尺寸
         if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey) {
             // 如果缓存中有尺寸，使用缓存的尺寸
-            // 注意：缓存的尺寸可能是图片的实际尺寸，需要加上padding和工具栏高度
-            let totalHeight = cachedSize.height + padding * 2 + toolbarHeight
+            // 注意：缓存的尺寸是图片的实际尺寸，需要加上padding和工具栏高度
+            // 但图片高度应该独立计算，工具栏不应该挤占图片高度
+            let imageHeight = cachedSize.height
+            let totalHeight = imageHeight + padding * 2 + toolbarHeight
             // 宽度使用传入的width（限制最大宽度）
             return CGSize(width: width, height: totalHeight)
         }
@@ -486,21 +506,22 @@ public class UIKitFrameAsyncCalculator {
         let additionalHeight = CGFloat(contentLength / 50) * lengthMultiplier
         
         // 限制最大高度（避免过度估算）
-        let maxHeight: CGFloat = node.display ? 300 : 100
-        let estimatedHeight = min(baseHeight + additionalHeight, maxHeight)
+        let maxHeight: CGFloat = 300
+        let estimatedImageHeight = min(baseHeight + additionalHeight, maxHeight)
         
         // 宽度使用传入的 width（数学公式通常不会超出容器宽度）
-        // 加上工具栏高度
-        return CGSize(width: width, height: estimatedHeight + toolbarHeight)
+        // 总高度 = 图片高度 + padding + 工具栏高度（工具栏不挤占图片高度）
+        return CGSize(width: width, height: estimatedImageHeight + padding * 2 + toolbarHeight)
     }
     
     /// 估算 Mermaid 图表的尺寸
     /// 根据 MermaidHTMLRenderer 的处理逻辑，尝试获取更精确的尺寸
     private static func estimateMermaidSize(node: MermaidNode, context: UIKitRenderContext, width: CGFloat) -> CGSize {
         let padding = context.theme.codeBlockPadding
-        let toolbarHeight: CGFloat = 48 // 工具栏高度
-        let switcherHeight: CGFloat = 32 // 切换器高度
-        let topAreaHeight: CGFloat = max(toolbarHeight, switcherHeight) + 16 // 顶部区域高度
+        let toolbarHeight = context.theme.toolbarHeight // 工具栏高度
+        let toolbarPadding = context.theme.toolbarPadding
+        let switcherHeight = context.theme.toolbarSwitcherHeight // 切换器高度
+        let topAreaHeight: CGFloat = max(toolbarHeight, switcherHeight) + toolbarPadding * 2 // 顶部区域高度
         
         // 生成缓存键（使用内容字符串作为key）
         let cacheKey = "mermaid:\(node.content)"
@@ -616,9 +637,15 @@ public class UIKitFrameAsyncCalculator {
                 
             case .math(let mathNode):
                 flushTextNodes()
-                let mathLayout = calculateNodeLayout(.math(mathNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
-                childLayouts.append(mathLayout)
-                currentY += mathLayout.frame.height
+                // 只有块级数学公式才单独处理，行内数学公式应该在文本中作为附件处理
+                if mathNode.display {
+                    let mathLayout = calculateNodeLayout(.math(mathNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                    childLayouts.append(mathLayout)
+                    currentY += mathLayout.frame.height
+                } else {
+                    // 行内数学公式应该包含在文本节点中，不应该单独处理
+                    currentTextNodes.append(child)
+                }
                 
             case .mermaid(let mermaidNode):
                 flushTextNodes()
@@ -653,19 +680,19 @@ public class UIKitFrameAsyncCalculator {
         )
     }
     
-    /// 计算包含行内特殊节点（mention、emoji）的段落布局
+    /// 计算包含行内特殊节点（mention、emoji、行内数学公式）的段落布局
     /// 这些节点应该与文本在同一行显示，使用水平布局
     private static func calculateParagraphWithInlineNodes(_ node: ParagraphNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
-        // 使用 UITextView 的布局计算，将 mention 和 emoji 作为 NSTextAttachment 嵌入
+        // 使用 UITextView 的布局计算，将 mention、emoji 和行内数学公式作为 NSTextAttachment 嵌入
         // 但为了支持点击事件，我们需要使用自定义的布局方式
         
-        // 将节点分组：连续的文本节点合并，mention 和 emoji 单独处理
-        var inlineNodeGroups: [(isText: Bool, nodes: [ASTNodeWrapper], mentionNode: MentionNode?, emojiNode: EmojiNode?)] = []
+        // 将节点分组：连续的文本节点合并，mention、emoji 和行内数学公式单独处理
+        var inlineNodeGroups: [(isText: Bool, nodes: [ASTNodeWrapper], mentionNode: MentionNode?, emojiNode: EmojiNode?, mathNode: MathNode?)] = []
         var currentTextNodes: [ASTNodeWrapper] = []
         
         func flushTextNodes() {
             if !currentTextNodes.isEmpty {
-                inlineNodeGroups.append((isText: true, nodes: currentTextNodes, mentionNode: nil, emojiNode: nil))
+                inlineNodeGroups.append((isText: true, nodes: currentTextNodes, mentionNode: nil, emojiNode: nil, mathNode: nil))
                 currentTextNodes.removeAll()
             }
         }
@@ -674,17 +701,26 @@ public class UIKitFrameAsyncCalculator {
             switch child {
             case .mention(let mentionNode):
                 flushTextNodes()
-                inlineNodeGroups.append((isText: false, nodes: [], mentionNode: mentionNode, emojiNode: nil))
+                inlineNodeGroups.append((isText: false, nodes: [], mentionNode: mentionNode, emojiNode: nil, mathNode: nil))
             case .emoji(let emojiNode):
                 flushTextNodes()
-                inlineNodeGroups.append((isText: false, nodes: [], mentionNode: nil, emojiNode: emojiNode))
+                inlineNodeGroups.append((isText: false, nodes: [], mentionNode: nil, emojiNode: emojiNode, mathNode: nil))
+            case .math(let mathNode):
+                // 只有行内数学公式才作为附件处理
+                if !mathNode.display {
+                    flushTextNodes()
+                    inlineNodeGroups.append((isText: false, nodes: [], mentionNode: nil, emojiNode: nil, mathNode: mathNode))
+                } else {
+                    // 块级数学公式不应该在这里处理
+                    currentTextNodes.append(child)
+                }
             default:
                 currentTextNodes.append(child)
             }
         }
         flushTextNodes()
         
-        // 构建包含 mention 和 emoji 的 NSAttributedString
+        // 构建包含 mention、emoji 和行内数学公式的 NSAttributedString
         let mutableAttrString = NSMutableAttributedString()
         
         for group in inlineNodeGroups {
@@ -745,6 +781,11 @@ public class UIKitFrameAsyncCalculator {
                     )
                     mutableAttrString.append(emojiString)
                 }
+            } else if let mathNode = group.mathNode {
+                // 行内数学公式：使用 MathTextAttachment
+                let mathAttachment = MathTextAttachment(mathNode: mathNode, context: context)
+                let attachmentString = NSAttributedString(attachment: mathAttachment)
+                mutableAttrString.append(attachmentString)
             }
         }
         
@@ -806,9 +847,15 @@ public class UIKitFrameAsyncCalculator {
                 
             case .math(let mathNode):
                 flushTextNodes()
-                let mathLayout = calculateNodeLayout(.math(mathNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
-                childLayouts.append(mathLayout)
-                currentY += mathLayout.frame.height
+                // 只有块级数学公式才单独处理，行内数学公式应该在文本中作为附件处理
+                if mathNode.display {
+                    let mathLayout = calculateNodeLayout(.math(mathNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                    childLayouts.append(mathLayout)
+                    currentY += mathLayout.frame.height
+                } else {
+                    // 行内数学公式应该包含在文本节点中，不应该单独处理
+                    currentTextNodes.append(child)
+                }
                 
             case .mermaid(let mermaidNode):
                 flushTextNodes()
@@ -954,7 +1001,7 @@ public class UIKitFrameAsyncCalculator {
     
     /// 计算表格布局
     private static func calculateTableLayout(_ node: TableNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
-        let toolbarHeight: CGFloat = context.toolbarActionDelegate != nil ? 48 + 16 : 0 // 工具栏高度 + 间距
+        let toolbarHeight: CGFloat = context.toolbarActionDelegate != nil ? context.theme.toolbarHeight + 16 : 0 // 工具栏高度 + 间距
         var currentY: CGFloat = toolbarHeight
         var rowLayouts: [NodeLayout] = []
         let cellPadding = context.theme.tableCellPadding
@@ -1207,9 +1254,15 @@ public class UIKitFrameAsyncCalculator {
                 
             case .math(let mathNode):
                 flushTextNodes()
-                let mathLayout = calculateNodeLayout(.math(mathNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
-                childLayouts.append(mathLayout)
-                currentY += mathLayout.frame.height
+                // 只有块级数学公式才单独处理，行内数学公式应该在文本中作为附件处理
+                if mathNode.display {
+                    let mathLayout = calculateNodeLayout(.math(mathNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                    childLayouts.append(mathLayout)
+                    currentY += mathLayout.frame.height
+                } else {
+                    // 行内数学公式应该包含在文本节点中，不应该单独处理
+                    currentTextNodes.append(child)
+                }
                 
             case .mermaid(let mermaidNode):
                 flushTextNodes()

@@ -90,6 +90,24 @@ public struct UIKitTheme {
     /// 卡片圆角
     public var cardBorderRadius: CGFloat
     
+    // 工具栏 (Toolbar)
+    /// 工具栏高度
+    public var toolbarHeight: CGFloat
+    /// 工具栏宽度（用于数学公式、Mermaid、表格的工具栏）
+    public var toolbarWidth: CGFloat
+    /// 工具栏内边距
+    public var toolbarPadding: CGFloat
+    /// 工具栏按钮尺寸（宽度和高度）
+    public var toolbarButtonSize: CGFloat
+    /// 工具栏按钮间距
+    public var toolbarButtonSpacing: CGFloat
+    /// Mermaid 切换器高度
+    public var toolbarSwitcherHeight: CGFloat
+    /// Mermaid 切换器按钮宽度
+    public var toolbarSwitcherButtonWidth: CGFloat
+    /// Mermaid 切换器按钮间距
+    public var toolbarSwitcherButtonSpacing: CGFloat
+    
     // MARK: - 初始化
     
     /// 从 StyleConfig 创建 UIKitTheme
@@ -125,6 +143,16 @@ public struct UIKitTheme {
         self.lineHeight = CGFloat(config.lineHeight)
         self.maxContentWidth = CGFloat(config.maxContentWidth)
         self.contentPadding = CGFloat(config.contentPadding)
+        
+        // 工具栏尺寸（默认值）
+        self.toolbarHeight = 36
+        self.toolbarWidth = 120
+        self.toolbarPadding = 8
+        self.toolbarButtonSize = 32
+        self.toolbarButtonSpacing = 8
+        self.toolbarSwitcherHeight = 32
+        self.toolbarSwitcherButtonWidth = 60
+        self.toolbarSwitcherButtonSpacing = 4
     }
     
     /// 默认主题（从 StyleConfig.default() 创建）

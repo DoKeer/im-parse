@@ -53,6 +53,8 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>此应用需要访问相册以保存数学公式和Mermaid图表的图片</string>
 </dict>
 </plist>
 

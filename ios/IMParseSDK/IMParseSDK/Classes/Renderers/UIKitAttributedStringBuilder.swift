@@ -131,8 +131,18 @@ public class UIKitAttributedStringBuilder {
             )
             return attributedString
             
+        case .math(let mathNode):
+            // 行内数学公式：使用 MathTextAttachment
+            if !mathNode.display {
+                let mathAttachment = MathTextAttachment(mathNode: mathNode, context: context)
+                return NSAttributedString(attachment: mathAttachment)
+            } else {
+                // 块级数学公式不应该在这里处理，应该在混合布局中单独处理
+                return NSAttributedString()
+            }
+            
         default:
-            // 对于其他类型（图片、数学公式、Mermaid、提及），返回空字符串
+            // 对于其他类型（图片、块级数学公式、Mermaid、提及），返回空字符串
             // 这些节点在混合布局中会作为 View 单独处理
             return NSAttributedString()
         }
