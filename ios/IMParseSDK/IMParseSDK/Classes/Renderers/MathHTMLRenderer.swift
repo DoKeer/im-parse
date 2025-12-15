@@ -115,7 +115,9 @@ public class MathHTMLRenderer {
         let fullHTML = buildFullHTML(html: html, display: display, textColor: textColor, fontSize: fontSize)
         
         // 设置 WebView 配置（使用较大的初始尺寸，确保内容能完全渲染）
-        webView.frame = CGRect(x: 0, y: 0, width: 1000, height: display ? 300 : 150)
+        // 宽度设置为 2000pt 以容纳较长的公式（不会影响最终截图尺寸）
+        // 高度根据显示模式设置：块级公式通常更高（分数、矩阵等）
+        webView.frame = CGRect(x: 0, y: 0, width: 2000, height: display ? 500 : 200)
         webView.isOpaque = false
         webView.backgroundColor = .clear
         
@@ -157,24 +159,31 @@ public class MathHTMLRenderer {
                     }
                     
                 // 获取数学公式容器的精确边界（相对于视口）
+                // 注意：getBoundingClientRect() 返回的是实际渲染尺寸（包括字体、行高等）
+                // 使用 Math.ceil() 向上取整，避免因浮点数截断导致内容被裁剪
                 webView.evaluateJavaScript("""
                     (function() {
                         // 先查找 .katex 元素（KaTeX 生成的元素）
                         const katexElement = document.querySelector('.katex');
                         if (katexElement) {
                             const rect = katexElement.getBoundingClientRect();
+                            // 使用 scrollWidth/scrollHeight 作为参考，确保不会遗漏溢出内容
+                            const scrollWidth = katexElement.scrollWidth;
+                            const scrollHeight = katexElement.scrollHeight;
                             return {
-                                width: Math.ceil(rect.width),
-                                height: Math.ceil(rect.height)
+                                width: Math.ceil(Math.max(rect.width, scrollWidth)),
+                                height: Math.ceil(Math.max(rect.height, scrollHeight))
                             };
                         }
                         // 如果没有找到 .katex，查找 .math-container
                         const container = document.querySelector('.math-container');
                         if (container) {
                             const rect = container.getBoundingClientRect();
+                            const scrollWidth = container.scrollWidth;
+                            const scrollHeight = container.scrollHeight;
                             return {
-                                width: Math.ceil(rect.width),
-                                height: Math.ceil(rect.height)
+                                width: Math.ceil(Math.max(rect.width, scrollWidth)),
+                                height: Math.ceil(Math.max(rect.height, scrollHeight))
                             };
                         }
                         // 回退到 body
@@ -203,16 +212,19 @@ public class MathHTMLRenderer {
                               let width = sizeDict["width"],
                               let height = sizeDict["height"] {
                         // 获取内容在 WebView 中的精确位置和尺寸
+                        // 同时考虑 scroll 尺寸，确保完整捕获内容
                         webView.evaluateJavaScript("""
                             (function() {
                                 const katexElement = document.querySelector('.katex') || document.querySelector('.math-container');
                                 if (katexElement) {
                                     const rect = katexElement.getBoundingClientRect();
+                                    const scrollWidth = katexElement.scrollWidth;
+                                    const scrollHeight = katexElement.scrollHeight;
                                     return {
                                         x: Math.max(0, Math.floor(rect.left)),
                                         y: Math.max(0, Math.floor(rect.top)),
-                                        width: Math.ceil(rect.width),
-                                        height: Math.ceil(rect.height)
+                                        width: Math.ceil(Math.max(rect.width, scrollWidth)),
+                                        height: Math.ceil(Math.max(rect.height, scrollHeight))
                                     };
                                 }
                                 return { x: 0, y: 0, width: \(width), height: \(height) };
@@ -328,12 +340,32 @@ public class MathHTMLRenderer {
     private func captureWebView(_ webView: WKWebView, contentRect: CGRect?, completion: @escaping (UIImage?) -> Void) {
         let config = WKSnapshotConfiguration()
         
+        // 获取屏幕 scale，用于生成高清图片（避免模糊）
+        let scale = UIScreen.main.scale
+        
         // 如果指定了内容区域，只截取该区域；否则截取整个 WebView
+        let targetRect: CGRect
         if let rect = contentRect {
-            config.rect = rect
+            // 对内容区域做一些容错处理：
+            // 1. 增加一点 padding（上下各 2pt），避免高度裁剪不完整
+            // 2. 确保坐标不为负数
+            let padding: CGFloat = 2.0
+            targetRect = CGRect(
+                x: max(0, rect.origin.x),
+                y: max(0, rect.origin.y - padding),
+                width: rect.width,
+                height: rect.height + padding * 2
+            )
         } else {
-            config.rect = webView.bounds
+            targetRect = webView.bounds
         }
+        
+        config.rect = targetRect
+        
+        // 设置快照宽度为实际像素宽度（点数 × scale）
+        // 这样可以生成高分辨率图片，避免在 Retina 屏幕上模糊
+        // snapshotWidth 是生成图片的实际像素宽度
+        config.snapshotWidth = NSNumber(value: Double(targetRect.width * scale))
         
         webView.takeSnapshot(with: config) { image, error in
             if let error = error {
@@ -342,7 +374,21 @@ public class MathHTMLRenderer {
                 return
             }
             
-            // 如果指定了内容区域，图片已经是裁剪后的；否则直接返回
+            // 验证生成的图片尺寸
+            if let image = image {
+                let expectedWidth = targetRect.width * scale
+                let expectedHeight = targetRect.height * scale
+                let actualWidth = image.size.width * image.scale
+                let actualHeight = image.size.height * image.scale
+                
+                // 如果尺寸差异较大（超过 5%），打印警告日志
+                if abs(actualWidth - expectedWidth) > expectedWidth * 0.05 ||
+                   abs(actualHeight - expectedHeight) > expectedHeight * 0.05 {
+                    print("MathHTMLRenderer: Unexpected image size - expected: \(Int(expectedWidth))×\(Int(expectedHeight)), actual: \(Int(actualWidth))×\(Int(actualHeight))")
+                }
+            }
+            
+            // 返回生成的高清图片
             completion(image)
         }
     }

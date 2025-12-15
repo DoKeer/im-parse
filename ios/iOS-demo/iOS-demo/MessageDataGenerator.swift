@@ -81,7 +81,7 @@ class MessageDataGenerator {
             |-----|-----|-----|-----|
             | 数据1 | **粗体数据** | *斜体数据ABCabc* $E = mc^2$ | `代码数据` |
             | 数据2https://fastly.picsum.photos/id/987/300/200.jpg?hmac=lJV-MNZkUF2dOSdcuChxuE5smUQzHj6t3UFq9va9uK0https://fastly.picsum.photos/id/987/300/200.jpg?hmac=lJV-MNZkUF2dOSdcuChxuE5smUQzHj6t3UFq9va9uK0 | 文本和[链接](https://example.com) | 普通文本 | 混合格式 |
-            | 数据3 | 长文本内容，用于测试表格单元格中的文本换行效果 | 短文本 | 数据 |
+            | 数据3 $E = mc^2$  | 长文本内容，用于测试表格单元格中的文本换行效果 | 短文本 | 数据 |
             | 数据4 | 左对齐 | 居中 | 右对齐 |
             
             | 左对齐 | 居中 | 右对齐 |
