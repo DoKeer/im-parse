@@ -58,6 +58,29 @@ public protocol UIKitInlineImageLoaderDelegate: AnyObject {
     func loadMentionStatusImage(mentionNode: MentionNode, completion: @escaping (UIImage?) -> Void)
 }
 
+/// 工具栏操作代理协议（用于数学公式、Mermaid、表格的工具栏按钮）
+public protocol UIKitToolbarActionDelegate: AnyObject {
+    /// 复制内容
+    /// - Parameters:
+    ///   - content: 要复制的内容
+    ///   - type: 内容类型（math/mermaid/table）
+    func copyContent(_ content: String, type: String)
+    
+    /// 下载内容（图片或代码）
+    /// - Parameters:
+    ///   - content: 要下载的内容
+    ///   - type: 内容类型（math/mermaid/table）
+    ///   - image: 如果是图片类型，传入图片；否则为nil
+    func downloadContent(_ content: String, type: String, image: UIImage?)
+    
+    /// 全屏显示
+    /// - Parameters:
+    ///   - content: 要全屏显示的内容
+    ///   - type: 内容类型（math/mermaid/table）
+    ///   - image: 如果是图片类型，传入图片；否则为nil
+    func showFullscreen(_ content: String, type: String, image: UIImage?)
+}
+
 /// UIKit 渲染上下文
 /// 包含渲染过程中的所有状态和回调
 public struct UIKitRenderContext {
@@ -84,6 +107,9 @@ public struct UIKitRenderContext {
     // 行内图片加载代理（可选，用于 Emoji 和 Mention 状态图片）
     public weak var inlineImageLoaderDelegate: UIKitInlineImageLoaderDelegate?
     
+    // 工具栏操作代理（可选，用于数学公式、Mermaid、表格的工具栏按钮）
+    public weak var toolbarActionDelegate: UIKitToolbarActionDelegate?
+    
     // 布局高度变化回调（用于通知 cell 高度变化）
     public var onLayoutHeightChanged: ((CGFloat) -> Void)?
     
@@ -100,6 +126,7 @@ public struct UIKitRenderContext {
                 imageLoaderDelegate: UIKitImageLoaderDelegate? = nil,
                 formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil,
                 inlineImageLoaderDelegate: UIKitInlineImageLoaderDelegate? = nil,
+                toolbarActionDelegate: UIKitToolbarActionDelegate? = nil,
                 onLayoutHeightChanged: ((CGFloat) -> Void)? = nil) {
         self.theme = theme
         self.width = width
@@ -114,6 +141,7 @@ public struct UIKitRenderContext {
         self.imageLoaderDelegate = imageLoaderDelegate
         self.formulaSizeCacheDelegate = formulaSizeCacheDelegate
         self.inlineImageLoaderDelegate = inlineImageLoaderDelegate
+        self.toolbarActionDelegate = toolbarActionDelegate
         self.onLayoutHeightChanged = onLayoutHeightChanged
     }
 }

@@ -27,6 +27,7 @@ data class AndroidRenderContext(
     val onMermaidTap: ((MermaidNode) -> Unit)? = null,
     val imageLoader: ImageLoader? = null,
     val formulaSizeCacheDelegate: FormulaSizeCacheDelegate? = null,
+    val toolbarActionDelegate: ToolbarActionDelegate? = null,
     val onLayoutHeightChanged: ((Float) -> Unit)? = null
 ) {
     /**
@@ -60,6 +61,27 @@ data class AndroidRenderContext(
          * 保存尺寸到缓存
          */
         fun setCachedSize(size: android.graphics.PointF, cacheKey: String)
+    }
+    
+    /**
+     * 工具栏操作代理
+     * 用于数学公式、Mermaid、表格的工具栏按钮
+     */
+    interface ToolbarActionDelegate {
+        /**
+         * 复制内容
+         */
+        fun copyContent(content: String, type: String)
+        
+        /**
+         * 下载内容（图片或代码）
+         */
+        fun downloadContent(content: String, type: String, image: Bitmap?)
+        
+        /**
+         * 全屏显示
+         */
+        fun showFullscreen(content: String, type: String, image: Bitmap?)
     }
 }
 

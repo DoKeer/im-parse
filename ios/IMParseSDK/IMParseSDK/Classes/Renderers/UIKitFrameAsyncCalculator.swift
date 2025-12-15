@@ -437,6 +437,7 @@ public class UIKitFrameAsyncCalculator {
     /// 根据 MathHTMLRenderer 的处理逻辑，尝试获取更精确的尺寸
     private static func estimateMathSize(node: MathNode, context: UIKitRenderContext, width: CGFloat) -> CGSize {
         let padding = context.theme.codeBlockPadding
+        let toolbarHeight: CGFloat = context.toolbarActionDelegate != nil ? 48 + 16 : 0 // 工具栏高度 + 间距
         
         // 生成缓存键（使用内容字符串作为key）
         let cacheKey = "math:\(node.content):\(node.display)"
@@ -444,8 +445,8 @@ public class UIKitFrameAsyncCalculator {
         // 优先从缓存获取尺寸
         if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey) {
             // 如果缓存中有尺寸，使用缓存的尺寸
-            // 注意：缓存的尺寸可能是图片的实际尺寸，需要加上padding
-            let totalHeight = cachedSize.height + padding * 2
+            // 注意：缓存的尺寸可能是图片的实际尺寸，需要加上padding和工具栏高度
+            let totalHeight = cachedSize.height + padding * 2 + toolbarHeight
             // 宽度使用传入的width（限制最大宽度）
             return CGSize(width: width, height: totalHeight)
         }
@@ -489,13 +490,17 @@ public class UIKitFrameAsyncCalculator {
         let estimatedHeight = min(baseHeight + additionalHeight, maxHeight)
         
         // 宽度使用传入的 width（数学公式通常不会超出容器宽度）
-        return CGSize(width: width, height: estimatedHeight)
+        // 加上工具栏高度
+        return CGSize(width: width, height: estimatedHeight + toolbarHeight)
     }
     
     /// 估算 Mermaid 图表的尺寸
     /// 根据 MermaidHTMLRenderer 的处理逻辑，尝试获取更精确的尺寸
     private static func estimateMermaidSize(node: MermaidNode, context: UIKitRenderContext, width: CGFloat) -> CGSize {
         let padding = context.theme.codeBlockPadding
+        let toolbarHeight: CGFloat = 48 // 工具栏高度
+        let switcherHeight: CGFloat = 32 // 切换器高度
+        let topAreaHeight: CGFloat = max(toolbarHeight, switcherHeight) + 16 // 顶部区域高度
         
         // 生成缓存键（使用内容字符串作为key）
         let cacheKey = "mermaid:\(node.content)"
@@ -503,8 +508,8 @@ public class UIKitFrameAsyncCalculator {
         // 优先从缓存获取尺寸
         if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey) {
             // 如果缓存中有尺寸，使用缓存的尺寸
-            // 注意：缓存的尺寸可能是图片的实际尺寸，需要加上padding
-            let totalHeight = cachedSize.height + padding * 2
+            // 注意：缓存的尺寸可能是图片的实际尺寸，需要加上padding和顶部区域高度
+            let totalHeight = cachedSize.height + padding * 2 + topAreaHeight
             // 宽度使用传入的width（限制最大宽度）
             return CGSize(width: width, height: totalHeight)
         }
@@ -566,7 +571,8 @@ public class UIKitFrameAsyncCalculator {
         let maxHeight: CGFloat = 1000
         let estimatedHeight = min(baseHeight + additionalHeight, maxHeight)
         
-        return CGSize(width: width, height: estimatedHeight + padding * 2)
+        // 加上顶部区域高度（切换器和工具栏）
+        return CGSize(width: width, height: estimatedHeight + padding * 2 + topAreaHeight)
     }
     
     /// 计算包含特殊节点的段落布局
@@ -948,7 +954,8 @@ public class UIKitFrameAsyncCalculator {
     
     /// 计算表格布局
     private static func calculateTableLayout(_ node: TableNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
-        var currentY: CGFloat = 0
+        let toolbarHeight: CGFloat = context.toolbarActionDelegate != nil ? 48 + 16 : 0 // 工具栏高度 + 间距
+        var currentY: CGFloat = toolbarHeight
         var rowLayouts: [NodeLayout] = []
         let cellPadding = context.theme.tableCellPadding
         

@@ -448,6 +448,7 @@ class MessageTableViewCell: UITableViewCell {
             imageLoaderDelegate: viewController as? UIKitImageLoaderDelegate,
             formulaSizeCacheDelegate: viewController as? UIKitFormulaSizeCacheDelegate,
             inlineImageLoaderDelegate: viewController as? UIKitInlineImageLoaderDelegate,
+            toolbarActionDelegate: viewController as? UIKitToolbarActionDelegate,
             onLayoutHeightChanged: onHeightChanged
         )
     }
@@ -643,6 +644,236 @@ extension UIKitFrameMessageListViewController: UIKitFormulaSizeCacheDelegate {
         }
         // 添加前缀以区分公式图片和其他图片
         return "formula_\(key)"
+    }
+}
+
+// MARK: - UIKitToolbarActionDelegate
+
+extension UIKitFrameMessageListViewController: UIKitToolbarActionDelegate {
+    /// 复制内容
+    func copyContent(_ content: String, type: String) {
+        UIPasteboard.general.string = content
+        
+        // 显示复制成功提示
+        let alert = UIAlertController(
+            title: "已复制",
+            message: "\(type == "math" ? "数学公式" : type == "mermaid" ? "Mermaid 图表" : "表格")内容已复制到剪贴板",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "确定", style: .default))
+        present(alert, animated: true)
+    }
+    
+    /// 下载内容（图片或代码）
+    func downloadContent(_ content: String, type: String, image: UIImage?) {
+        if let image = image {
+            // 保存图片到相册
+            UIImageWriteToSavedPhotosAlbum(image, self, #selector(image(_:didFinishSavingWithError:contextInfo:)), nil)
+        } else {
+            // 保存代码为文本文件
+            saveCodeToFile(content: content, type: type)
+        }
+    }
+    
+    /// 全屏显示
+    func showFullscreen(_ content: String, type: String, image: UIImage?) {
+        if let image = image {
+            // 显示图片全屏预览
+            let fullscreenVC = FullscreenImageViewController(image: image, title: type == "math" ? "数学公式" : "Mermaid 图表")
+            let navController = UINavigationController(rootViewController: fullscreenVC)
+            navController.modalPresentationStyle = .fullScreen
+            present(navController, animated: true)
+        } else {
+            // 显示代码全屏预览
+            let fullscreenVC = FullscreenCodeViewController(content: content, type: type)
+            let navController = UINavigationController(rootViewController: fullscreenVC)
+            navController.modalPresentationStyle = .fullScreen
+            present(navController, animated: true)
+        }
+    }
+    
+    /// 图片保存完成回调
+    @objc private func image(_ image: UIImage, didFinishSavingWithError error: Error?, contextInfo: UnsafeRawPointer) {
+        if let error = error {
+            let alert = UIAlertController(
+                title: "保存失败",
+                message: error.localizedDescription,
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "确定", style: .default))
+            present(alert, animated: true)
+        } else {
+            let alert = UIAlertController(
+                title: "保存成功",
+                message: "图片已保存到相册",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "确定", style: .default))
+            present(alert, animated: true)
+        }
+    }
+    
+    /// 保存代码为文本文件
+    private func saveCodeToFile(content: String, type: String) {
+        let fileName = "\(type)_\(Date().timeIntervalSince1970).txt"
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+        
+        do {
+            try content.write(to: fileURL, atomically: true, encoding: .utf8)
+            
+            // 使用 UIActivityViewController 分享文件
+            let activityVC = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+            if let popover = activityVC.popoverPresentationController {
+                popover.sourceView = view
+                popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+            present(activityVC, animated: true)
+        } catch {
+            let alert = UIAlertController(
+                title: "保存失败",
+                message: error.localizedDescription,
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "确定", style: .default))
+            present(alert, animated: true)
+        }
+    }
+}
+
+// MARK: - Fullscreen Image View Controller
+
+/// 全屏图片预览视图控制器
+class FullscreenImageViewController: UIViewController {
+    private let image: UIImage
+    private let scrollView = UIScrollView()
+    private let imageView = UIImageView()
+    
+    init(image: UIImage, title: String) {
+        self.image = image
+        super.init(nibName: nil, bundle: nil)
+        self.title = title
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        view.backgroundColor = .black
+        
+        // 设置导航栏
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .close,
+            target: self,
+            action: #selector(closeTapped)
+        )
+        
+        // 设置滚动视图
+        scrollView.delegate = self
+        scrollView.minimumZoomScale = 1.0
+        scrollView.maximumZoomScale = 3.0
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scrollView)
+        
+        // 设置图片视图
+        imageView.image = image
+        imageView.contentMode = .scaleAspectFit
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.addSubview(imageView)
+        
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            
+            imageView.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            imageView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            imageView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+            imageView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+            imageView.heightAnchor.constraint(equalTo: scrollView.heightAnchor)
+        ])
+    }
+    
+    @objc private func closeTapped() {
+        dismiss(animated: true)
+    }
+}
+
+extension FullscreenImageViewController: UIScrollViewDelegate {
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+        return imageView
+    }
+}
+
+// MARK: - Fullscreen Code View Controller
+
+/// 全屏代码预览视图控制器
+class FullscreenCodeViewController: UIViewController {
+    private let content: String
+    private let type: String
+    private let textView = UITextView()
+    
+    init(content: String, type: String) {
+        self.content = content
+        self.type = type
+        super.init(nibName: nil, bundle: nil)
+        self.title = type == "math" ? "数学公式代码" : type == "mermaid" ? "Mermaid 代码" : "表格内容"
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        view.backgroundColor = .systemBackground
+        
+        // 设置导航栏
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .close,
+            target: self,
+            action: #selector(closeTapped)
+        )
+        
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .action,
+            target: self,
+            action: #selector(shareTapped)
+        )
+        
+        // 设置文本视图
+        textView.text = content
+        textView.font = UIFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+        textView.textColor = .label
+        textView.backgroundColor = .systemBackground
+        textView.isEditable = false
+        textView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(textView)
+        
+        NSLayoutConstraint.activate([
+            textView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            textView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            textView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            textView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+    }
+    
+    @objc private func closeTapped() {
+        dismiss(animated: true)
+    }
+    
+    @objc private func shareTapped() {
+        let activityVC = UIActivityViewController(activityItems: [content], applicationActivities: nil)
+        if let popover = activityVC.popoverPresentationController {
+            popover.barButtonItem = navigationItem.rightBarButtonItem
+        }
+        present(activityVC, animated: true)
     }
 }
 

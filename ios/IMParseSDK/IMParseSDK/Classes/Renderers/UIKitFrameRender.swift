@@ -556,10 +556,88 @@ public class UIKitFrameRender {
         containerView.layer.borderWidth = 1
         containerView.layer.borderColor = context.theme.tableBorderColor.cgColor
         
+        let toolbarHeight: CGFloat = 48
+        let toolbarWidth: CGFloat = 120
+        let padding: CGFloat = 8
+        
+        // 添加工具栏（如果有代理）
+        if context.toolbarActionDelegate != nil {
+            let toolbar = UIKitToolbar()
+            toolbar.frame = CGRect(
+                x: layout.frame.size.width - toolbarWidth - padding,
+                y: padding,
+                width: toolbarWidth,
+                height: toolbarHeight
+            )
+            
+            // 将表格内容转换为字符串（用于复制）
+            let tableContent = convertTableToString(node)
+            
+            toolbar.onCopy = {
+                context.toolbarActionDelegate?.copyContent(tableContent, type: "table")
+            }
+            toolbar.onDownload = {
+                // 表格下载：可以生成图片或导出为CSV
+                context.toolbarActionDelegate?.downloadContent(tableContent, type: "table", image: nil)
+            }
+            toolbar.onFullscreen = {
+                context.toolbarActionDelegate?.showFullscreen(tableContent, type: "table", image: nil)
+            }
+            containerView.addSubview(toolbar)
+        }
+        
         // 表格内容通过 renderTableChildren 渲染
-        renderTableChildren(children: layout.children, into: containerView, context: context)
+        let tableContentY: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + padding * 2 : 0
+        let tableContentView = UIView()
+        tableContentView.frame = CGRect(
+            x: 0,
+            y: tableContentY,
+            width: layout.frame.size.width,
+            height: layout.frame.size.height - tableContentY
+        )
+        containerView.addSubview(tableContentView)
+        
+        renderTableChildren(children: layout.children, into: tableContentView, context: context)
         
         return containerView
+    }
+    
+    /// 将表格节点转换为字符串（用于复制）
+    private static func convertTableToString(_ node: TableNode) -> String {
+        var result = ""
+        for (rowIndex, row) in node.rows.enumerated() {
+            var rowText = ""
+            for (cellIndex, cell) in row.cells.enumerated() {
+                // 提取单元格文本内容
+                let cellText = extractTextFromCell(cell)
+                rowText += cellText
+                if cellIndex < row.cells.count - 1 {
+                    rowText += "\t" // 使用制表符分隔
+                }
+            }
+            result += rowText
+            if rowIndex < node.rows.count - 1 {
+                result += "\n"
+            }
+        }
+        return result
+    }
+    
+    /// 从单元格节点提取文本
+    private static func extractTextFromCell(_ cell: TableCell) -> String {
+        var text = ""
+        for child in cell.children {
+            if case .text(let textNode) = child {
+                text += textNode.content
+            } else if case .paragraph(let pNode) = child {
+                for pChild in pNode.children {
+                    if case .text(let textNode) = pChild {
+                        text += textNode.content
+                    }
+                }
+            }
+        }
+        return text
     }
     
     /// 渲染表格的子视图（行和单元格）
@@ -679,6 +757,31 @@ public class UIKitFrameRender {
         containerView.clipsToBounds = true
         
         let cacheKey = "math:\(node.content):\(node.display)"
+        let toolbarHeight: CGFloat = 48
+        let toolbarWidth: CGFloat = 120 // 3个按钮 + 间距
+        
+        // 添加工具栏（如果有代理）
+        if context.toolbarActionDelegate != nil {
+            let toolbar = UIKitToolbar()
+            toolbar.frame = CGRect(
+                x: frame.size.width - toolbarWidth - 8,
+                y: 8,
+                width: toolbarWidth,
+                height: toolbarHeight
+            )
+            toolbar.onCopy = {
+                context.toolbarActionDelegate?.copyContent(node.content, type: "math")
+            }
+            toolbar.onDownload = {
+                let image = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey)
+                context.toolbarActionDelegate?.downloadContent(node.content, type: "math", image: image)
+            }
+            toolbar.onFullscreen = {
+                let image = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey)
+                context.toolbarActionDelegate?.showFullscreen(node.content, type: "math", image: image)
+            }
+            containerView.addSubview(toolbar)
+        }
         
         // 先尝试从缓存获取图片
         if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey) {
@@ -686,11 +789,12 @@ public class UIKitFrameRender {
             let imageView = UIImageView()
             imageView.image = cachedImage
             imageView.contentMode = .scaleAspectFit
+            let imageY: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + 12 : 4
             imageView.frame = CGRect(
                 x: 4,
-                y: 4,
+                y: imageY,
                 width: frame.size.width - 8,
-                height: frame.size.height - 8
+                height: frame.size.height - imageY - 4
             )
             containerView.addSubview(imageView)
             
@@ -751,11 +855,12 @@ public class UIKitFrameRender {
         
         let imageView = UIImageView()
         imageView.contentMode = .scaleAspectFit
+        let imageY: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + 12 : 4
         imageView.frame = CGRect(
             x: 4,
-            y: 4,
+            y: imageY,
             width: frame.size.width - 8,
-            height: frame.size.height - 8
+            height: frame.size.height - imageY - 4
         )
         
         let activityIndicator = UIActivityIndicatorView(style: .medium)
@@ -848,6 +953,83 @@ public class UIKitFrameRender {
         
         let padding = context.theme.codeBlockPadding
         let cacheKey = "mermaid:\(node.content)"
+        let toolbarHeight: CGFloat = 48
+        let toolbarWidth: CGFloat = 120
+        let switcherHeight: CGFloat = 32
+        let topAreaHeight: CGFloat = max(toolbarHeight, switcherHeight) + 16
+        
+        // 添加预览/代码切换器（左侧）
+        let modeSwitcher = MermaidViewModeSwitcher()
+        modeSwitcher.frame = CGRect(
+            x: padding,
+            y: 8,
+            width: 128,
+            height: switcherHeight
+        )
+        containerView.addSubview(modeSwitcher)
+        
+        // 添加工具栏（右侧，如果有代理）
+        if context.toolbarActionDelegate != nil {
+            let toolbar = UIKitToolbar()
+            toolbar.frame = CGRect(
+                x: frame.size.width - toolbarWidth - padding,
+                y: 8,
+                width: toolbarWidth,
+                height: toolbarHeight
+            )
+            toolbar.onCopy = {
+                context.toolbarActionDelegate?.copyContent(node.content, type: "mermaid")
+            }
+            toolbar.onDownload = {
+                let image = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey)
+                context.toolbarActionDelegate?.downloadContent(node.content, type: "mermaid", image: image)
+            }
+            toolbar.onFullscreen = {
+                let image = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey)
+                context.toolbarActionDelegate?.showFullscreen(node.content, type: "mermaid", image: image)
+            }
+            containerView.addSubview(toolbar)
+        }
+        
+        // 创建内容容器（预览或代码）
+        let contentContainer = UIView()
+        contentContainer.frame = CGRect(
+            x: 0,
+            y: topAreaHeight,
+            width: frame.size.width,
+            height: frame.size.height - topAreaHeight
+        )
+        containerView.addSubview(contentContainer)
+        
+        // 预览视图（图片）
+        let previewView = UIView()
+        previewView.frame = contentContainer.bounds
+        previewView.isHidden = false
+        contentContainer.addSubview(previewView)
+        
+        // 代码视图（文本）
+        let codeView = UIView()
+        codeView.frame = contentContainer.bounds
+        codeView.isHidden = true
+        contentContainer.addSubview(codeView)
+        
+        // 代码文本视图
+        let codeTextView = UITextView()
+        codeTextView.text = node.content
+        codeTextView.font = context.theme.codeFont
+        codeTextView.textColor = context.theme.codeTextColor
+        codeTextView.backgroundColor = .clear
+        codeTextView.isEditable = false
+        codeTextView.isScrollEnabled = true
+        codeTextView.textContainerInset = UIEdgeInsets(top: padding, left: padding, bottom: padding, right: padding)
+        codeTextView.frame = codeView.bounds
+        codeView.addSubview(codeTextView)
+        
+        // 切换模式回调
+        modeSwitcher.onModeChanged = { isPreview in
+            previewView.isHidden = !isPreview
+            codeView.isHidden = isPreview
+        }
         
         // 先尝试从缓存获取图片
         if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey) {
@@ -858,10 +1040,10 @@ public class UIKitFrameRender {
             imageView.frame = CGRect(
                 x: padding,
                 y: padding,
-                width: frame.size.width - padding * 2,
-                height: frame.size.height - padding * 2
+                width: previewView.frame.size.width - padding * 2,
+                height: previewView.frame.size.height - padding * 2
             )
-            containerView.addSubview(imageView)
+            previewView.addSubview(imageView)
             
             // 添加点击手势
             if let onMermaidTap = context.onMermaidTap {
@@ -933,25 +1115,25 @@ public class UIKitFrameRender {
         imageView.frame = CGRect(
             x: padding,
             y: padding,
-            width: frame.size.width - padding * 2,
-            height: frame.size.height - padding * 2
+            width: previewView.frame.size.width - padding * 2,
+            height: previewView.frame.size.height - padding * 2
         )
         
         let activityIndicator = UIActivityIndicatorView(style: .medium)
         activityIndicator.startAnimating()
         activityIndicator.frame = CGRect(
-            x: (frame.size.width - 20) / 2,
-            y: (frame.size.height - 20) / 2,
+            x: (previewView.frame.size.width - 20) / 2,
+            y: (previewView.frame.size.height - 20) / 2,
             width: 20,
             height: 20
         )
         
-        containerView.addSubview(imageView)
-        containerView.addSubview(activityIndicator)
+        previewView.addSubview(imageView)
+        previewView.addSubview(activityIndicator)
         
-        // 添加点击手势
+        // 添加点击手势（仅在预览模式下）
         if let onMermaidTap = context.onMermaidTap {
-            containerView.addTapAction {
+            previewView.addTapAction {
                 onMermaidTap(node)
             }
         }

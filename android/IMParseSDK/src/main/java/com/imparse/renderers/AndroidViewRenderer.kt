@@ -3,6 +3,7 @@ package com.imparse.renderers
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
+import android.os.Build
 import android.text.*
 import android.text.method.LinkMovementMethod
 import android.text.style.*
@@ -96,21 +97,38 @@ class AndroidViewRenderer {
             textView.context.resources.displayMetrics
         )
         val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
-        textView.lineHeight = lineHeightPx
         // 设置额外的行间距，避免换行时拥挤
         val extraSpacing = TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP, 2f,
             textView.context.resources.displayMetrics
         )
-        textView.setLineSpacing(extraSpacing, 1.0f)
+        // API 28+ 使用 setLineHeight，低版本使用 setLineSpacing 兼容
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            textView.lineHeight = lineHeightPx
+            // 在行高基础上增加额外间距
+            textView.setLineSpacing(extraSpacing, 1.0f)
+        } else {
+            // 对于低版本，使用 setLineSpacing 实现类似效果
+            // 将行高和额外间距合并：add = (lineHeightPx - fontSizePx) + extraSpacing，mult = 1.0f
+            val addSpacing = (lineHeightPx - fontSizePx).toFloat().coerceAtLeast(0f) + extraSpacing
+            textView.setLineSpacing(addSpacing, 1.0f)
+        }
         
         val spannable = SpannableStringBuilder()
+        // 用于记录行内数学公式的位置
+        val mathNodes = mutableListOf<Pair<Int, MathNode>>()
+        
         for (child in node.children) {
-            appendInlineNode(spannable, child, context)
+            appendInlineNode(spannable, child, context, mathNodes)
         }
         
         textView.text = spannable
         textView.movementMethod = LinkMovementMethod.getInstance()
+        
+        // 异步渲染行内数学公式
+        if (mathNodes.isNotEmpty()) {
+            renderInlineMathNodes(textView, spannable, mathNodes, context)
+        }
         
         return textView
     }
@@ -146,7 +164,6 @@ class AndroidViewRenderer {
             textView.context.resources.displayMetrics
         )
         val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
-        textView.lineHeight = lineHeightPx
         // 设置额外的行间距，避免换行时拥挤
         // 标题需要更大的行间距，根据字体大小调整
         val extraSpacing = TypedValue.applyDimension(
@@ -154,7 +171,17 @@ class AndroidViewRenderer {
             if (level == 1) 4f else if (level == 2) 3f else 2f,
             textView.context.resources.displayMetrics
         )
-        textView.setLineSpacing(extraSpacing, 1.0f)
+        // API 28+ 使用 setLineHeight，低版本使用 setLineSpacing 兼容
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            textView.lineHeight = lineHeightPx
+            // 在行高基础上增加额外间距
+            textView.setLineSpacing(extraSpacing, 1.0f)
+        } else {
+            // 对于低版本，使用 setLineSpacing 实现类似效果
+            // 将行高和额外间距合并：add = (lineHeightPx - fontSizePx) + extraSpacing，mult = 1.0f
+            val addSpacing = (lineHeightPx - fontSizePx).toFloat().coerceAtLeast(0f) + extraSpacing
+            textView.setLineSpacing(addSpacing, 1.0f)
+        }
         
         val spannable = SpannableStringBuilder()
         for (child in node.children) {
@@ -467,9 +494,51 @@ class AndroidViewRenderer {
      * 渲染表格
      */
     private fun renderTable(node: TableNode, context: AndroidRenderContext): View {
+        // 创建主容器
+        val containerView = android.widget.FrameLayout(context.context)
+        
+        val toolbarHeight = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 48f, context.context.resources.displayMetrics).toInt()
+        val toolbarWidth = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 120f, context.context.resources.displayMetrics).toInt()
+        val padding = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, context.context.resources.displayMetrics).toInt()
+        
+        // 添加工具栏（如果有代理）
+        if (context.toolbarActionDelegate != null) {
+            val toolbar = AndroidToolbar(context.context)
+            
+            // 将表格内容转换为字符串（用于复制）
+            val tableContent = convertTableToString(node)
+            
+            toolbar.onCopy = {
+                context.toolbarActionDelegate?.copyContent(tableContent, "table")
+            }
+            toolbar.onDownload = {
+                // 表格下载：可以生成图片或导出为CSV
+                context.toolbarActionDelegate?.downloadContent(tableContent, "table", null)
+            }
+            toolbar.onFullscreen = {
+                context.toolbarActionDelegate?.showFullscreen(tableContent, "table", null)
+            }
+            
+            val toolbarParams = android.widget.FrameLayout.LayoutParams(
+                toolbarWidth,
+                toolbarHeight
+            )
+            toolbarParams.gravity = android.view.Gravity.TOP or android.view.Gravity.END
+            toolbarParams.setMargins(0, padding, padding, 0)
+            containerView.addView(toolbar, toolbarParams)
+        }
+        
         // 创建横向滚动容器
         val scrollView = android.widget.HorizontalScrollView(context.context)
         scrollView.isFillViewport = false
+        
+        val tableContentY = if (context.toolbarActionDelegate != null) toolbarHeight + padding * 2 else 0
+        val scrollParams = android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        scrollParams.setMargins(0, tableContentY, 0, 0)
+        containerView.addView(scrollView, scrollParams)
         
         val tableLayout = TableLayout(context.context)
         tableLayout.isStretchAllColumns = false
@@ -503,7 +572,54 @@ class AndroidViewRenderer {
         }
         
         scrollView.addView(tableLayout)
-        return scrollView
+        return containerView
+    }
+    
+    /**
+     * 将表格节点转换为字符串（用于复制）
+     */
+    private fun convertTableToString(node: TableNode): String {
+        val result = StringBuilder()
+        for ((rowIndex, row) in node.rows.withIndex()) {
+            val rowText = StringBuilder()
+            for ((cellIndex, cell) in row.cells.withIndex()) {
+                // 提取单元格文本内容
+                val cellText = extractTextFromCell(cell)
+                rowText.append(cellText)
+                if (cellIndex < row.cells.size - 1) {
+                    rowText.append("\t") // 使用制表符分隔
+                }
+            }
+            result.append(rowText)
+            if (rowIndex < node.rows.size - 1) {
+                result.append("\n")
+            }
+        }
+        return result.toString()
+    }
+    
+    /**
+     * 从单元格节点提取文本
+     */
+    private fun extractTextFromCell(cell: TableCellNode): String {
+        val text = StringBuilder()
+        for (child in cell.children) {
+            when (child) {
+                is TextNode -> text.append(child.content)
+                is ParagraphNode -> {
+                    for (pChild in child.children) {
+                        if (pChild is TextNode) {
+                            text.append(pChild.content)
+                        }
+                    }
+                }
+                else -> {
+                    // 其他节点类型，尝试提取文本
+                    text.append(child.toString())
+                }
+            }
+        }
+        return text.toString()
     }
     
     /**
@@ -651,6 +767,33 @@ class AndroidViewRenderer {
         }
         
         val cacheKey = "math:${node.content}:${node.display}"
+        val toolbarHeight = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 48f, context.context.resources.displayMetrics).toInt()
+        val toolbarWidth = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 120f, context.context.resources.displayMetrics).toInt()
+        val padding = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, context.context.resources.displayMetrics).toInt()
+        
+        // 添加工具栏（如果有代理）
+        if (context.toolbarActionDelegate != null) {
+            val toolbar = AndroidToolbar(context.context)
+            toolbar.onCopy = {
+                context.toolbarActionDelegate?.copyContent(node.content, "math")
+            }
+            toolbar.onDownload = {
+                val image = context.formulaSizeCacheDelegate?.getFormulaImage(cacheKey)
+                context.toolbarActionDelegate?.downloadContent(node.content, "math", image)
+            }
+            toolbar.onFullscreen = {
+                val image = context.formulaSizeCacheDelegate?.getFormulaImage(cacheKey)
+                context.toolbarActionDelegate?.showFullscreen(node.content, "math", image)
+            }
+            
+            val toolbarParams = android.widget.FrameLayout.LayoutParams(
+                toolbarWidth,
+                toolbarHeight
+            )
+            toolbarParams.gravity = android.view.Gravity.TOP or android.view.Gravity.END
+            toolbarParams.setMargins(0, padding, padding, 0)
+            containerView.addView(toolbar, toolbarParams)
+        }
         
         // 先尝试从缓存获取图片
         val cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(cacheKey)
@@ -660,11 +803,12 @@ class AndroidViewRenderer {
             imageView.setImageBitmap(cachedImage)
             imageView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
             imageView.adjustViewBounds = true
+            val imageY = if (context.toolbarActionDelegate != null) toolbarHeight + padding * 2 else padding
             val params = android.widget.FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-            params.setMargins(4, 4, 4, 4)
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            params.setMargins(4, imageY, 4, 4)
             containerView.addView(imageView, params)
             
             // 添加点击手势
@@ -727,11 +871,12 @@ class AndroidViewRenderer {
         val imageView = android.widget.ImageView(context.context)
         imageView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
         imageView.adjustViewBounds = true
+        val imageY = if (context.toolbarActionDelegate != null) toolbarHeight + padding * 2 else 4
         val imageParams = android.widget.FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
-        imageParams.setMargins(4, 4, 4, 4)
+        imageParams.setMargins(4, imageY, 4, 4)
         containerView.addView(imageView, imageParams)
         
         val progressBar = android.widget.ProgressBar(context.context)
@@ -775,9 +920,10 @@ class AndroidViewRenderer {
                     // 保存尺寸到缓存
                     context.formulaSizeCacheDelegate?.setCachedSize(imageSize, cacheKey)
                     
-                    // 计算实际需要的总高度（图片高度 + padding）
+                    // 计算实际需要的总高度（图片高度 + padding + 工具栏高度）
                     val padding = context.theme.codeBlockPadding
-                    val actualHeight = imageSize.y + padding * 2
+                    val toolbarHeightForCalc = if (context.toolbarActionDelegate != null) toolbarHeight + padding * 2 else 0
+                    val actualHeight = imageSize.y + padding * 2 + toolbarHeightForCalc
                     
                     // 如果实际高度与当前高度不同，触发高度刷新回调
                     val currentHeight = containerView.height.toFloat()
@@ -828,6 +974,79 @@ class AndroidViewRenderer {
         
         val padding = context.theme.codeBlockPadding
         val cacheKey = "mermaid:${node.content}"
+        val toolbarHeight = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 48f, context.context.resources.displayMetrics).toInt()
+        val toolbarWidth = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 120f, context.context.resources.displayMetrics).toInt()
+        val switcherHeight = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 32f, context.context.resources.displayMetrics).toInt()
+        val topAreaHeight = maxOf(toolbarHeight, switcherHeight) + TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 16f, context.context.resources.displayMetrics).toInt()
+        
+        // 添加预览/代码切换器（左侧）
+        val modeSwitcher = MermaidViewModeSwitcher(context.context)
+        val switcherParams = android.widget.FrameLayout.LayoutParams(
+            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 128f, context.context.resources.displayMetrics).toInt(),
+            switcherHeight
+        )
+        switcherParams.gravity = android.view.Gravity.TOP or android.view.Gravity.START
+        switcherParams.setMargins(padding, TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, context.context.resources.displayMetrics).toInt(), 0, 0)
+        containerView.addView(modeSwitcher, switcherParams)
+        
+        // 添加工具栏（右侧，如果有代理）
+        if (context.toolbarActionDelegate != null) {
+            val toolbar = AndroidToolbar(context.context)
+            toolbar.onCopy = {
+                context.toolbarActionDelegate?.copyContent(node.content, "mermaid")
+            }
+            toolbar.onDownload = {
+                val image = context.formulaSizeCacheDelegate?.getFormulaImage(cacheKey)
+                context.toolbarActionDelegate?.downloadContent(node.content, "mermaid", image)
+            }
+            toolbar.onFullscreen = {
+                val image = context.formulaSizeCacheDelegate?.getFormulaImage(cacheKey)
+                context.toolbarActionDelegate?.showFullscreen(node.content, "mermaid", image)
+            }
+            
+            val toolbarParams = android.widget.FrameLayout.LayoutParams(
+                toolbarWidth,
+                toolbarHeight
+            )
+            toolbarParams.gravity = android.view.Gravity.TOP or android.view.Gravity.END
+            toolbarParams.setMargins(0, TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, context.context.resources.displayMetrics).toInt(), padding, 0)
+            containerView.addView(toolbar, toolbarParams)
+        }
+        
+        // 创建内容容器（预览或代码）
+        val contentContainer = android.widget.FrameLayout(context.context)
+        val contentParams = android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        contentParams.setMargins(0, topAreaHeight, 0, 0)
+        containerView.addView(contentContainer, contentParams)
+        
+        // 预览视图（图片）
+        val previewView = android.widget.FrameLayout(context.context)
+        previewView.visibility = View.VISIBLE
+        contentContainer.addView(previewView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        
+        // 代码视图（文本）
+        val codeView = android.widget.FrameLayout(context.context)
+        codeView.visibility = View.GONE
+        contentContainer.addView(codeView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        
+        // 代码文本视图
+        val codeTextView = android.widget.TextView(context.context)
+        codeTextView.text = node.content
+        codeTextView.textSize = context.theme.codeFontSize
+        codeTextView.setTextColor(context.theme.codeTextColor)
+        codeTextView.setTypeface(Typeface.MONOSPACE)
+        codeTextView.maxLines = Int.MAX_VALUE
+        codeTextView.setPadding(padding, padding, padding, padding)
+        codeView.addView(codeTextView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        
+        // 切换模式回调
+        modeSwitcher.onModeChanged = { isPreview ->
+            previewView.visibility = if (isPreview) View.VISIBLE else View.GONE
+            codeView.visibility = if (isPreview) View.GONE else View.VISIBLE
+        }
         
         // 先尝试从缓存获取图片
         val cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(cacheKey)
@@ -838,15 +1057,15 @@ class AndroidViewRenderer {
             imageView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
             imageView.adjustViewBounds = true
             val params = android.widget.FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
             params.setMargins(padding, padding, padding, padding)
-            containerView.addView(imageView, params)
+            previewView.addView(imageView, params)
             
-            // 添加点击手势
+            // 添加点击手势（仅在预览模式下）
             if (context.onMermaidTap != null) {
-                containerView.setOnClickListener {
+                previewView.setOnClickListener {
                     context.onMermaidTap?.invoke(node)
                 }
             }
@@ -918,23 +1137,22 @@ class AndroidViewRenderer {
         imageView.adjustViewBounds = true
         val imageParams = android.widget.FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
+            ViewGroup.LayoutParams.MATCH_PARENT
         )
         imageParams.setMargins(padding, padding, padding, padding)
-        containerView.addView(imageView, imageParams)
+        previewView.addView(imageView, imageParams)
         
         val progressBar = android.widget.ProgressBar(context.context)
-        progressBar.layoutParams = android.widget.FrameLayout.LayoutParams(
+        val progressParams = android.widget.FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply {
-            gravity = android.view.Gravity.CENTER
-        }
-        containerView.addView(progressBar)
+        )
+        progressParams.gravity = android.view.Gravity.CENTER
+        previewView.addView(progressBar, progressParams)
         
-        // 添加点击手势
+        // 添加点击手势（仅在预览模式下）
         if (context.onMermaidTap != null) {
-            containerView.setOnClickListener {
+            previewView.setOnClickListener {
                 context.onMermaidTap?.invoke(node)
             }
         }
@@ -1099,14 +1317,15 @@ class AndroidViewRenderer {
     private fun appendInlineNode(
         builder: SpannableStringBuilder,
         node: ASTNode,
-        context: AndroidRenderContext
+        context: AndroidRenderContext,
+        mathNodes: MutableList<Pair<Int, MathNode>> = mutableListOf()
     ) {
         when (node) {
             is TextNode -> builder.append(node.content)
             is StrongNode -> {
                 val start = builder.length
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context)
+                    appendInlineNode(builder, child, context, mathNodes)
                 }
                 builder.setSpan(
                     StyleSpan(Typeface.BOLD),
@@ -1118,7 +1337,7 @@ class AndroidViewRenderer {
             is EmNode -> {
                 val start = builder.length
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context)
+                    appendInlineNode(builder, child, context, mathNodes)
                 }
                 builder.setSpan(
                     StyleSpan(Typeface.ITALIC),
@@ -1130,7 +1349,7 @@ class AndroidViewRenderer {
             is UnderlineNode -> {
                 val start = builder.length
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context)
+                    appendInlineNode(builder, child, context, mathNodes)
                 }
                 builder.setSpan(
                     UnderlineSpan(),
@@ -1142,7 +1361,7 @@ class AndroidViewRenderer {
             is StrikeNode -> {
                 val start = builder.length
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context)
+                    appendInlineNode(builder, child, context, mathNodes)
                 }
                 builder.setSpan(
                     StrikethroughSpan(),
@@ -1170,7 +1389,7 @@ class AndroidViewRenderer {
             is LinkNode -> {
                 val start = builder.length
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context)
+                    appendInlineNode(builder, child, context, mathNodes)
                 }
                 val clickableSpan = object : ClickableSpan() {
                     override fun onClick(widget: View) {
@@ -1189,6 +1408,13 @@ class AndroidViewRenderer {
                     builder.length,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                 )
+            }
+            is MathNode -> {
+                // 行内数学公式：添加占位符，稍后会被 ImageSpan 替换
+                val start = builder.length
+                // 使用一个空格作为占位符，确保有足够的空间显示公式
+                builder.append(" ")
+                mathNodes.add(Pair(start, node))
             }
             is EmojiNode -> builder.append(node.emoji)
             is MentionNode -> {
@@ -1210,6 +1436,133 @@ class AndroidViewRenderer {
             else -> {
                 // 其他节点类型，尝试提取文本
                 builder.append(node.toString())
+            }
+        }
+    }
+    
+    /**
+     * 异步渲染行内数学公式
+     */
+    private fun renderInlineMathNodes(
+        textView: TextView,
+        spannable: SpannableStringBuilder,
+        mathNodes: List<Pair<Int, MathNode>>,
+        context: AndroidRenderContext
+    ) {
+        // 转换颜色为十六进制
+        val textColor = context.theme.textColor
+        val colorHex = String.format(
+            "#%02X%02X%02X",
+            android.graphics.Color.red(textColor),
+            android.graphics.Color.green(textColor),
+            android.graphics.Color.blue(textColor)
+        )
+        
+        val fontSize = context.theme.fontSize
+        
+        // 用于跟踪已完成的渲染数量
+        var completedCount = 0
+        val totalCount = mathNodes.size
+        
+        // 为每个数学公式渲染图片
+        mathNodes.forEach { (position, mathNode) ->
+            // 验证语法
+            val result = com.imparse.core.IMParseCore.mathToHTMLResult(mathNode.content, mathNode.display)
+            
+            if (!result.success || result.astJSON == null) {
+                // 语法错误，显示原始内容
+                val errorText = mathNode.content
+                spannable.replace(position, position + 1, errorText)
+                completedCount++
+                if (completedCount == totalCount) {
+                    textView.text = spannable
+                }
+                return@forEach
+            }
+            
+            // 使用 MathHTMLRenderer 渲染（行内公式 display=false）
+            AndroidMathHTMLRenderer.getInstance().render(
+                context = context.context,
+                html = result.astJSON!!,
+                display = false, // 行内公式
+                textColor = colorHex,
+                fontSize = fontSize
+            ) { image ->
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    if (image != null) {
+                        // 计算图片的显示尺寸（根据行高调整，使公式与文本对齐）
+                        val fontSizePx = TypedValue.applyDimension(
+                            TypedValue.COMPLEX_UNIT_SP,
+                            fontSize,
+                            textView.context.resources.displayMetrics
+                        )
+                        // 使用行高作为目标高度，使公式与文本基线对齐
+                        val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
+                        val targetHeight = lineHeightPx.coerceAtLeast(fontSizePx.toInt())
+                        
+                        // 计算缩放比例，保持宽高比
+                        val scale = if (image.height > 0) {
+                            targetHeight.toFloat() / image.height.toFloat()
+                        } else {
+                            1.0f
+                        }
+                        
+                        val scaledWidth = (image.width * scale).toInt().coerceAtLeast(1)
+                        val scaledHeight = (image.height * scale).toInt().coerceAtLeast(1)
+                        
+                        // 缩放图片以适应行高
+                        val scaledBitmap = android.graphics.Bitmap.createScaledBitmap(
+                            image,
+                            scaledWidth,
+                            scaledHeight,
+                            true
+                        )
+                        
+                        // 创建 ImageSpan
+                        val imageSpan = ImageSpan(textView.context, scaledBitmap, ImageSpan.ALIGN_BASELINE)
+                        
+                        // 替换占位符
+                        try {
+                            spannable.setSpan(
+                                imageSpan,
+                                position,
+                                position + 1,
+                                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                            )
+                            
+                            // 添加点击事件
+                            if (context.onMathTap != null) {
+                                val clickableSpan = object : ClickableSpan() {
+                                    override fun onClick(widget: View) {
+                                        context.onMathTap?.invoke(mathNode)
+                                    }
+                                }
+                                spannable.setSpan(
+                                    clickableSpan,
+                                    position,
+                                    position + 1,
+                                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                                )
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("AndroidViewRenderer", "Error setting ImageSpan", e)
+                        }
+                    } else {
+                        // 渲染失败，显示原始内容
+                        val errorText = mathNode.content
+                        try {
+                            spannable.replace(position, position + 1, errorText)
+                        } catch (e: Exception) {
+                            android.util.Log.e("AndroidViewRenderer", "Error replacing placeholder", e)
+                        }
+                    }
+                    
+                    completedCount++
+                    // 所有公式渲染完成后，更新 TextView
+                    if (completedCount == totalCount) {
+                        textView.text = spannable
+                    }
+                }
             }
         }
     }
