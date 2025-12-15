@@ -489,22 +489,16 @@ public class UIKitFrameRender {
             let newImageHeight = containerWidth / imageAspectRatio
             let newContainerHeight = newImageHeight + imageMargin * 2
             
-            // 不在这更新 frame，因为可能破坏预计算的高度。
-//            imageView.frame = CGRect(
-//                x: 0,
-//                y: imageMargin,
-//                width: containerWidth,
-//                height: newImageHeight
-//            )
-//            containerView.frame = CGRect(
-//                x: containerView.frame.origin.x,
-//                y: containerView.frame.origin.y,
-//                width: containerWidth,
-//                height: newContainerHeight
-//            )
-//            print("IMParseSDK 图片加载完成：\(node.url) ，高度是否改变：\(newContainerHeight != containerView.frame.height)")
-            if abs(newContainerHeight - containerView.frame.height) > 0.5 , let onHeightChanged = context.onLayoutHeightChanged {
-                onHeightChanged(newContainerHeight)
+            // 如果图片高度与当前容器高度不同，重新计算布局
+            if abs(newContainerHeight - containerView.frame.height) > 0.5 {
+                // 重新计算图片节点的布局
+                let newLayout = UIKitFrameAsyncCalculator.calculateNodeLayout(
+                    .image(node),
+                    context: context,
+                    origin: containerView.frame.origin,
+                    width: containerWidth
+                )
+                context.onNodeLayoutChanged?(newLayout)
             }
         }
     }
@@ -946,64 +940,20 @@ public class UIKitFrameRender {
             return containerView
         }
         
-        let result = IMParseCore.mathToHTML(node.content, display: node.display)
-        
-        guard result.success, let html = result.astJSON else {
-            // 语法错误时，显示错误信息
-            let padding = context.theme.codeBlockPadding
-            
-            // 错误提示标签
-            let errorLabel = UILabel()
-            errorLabel.text = "数学公式语法错误"
-            errorLabel.font = UIFont.systemFont(ofSize: 12, weight: .medium)
-            errorLabel.textColor = .systemRed
-            errorLabel.numberOfLines = 1
-            errorLabel.frame = CGRect(
-                x: padding,
-                y: padding,
-                width: frame.size.width - padding * 2,
-                height: 16
-            )
-            containerView.addSubview(errorLabel)
-            
-            // 原始内容标签
-            let contentLabel = UILabel()
-            contentLabel.text = node.content
-            contentLabel.font = context.theme.codeFont
-            contentLabel.textColor = context.theme.codeTextColor.withAlphaComponent(0.6)
-            contentLabel.numberOfLines = 0
-            contentLabel.frame = CGRect(
-                x: padding,
-                y: padding + 20,
-                width: frame.size.width - padding * 2,
-                height: max(frame.size.height - padding * 2 - 20, 0)
-            )
-            containerView.addSubview(contentLabel)
-            
-            return containerView
-        }
-        
-        // textColor 和 colorHex 已经在上面声明过了，直接使用
-        let imageView = UIImageView()
-        imageView.contentMode = .scaleAspectFit
-        imageView.frame = CGRect(
+        // 没有缓存时，先显示原始内容
+        let contentLabel = UILabel()
+        contentLabel.text = node.content
+        contentLabel.font = context.theme.codeFont
+        contentLabel.textColor = context.theme.codeTextColor.withAlphaComponent(0.8)
+        contentLabel.numberOfLines = 0
+        contentLabel.frame = CGRect(
             x: contentPadding,
             y: imageAreaY,
             width: frame.size.width - contentPadding * 2,
             height: imageAreaHeight
         )
-        
-        let activityIndicator = UIActivityIndicatorView(style: .medium)
-        activityIndicator.startAnimating()
-        activityIndicator.frame = CGRect(
-            x: (frame.size.width - 20) / 2,
-            y: (frame.size.height - 20) / 2,
-            width: 20,
-            height: 20
-        )
-        
-        containerView.addSubview(imageView)
-        containerView.addSubview(activityIndicator)
+        contentLabel.tag = 9001 // 用于后续移除
+        containerView.addSubview(contentLabel)
         
         // 添加点击手势
         if let onMathTap = context.onMathTap {
@@ -1012,20 +962,55 @@ public class UIKitFrameRender {
             }
         }
         
+        // 异步渲染公式图片
+        let result = IMParseCore.mathToHTML(node.content, display: node.display)
+        
+        guard result.success, let html = result.astJSON else {
+            // 语法错误时，更新标签显示错误信息
+            DispatchQueue.main.async {
+                let errorLabel = UILabel()
+                errorLabel.text = "⚠️ 数学公式语法错误"
+                errorLabel.font = UIFont.systemFont(ofSize: 12, weight: .medium)
+                errorLabel.textColor = .systemRed
+                errorLabel.numberOfLines = 0
+                errorLabel.frame = CGRect(
+                    x: contentPadding,
+                    y: imageAreaY,
+                    width: frame.size.width - contentPadding * 2,
+                    height: imageAreaHeight
+                )
+                
+                // 移除原始内容标签
+                containerView.viewWithTag(9001)?.removeFromSuperview()
+                containerView.addSubview(errorLabel)
+            }
+            return containerView
+        }
+        
         // fontSize 已经在上面声明过了，直接使用
         MathHTMLRenderer.shared.render(
             html: html,
             display: node.display,
             textColor: colorHex,
             fontSize: fontSize
-        ) { image in
+        ) { [weak containerView] image in
             DispatchQueue.main.async {
-                activityIndicator.stopAnimating()
-                activityIndicator.removeFromSuperview()
+                guard let containerView = containerView else { return }
+                
+                // 移除原始内容标签
+                containerView.viewWithTag(9001)?.removeFromSuperview()
                 
                 if let image = image {
-                    // 根据图片的实际显示尺寸（考虑scale）来调整imageView的frame
-                    // UIImage.size 返回的是逻辑尺寸（点数），已经考虑了scale
+                    // 保存图片和尺寸到缓存
+                    context.formulaSizeCacheDelegate?.saveFormulaImage(image, for: cacheKey)
+                    context.formulaSizeCacheDelegate?.setCachedSize(image.size, for: cacheKey)
+                    
+                    // 创建 ImageView 显示图片
+                    let imageView = UIImageView()
+                    imageView.image = image
+                    imageView.contentMode = .scaleAspectFit
+                    
+                    // 根据图片的实际显示尺寸（考虑scale）来设置imageView的frame
                     let imageSize = image.size
                     let availableWidth = frame.size.width - contentPadding * 2
                     let availableHeight = imageAreaHeight
@@ -1045,41 +1030,38 @@ public class UIKitFrameRender {
                         width: displayWidth,
                         height: displayHeight
                     )
-                    imageView.image = image
+                    containerView.addSubview(imageView)
                     
-                    // 保存图片到 Kingfisher 缓存
-                    context.formulaSizeCacheDelegate?.saveFormulaImage(image, for: cacheKey)
-                    
-                    // 保存尺寸到缓存（使用图片的逻辑尺寸）
-                    context.formulaSizeCacheDelegate?.setCachedSize(imageSize, for: cacheKey)
-                    
-                    // 计算实际需要的总高度（图片显示高度 + padding + 工具栏高度）
-                    // 工具栏高度不应该挤占图片高度，所以总高度 = 图片显示高度 + padding + 工具栏高度
+                    // 计算实际需要的总高度
                     let toolbarPadding = context.theme.toolbarPadding
                     let toolbarHeightForCalc = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : 0
                     let actualHeight = displayHeight + contentPadding * 2 + toolbarHeightForCalc
                     
-                    // 获取当前容器的高度
+                    // 如果实际高度与当前高度不同，重新计算布局并触发回调
                     let currentHeight = containerView.frame.height
-                    
-                    // 如果实际高度与当前高度不同，触发高度刷新回调
-                    if abs(actualHeight - currentHeight) > 0.5, let onHeightChanged = context.onLayoutHeightChanged {
-                        onHeightChanged(actualHeight)
+                    if abs(actualHeight - currentHeight) > 0.5 {
+                        // 重新计算当前 Math 节点的布局
+                        let newLayout = UIKitFrameAsyncCalculator.calculateNodeLayout(
+                            .math(node),
+                            context: context,
+                            origin: frame.origin,
+                            width: frame.width
+                        )
+                        
+                        // 触发布局更新回调
+                        context.onNodeLayoutChanged?(newLayout)
                     }
                 } else {
-                    // 渲染失败时，像代码块一样展示原始内容
-                    imageView.removeFromSuperview()
-                    
+                    // 渲染失败时，显示原始内容（已经显示了）
                     let label = UILabel()
                     label.text = node.content
                     label.font = context.theme.codeFont
                     label.textColor = context.theme.codeTextColor
                     label.numberOfLines = 0
-                    let padding = context.theme.codeBlockPadding
                     label.frame = CGRect(
-                        x: padding,
+                        x: contentPadding,
                         y: imageAreaY,
-                        width: frame.size.width - padding * 2,
+                        width: frame.size.width - contentPadding * 2,
                         height: imageAreaHeight
                     )
                     containerView.addSubview(label)
@@ -1101,7 +1083,30 @@ public class UIKitFrameRender {
         containerView.clipsToBounds = true
         
         let padding = context.theme.codeBlockPadding
-        let cacheKey = "mermaid:\(node.content)"
+        
+        // 转换颜色为十六进制（用于生成统一的 cacheKey）
+        let textColor = context.theme.textColor
+        let backgroundColor = context.theme.codeBackgroundColor
+        let textComponents = textColor.cgColor.components ?? [0, 0, 0, 1]
+        let textColorHex = String(format: "#%02X%02X%02X",
+                                  Int(textComponents[0] * 255),
+                                  Int(textComponents[1] * 255),
+                                  Int(textComponents[2] * 255)
+        )
+        let bgComponents = backgroundColor.cgColor.components ?? [1, 1, 1, 1]
+        let backgroundColorHex = String(format: "#%02X%02X%02X",
+                                        Int(bgComponents[0] * 255),
+                                        Int(bgComponents[1] * 255),
+                                        Int(bgComponents[2] * 255)
+        )
+        
+        // 使用统一的 cacheKey 生成方法
+        let cacheKey = MermaidHTMLRenderer.generateCacheKey(
+            mermaidCode: node.content,
+            textColor: textColorHex,
+            backgroundColor: backgroundColorHex
+        )
+        
         let toolbarHeight = context.theme.toolbarHeight
         let toolbarWidth = context.theme.toolbarWidth
         let toolbarPadding = context.theme.toolbarPadding
@@ -1208,81 +1213,20 @@ public class UIKitFrameRender {
             return containerView
         }
         
-        // 先验证语法
-        let textColor = context.theme.textColor
-        let backgroundColor = context.theme.codeBackgroundColor
-        
-        let textComponents = textColor.cgColor.components ?? [0, 0, 0, 1]
-        let textColorHex = String(format: "#%02X%02X%02X",
-                                  Int(textComponents[0] * 255),
-                                  Int(textComponents[1] * 255),
-                                  Int(textComponents[2] * 255)
-        )
-        
-        let bgComponents = backgroundColor.cgColor.components ?? [1, 1, 1, 1]
-        let backgroundColorHex = String(format: "#%02X%02X%02X",
-                                        Int(bgComponents[0] * 255),
-                                        Int(bgComponents[1] * 255),
-                                        Int(bgComponents[2] * 255)
-        )
-        
-        let validationResult = IMParseCore.mermaidToHTML(node.content, textColor: textColorHex, backgroundColor: backgroundColorHex)
-        
-        guard validationResult.success else {
-            // 语法错误时，显示错误信息
-            
-            // 错误提示标签
-            let errorLabel = UILabel()
-            errorLabel.text = "Mermaid 语法错误"
-            errorLabel.font = UIFont.systemFont(ofSize: 12, weight: .medium)
-            errorLabel.textColor = .systemRed
-            errorLabel.numberOfLines = 1
-            errorLabel.frame = CGRect(
-                x: padding,
-                y: padding,
-                width: frame.size.width - padding * 2,
-                height: 16
-            )
-            containerView.addSubview(errorLabel)
-            
-            // 原始内容标签
-            let contentLabel = UILabel()
-            contentLabel.text = node.content
-            contentLabel.font = context.theme.codeFont
-            contentLabel.textColor = context.theme.codeTextColor.withAlphaComponent(0.6)
-            contentLabel.numberOfLines = 0
-            contentLabel.frame = CGRect(
-                x: padding,
-                y: padding + 20,
-                width: frame.size.width - padding * 2,
-                height: max(frame.size.height - padding * 2 - 20, 0)
-            )
-            containerView.addSubview(contentLabel)
-            
-            return containerView
-        }
-        
-        // 语法正确，继续渲染
-        let imageView = UIImageView()
-        imageView.contentMode = .scaleAspectFit
-        imageView.frame = CGRect(
+        // 没有缓存时，预览视图先显示原始内容（代码视图本来就是原始内容）
+        let placeholderLabel = UILabel()
+        placeholderLabel.text = node.content
+        placeholderLabel.font = context.theme.codeFont
+        placeholderLabel.textColor = context.theme.codeTextColor.withAlphaComponent(0.8)
+        placeholderLabel.numberOfLines = 0
+        placeholderLabel.frame = CGRect(
             x: padding,
             y: padding,
             width: previewView.frame.size.width - padding * 2,
             height: previewView.frame.size.height - padding * 2
         )
-        
-        let activityIndicator = UIActivityIndicatorView(style: .medium)
-        activityIndicator.startAnimating()
-        activityIndicator.frame = CGRect(
-            x: (previewView.frame.size.width - 20) / 2,
-            y: (previewView.frame.size.height - 20) / 2,
-            width: 20,
-            height: 20
-        )
-        
-        previewView.addSubview(imageView)
-        previewView.addSubview(activityIndicator)
+        placeholderLabel.tag = 9002 // 用于后续移除
+        previewView.addSubview(placeholderLabel)
         
         // 添加点击手势（仅在预览模式下）
         if let onMermaidTap = context.onMermaidTap {
@@ -1291,55 +1235,75 @@ public class UIKitFrameRender {
             }
         }
         
+        // 异步渲染 Mermaid 图表（使用已转换的颜色值）
+        let validationResult = IMParseCore.mermaidToHTML(node.content, textColor: textColorHex, backgroundColor: backgroundColorHex)
+        
+        guard validationResult.success else {
+            // 语法错误时，更新预览视图显示错误信息
+            DispatchQueue.main.async {
+                placeholderLabel.text = "⚠️ Mermaid 语法错误\n\n\(node.content)"
+                placeholderLabel.textColor = .systemRed
+            }
+            return containerView
+        }
+        
+        // 语法正确，异步渲染图片
         MermaidHTMLRenderer.shared.render(
             mermaidCode: node.content,
             textColor: textColorHex,
             backgroundColor: backgroundColorHex
-        ) { image in
+        ) { [weak previewView] image in
             DispatchQueue.main.async {
-                activityIndicator.stopAnimating()
-                activityIndicator.removeFromSuperview()
+                guard let previewView = previewView else { return }
+                
+                // 移除占位符
+                previewView.viewWithTag(9002)?.removeFromSuperview()
                 
                 if let image = image {
-                    imageView.image = image
-                    
-                    // 保存图片到 Kingfisher 缓存
+                    // 保存图片和尺寸到缓存
                     context.formulaSizeCacheDelegate?.saveFormulaImage(image, for: cacheKey)
+                    context.formulaSizeCacheDelegate?.setCachedSize(image.size, for: cacheKey)
                     
-                    // 获取图片的实际尺寸
-                    let imageSize = image.size
+                    // 创建 ImageView 显示图片
+                    let imageView = UIImageView()
+                    imageView.image = image
+                    imageView.contentMode = .scaleAspectFit
+                    imageView.frame = CGRect(
+                        x: padding,
+                        y: padding,
+                        width: previewView.frame.size.width - padding * 2,
+                        height: previewView.frame.size.height - padding * 2
+                    )
+                    previewView.addSubview(imageView)
                     
-                    // 保存尺寸到缓存
-                    context.formulaSizeCacheDelegate?.setCachedSize(imageSize, for: cacheKey)
-                    
-                    // 计算实际需要的总高度（图片高度 + padding）
-                    let padding = context.theme.codeBlockPadding
-                    let actualHeight = imageSize.height + padding * 2
-                    
-                    // 获取当前容器的高度
+                    // 计算实际需要的总高度
+                    let actualHeight = image.size.height + padding * 2 + topAreaHeight
                     let currentHeight = containerView.frame.height
                     
-                    // 如果实际高度与当前高度不同，触发高度刷新回调
-                    if abs(actualHeight - currentHeight) > 0.5, let onHeightChanged = context.onLayoutHeightChanged {
-                        onHeightChanged(actualHeight)
+                    // 如果实际高度与当前高度不同，重新计算布局并触发回调
+                    if abs(actualHeight - currentHeight) > 0.5 {
+                        let newLayout = UIKitFrameAsyncCalculator.calculateNodeLayout(
+                            .mermaid(node),
+                            context: context,
+                            origin: frame.origin,
+                            width: frame.width
+                        )
+                        context.onNodeLayoutChanged?(newLayout)
                     }
                 } else {
-                    // 渲染失败时，像代码块一样展示原始内容
-                    imageView.removeFromSuperview()
-                    
+                    // 渲染失败时，显示原始内容（已经显示了）
                     let label = UILabel()
                     label.text = node.content
                     label.font = context.theme.codeFont
                     label.textColor = context.theme.codeTextColor
                     label.numberOfLines = 0
-                    let padding = context.theme.codeBlockPadding
                     label.frame = CGRect(
                         x: padding,
                         y: padding,
-                        width: frame.size.width - padding * 2,
-                        height: frame.size.height - padding * 2
+                        width: previewView.frame.size.width - padding * 2,
+                        height: previewView.frame.size.height - padding * 2
                     )
-                    containerView.addSubview(label)
+                    previewView.addSubview(label)
                 }
             }
         }

@@ -437,10 +437,20 @@ class MermaidHTMLRenderer {
         webViewPool.returnWebView(webView)
     }
     
-    /// 生成缓存键
-    private func generateCacheKey(mermaidCode: String, textColor: String, backgroundColor: String) -> String {
+    /// 生成缓存键（公开方法，供外部统一使用）
+    /// - Parameters:
+    ///   - mermaidCode: Mermaid 代码
+    ///   - textColor: 文本颜色（十六进制，如 "#000000"）
+    ///   - backgroundColor: 背景颜色（十六进制，如 "#ffffff"）
+    /// - Returns: 缓存键
+    public static func generateCacheKey(mermaidCode: String, textColor: String, backgroundColor: String) -> String {
         let hash = mermaidCode.hashValue
         return "mermaid_\(hash)_\(textColor)_\(backgroundColor)"
+    }
+    
+    /// 生成缓存键（内部使用）
+    private func generateCacheKey(mermaidCode: String, textColor: String, backgroundColor: String) -> String {
+        return MermaidHTMLRenderer.generateCacheKey(mermaidCode: mermaidCode, textColor: textColor, backgroundColor: backgroundColor)
     }
     
     /// 清除缓存

@@ -100,31 +100,38 @@ extension UIKitFrameMessageListViewController: UITableViewDataSource {
         let contentWidth = tableView.bounds.width - 64
         let message = messages[indexPath.row]
         
-        cell.configure(
-            with: message,
-            indexPath:indexPath,
-            width: contentWidth,
-            viewController: self,
-            onLayoutComplete:{ [weak tableView, weak self] height in
-                DispatchQueue.main.async {
-                    guard let tableView = tableView,
-                          let self = self,
-                          indexPath.row < self.messages.count else { return }
+        // 创建节点布局变化回调（在 viewController 中处理）
+        let onNodeLayoutChanged: ((NodeLayout) -> Void)? = { [weak tableView, weak self] updatedNodeLayout in
+            DispatchQueue.main.async {
+                guard let tableView = tableView,
+                      let self = self,
+                      indexPath.row < self.messages.count else { return }
+                
+                // 查找并更新对应的节点布局
+                if var layout = self.messages[indexPath.row].layout {
+                    // 递归查找并替换匹配的节点
+//                    layout = updateNodeLayout(in: layout, with: updatedNodeLayout)
+                    self.messages[indexPath.row].layout = nil;
+                    self.messages[indexPath.row].calculateLayout(width: contentWidth, delegate: self)
                     
-                    // 获取当前 cell 的实际高度（包含所有 padding）
+                    // 触发 UI 更新
+                    let newHeight = layout.frame.height + 70
                     let currentHeight = cell.frame.height
                     
                     // 只有当高度变化超过阈值时才刷新
-                    if abs(height - currentHeight) >= 0.5 {
-                        // 清理当前的layout，重新计算
-                        self.messages[indexPath.row].layout = nil;
-                        
-                        self.messages[indexPath.row].calculateLayout(width: contentWidth, delegate: self)
-                        // 使用 indexPath 刷新当前 cell
+                    if abs(newHeight - currentHeight) >= 0.5 {
                         tableView.reloadRows(at: [indexPath], with: .none)
                     }
                 }
             }
+        }
+        
+        cell.configure(
+            with: message,
+            indexPath: indexPath,
+            width: contentWidth,
+            viewController: self,
+            onNodeLayoutChanged: onNodeLayoutChanged
         )
         return cell
     }
@@ -222,7 +229,7 @@ class MessageTableViewCell: UITableViewCell {
         ])
     }
     
-    func configure(with message: Message, indexPath:IndexPath ,width: CGFloat, viewController: UIViewController? = nil, onLayoutComplete: ((CGFloat) -> Void)? = nil) {
+    func configure(with message: Message, indexPath: IndexPath, width: CGFloat, viewController: UIViewController? = nil, onNodeLayoutChanged: ((NodeLayout) -> Void)? = nil) {
         self.message = message
         self.viewController = viewController
         
@@ -243,23 +250,13 @@ class MessageTableViewCell: UITableViewCell {
         let longPressGesture = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
         containerView.addGestureRecognizer(longPressGesture)
         
-        // 创建防抖的高度变化回调
-        let onHeightChanged: ((CGFloat) -> Void)? = { [weak self] heightDiff in
-            guard let self = self else { return }
-            // 只有在配置完成后才允许高度变化回调，且高度变化超过阈值
-            if !self.isConfiguring && abs(heightDiff) >= 0.5 {
-                // heightDiff 是内容高度的变化，计算新的总高度（当前总高度 + 内容高度变化）
-                let newTotalHeight = self.lastReportedHeight + heightDiff
-                self.lastReportedHeight = newTotalHeight
-                onLayoutComplete?(newTotalHeight)
-            }
-        }
-        
         // 创建渲染上下文（包含所有点击事件处理）
         guard let context = createRenderContext(
             width: width,
             viewController: viewController,
-            onHeightChanged: onHeightChanged
+            message: message,
+            indexPath: indexPath,
+            onNodeLayoutChanged: onNodeLayoutChanged
         ) else {
             return
         }
@@ -346,7 +343,9 @@ class MessageTableViewCell: UITableViewCell {
     private func createRenderContext(
         width: CGFloat,
         viewController: UIViewController?,
-        onHeightChanged: ((CGFloat) -> Void)?
+        message: Message,
+        indexPath: IndexPath,
+        onNodeLayoutChanged: ((NodeLayout) -> Void)?
     ) -> UIKitRenderContext? {
         
         return UIKitRenderContext(
@@ -381,7 +380,7 @@ class MessageTableViewCell: UITableViewCell {
             formulaSizeCacheDelegate: viewController as? UIKitFormulaSizeCacheDelegate,
             inlineImageLoaderDelegate: viewController as? UIKitInlineImageLoaderDelegate,
             toolbarActionDelegate: viewController as? UIKitToolbarActionDelegate,
-            onLayoutHeightChanged: onHeightChanged
+            onNodeLayoutChanged: onNodeLayoutChanged
         )
     }
     

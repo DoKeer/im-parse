@@ -446,11 +446,9 @@ internal class MathTextAttachment: NSTextAttachment {
             
             self.isLoading = false
             
-            // 触发高度变化回调，让上层业务重新布局
-            if let onHeightChanged = self.context.onLayoutHeightChanged {
-                // 传递 -1 表示需要重新计算布局
-                onHeightChanged(-1)
-            }
+            // 行内公式图片加载完成后，需要触发上层重新计算布局
+            // 由于行内公式在段落中，无法单独更新，这里不做任何处理
+            // 上层可以在下次滚动或刷新时重新计算布局
         }
     }
     
@@ -540,6 +538,74 @@ internal class MentionTapHandler: NSObject {
                 }
             }
         }
+    }
+}
+
+// MARK: - NodeLayout 工具方法
+
+/// 递归更新节点布局
+/// - Parameters:
+///   - layout: 当前布局
+///   - updatedLayout: 更新后的节点布局
+/// - Returns: 更新后的完整布局
+public func updateNodeLayout(in layout: NodeLayout, with updatedLayout: NodeLayout) -> NodeLayout {
+    // 如果当前节点就是要更新的节点（通过节点内容匹配）
+    if let currentNode = layout.node, let updatedNode = updatedLayout.node {
+        if nodesMatch(currentNode, updatedNode) {
+            // 返回更新后的布局
+            return updatedLayout
+        }
+    }
+    
+    // 递归查找子节点
+    var updatedChildren = layout.children
+    var hasChanges = false
+    
+    for (index, child) in layout.children.enumerated() {
+        let updatedChild = updateNodeLayout(in: child, with: updatedLayout)
+        if updatedChild !== child {
+            updatedChildren[index] = updatedChild
+            hasChanges = true
+        }
+    }
+    
+    // 如果子节点有更新，重新计算当前节点的 frame
+    if hasChanges {
+        // 重新计算垂直堆栈的高度
+        var totalHeight: CGFloat = 0
+        for child in updatedChildren {
+            totalHeight += child.frame.height
+        }
+        
+        let newFrame = CGRect(
+            origin: layout.frame.origin,
+            size: CGSize(width: layout.frame.width, height: totalHeight)
+        )
+        
+        return NodeLayout(
+            frame: newFrame,
+            children: updatedChildren,
+            node: layout.node,
+            content: layout.content,
+            backgroundColor: layout.backgroundColor,
+            cornerRadius: layout.cornerRadius,
+            borderColor: layout.borderColor,
+            borderWidth: layout.borderWidth
+        )
+    }
+    
+    return layout
+}
+
+/// 判断两个 AST 节点是否匹配（用于查找要更新的节点）
+public func nodesMatch(_ node1: ASTNodeWrapper, _ node2: ASTNodeWrapper) -> Bool {
+    switch (node1, node2) {
+    case (.math(let math1), .math(let math2)):
+        return math1.content == math2.content && math1.display == math2.display
+    case (.mermaid(let mermaid1), .mermaid(let mermaid2)):
+        return mermaid1.content == mermaid2.content
+    default:
+        return false
     }
 }
 

@@ -115,7 +115,7 @@ public class UIKitFrameAsyncCalculator {
     }
     
     /// 计算单个节点的布局
-    private static func calculateNodeLayout(_ node: ASTNodeWrapper, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
+    public static func calculateNodeLayout(_ node: ASTNodeWrapper, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
         switch node {
         case .paragraph(let pNode):
             // 段落布局：检查是否包含块级特殊节点（图片、块级数学公式、Mermaid）
@@ -466,66 +466,50 @@ public class UIKitFrameAsyncCalculator {
         let toolbarHeight: CGFloat = context.toolbarActionDelegate != nil ? context.theme.toolbarHeight + toolbarPadding * 2 : 0 // 工具栏高度 + 间距
         
         // 生成缓存键（使用内容字符串作为key）
-        let cacheKey = "math:\(node.content):\(node.display)"
+        // 生成包含尺寸信息的缓存key（块级公式不包含尺寸，使用原始尺寸）
+        let textColor = context.theme.textColor
+        let components = textColor.cgColor.components ?? [0, 0, 0, 1]
+        let colorHex = String(format: "#%02X%02X%02X",
+                              Int(components[0] * 255),
+                              Int(components[1] * 255),
+                              Int(components[2] * 255))
+        let fontSize = node.display ? 16.0 : 14.0
+        let cacheKey = MathHTMLRenderer.generateMathCacheKey(
+            mathContent: node.content,
+            display: node.display,
+            textColor: colorHex,
+            fontSize: fontSize,
+            targetSize: nil // 块级公式不使用目标尺寸
+        )
         
         // 优先从缓存获取尺寸
         if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey) {
             // 如果缓存中有尺寸，使用缓存的尺寸
-            // 注意：缓存的尺寸是图片的实际尺寸，需要加上padding和工具栏高度
-            // 但图片高度应该独立计算，工具栏不应该挤占图片高度
             let imageHeight = cachedSize.height
             let totalHeight = imageHeight + padding * 2 + toolbarHeight
-            // 宽度使用传入的width（限制最大宽度）
             return CGSize(width: width, height: totalHeight)
-        }else if let cachedSize = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey)?.size {
-            // 没尺寸缓存，直接用图片缓存的尺寸。
+        } else if let cachedSize = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey)?.size {
+            // 没尺寸缓存，直接用图片缓存的尺寸
             let imageHeight = cachedSize.height
             let totalHeight = imageHeight + padding * 2 + toolbarHeight
-            // 宽度使用传入的width（限制最大宽度）
             return CGSize(width: width, height: totalHeight)
         }
         
-        // 从 rust-core 获取 HTML（同步操作，可以在后台线程执行）
-        let result = IMParseCore.mathToHTML(node.content, display: node.display)
+        // 没有缓存时，直接返回原始文本内容的尺寸
+        // 不触发异步渲染，只在 render 时触发
+        let contentWidth = width - padding * 2
+        let font = context.theme.codeFont
+        let attrString = NSAttributedString(string: node.content, attributes: [.font: font])
         
-        guard result.success, let _ = result.astJSON else {
-            // 语法错误时，显示错误信息的高度
-            // 错误提示行（16px）+ 间距（4px）+ 原始内容高度
-            let contentWidth = width - padding * 2
-            
-            let font = context.theme.codeFont
-            let attrString = NSAttributedString(string: node.content, attributes: [.font: font])
-            
-            let size = attrString.boundingRect(
-                with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                context: nil
-            ).size
-            
-            let contentHeight = ceil(size.height)
-            let errorLabelHeight: CGFloat = 16
-            let spacing: CGFloat = 4
-            let totalHeight = padding + errorLabelHeight + spacing + contentHeight + padding
-            return CGSize(width: width, height: totalHeight)
-        }
+        let size = attrString.boundingRect(
+            with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        ).size
         
-        // 根据 HTML 内容和 display 模式估算尺寸
-        // 块级公式通常更高，行内公式较矮
-        let baseHeight: CGFloat = node.display ? 60 : 30
-        
-        // 根据内容长度调整高度（粗略估算）
-        // 每增加约 50 个字符，高度增加约 20px（块级）或 10px（行内）
-        let contentLength = node.content.count
-        let lengthMultiplier: CGFloat = node.display ? 20.0 : 10.0
-        let additionalHeight = CGFloat(contentLength / 50) * lengthMultiplier
-        
-        // 限制最大高度（避免过度估算）
-        let maxHeight: CGFloat = 300
-        let estimatedImageHeight = min(baseHeight + additionalHeight, maxHeight)
-        
-        // 宽度使用传入的 width（数学公式通常不会超出容器宽度）
-        // 总高度 = 图片高度 + padding + 工具栏高度（工具栏不挤占图片高度）
-        return CGSize(width: width, height: estimatedImageHeight + padding * 2 + toolbarHeight)
+        let contentHeight = ceil(size.height)
+        let totalHeight = contentHeight + padding * 2 + toolbarHeight
+        return CGSize(width: width, height: totalHeight)
     }
     
     /// 估算 Mermaid 图表的尺寸
@@ -537,8 +521,28 @@ public class UIKitFrameAsyncCalculator {
         let switcherHeight = context.theme.toolbarSwitcherHeight // 切换器高度
         let topAreaHeight: CGFloat = max(toolbarHeight, switcherHeight) + toolbarPadding * 2 // 顶部区域高度
         
-        // 生成缓存键（使用内容字符串作为key）
-        let cacheKey = "mermaid:\(node.content)"
+        // 转换颜色为十六进制（用于生成统一的 cacheKey）
+        let textColor = context.theme.textColor
+        let backgroundColor = context.theme.codeBackgroundColor
+        let textComponents = textColor.cgColor.components ?? [0, 0, 0, 1]
+        let textColorHex = String(format: "#%02X%02X%02X",
+                                  Int(textComponents[0] * 255),
+                                  Int(textComponents[1] * 255),
+                                  Int(textComponents[2] * 255)
+        )
+        let bgComponents = backgroundColor.cgColor.components ?? [1, 1, 1, 1]
+        let backgroundColorHex = String(format: "#%02X%02X%02X",
+                                        Int(bgComponents[0] * 255),
+                                        Int(bgComponents[1] * 255),
+                                        Int(bgComponents[2] * 255)
+        )
+        
+        // 使用统一的 cacheKey 生成方法
+        let cacheKey = MermaidHTMLRenderer.generateCacheKey(
+            mermaidCode: node.content,
+            textColor: textColorHex,
+            backgroundColor: backgroundColorHex
+        )
         
         // 优先从缓存获取尺寸
         if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey) {
@@ -549,65 +553,21 @@ public class UIKitFrameAsyncCalculator {
             return CGSize(width: width, height: totalHeight)
         }
         
-        // 从 rust-core 获取 HTML（同步操作，可以在后台线程执行）
-        let textColor = context.theme.textColor
-        let backgroundColor = context.theme.codeBackgroundColor
+        // 没有缓存时，直接返回原始文本内容的尺寸
+        // 不触发异步渲染，只在 render 时触发
+        let contentWidth = width - padding * 2
+        let font = context.theme.codeFont
+        let attrString = NSAttributedString(string: node.content, attributes: [.font: font])
         
-        // 转换颜色为十六进制
-        let textComponents = textColor.cgColor.components ?? [0, 0, 0, 1]
-        let textColorHex = String(format: "#%02X%02X%02X",
-            Int(textComponents[0] * 255),
-            Int(textComponents[1] * 255),
-            Int(textComponents[2] * 255)
-        )
+        let size = attrString.boundingRect(
+            with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        ).size
         
-        let bgComponents = backgroundColor.cgColor.components ?? [1, 1, 1, 1]
-        let backgroundColorHex = String(format: "#%02X%02X%02X",
-            Int(bgComponents[0] * 255),
-            Int(bgComponents[1] * 255),
-            Int(bgComponents[2] * 255)
-        )
-        
-        let result = IMParseCore.mermaidToHTML(node.content, textColor: textColorHex, backgroundColor: backgroundColorHex)
-        
-        guard result.success else {
-            // 语法错误时，显示错误信息的高度
-            // 错误提示行（16px）+ 间距（4px）+ 原始内容高度
-            let contentWidth = width - padding * 2
-            
-            let font = context.theme.codeFont
-            let attrString = NSAttributedString(string: node.content, attributes: [.font: font])
-            
-            let size = attrString.boundingRect(
-                with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                context: nil
-            ).size
-            
-            let contentHeight = ceil(size.height)
-            let errorLabelHeight: CGFloat = 16
-            let spacing: CGFloat = 4
-            let totalHeight = padding + errorLabelHeight + spacing + contentHeight + padding
-            return CGSize(width: width, height: totalHeight)
-        }
-        
-        // 根据 Mermaid 代码长度和类型估算尺寸
-        // 不同类型的图表有不同的默认高度
-        let contentLength = node.content.count
-        
-        // 基础高度（根据常见图表类型）
-        let baseHeight: CGFloat = 300
-        
-        // 根据内容长度调整（粗略估算）
-        // 每增加约 100 个字符，高度增加约 50px
-        let additionalHeight = CGFloat(contentLength / 100) * 50
-        
-        // 限制最大高度（避免过度估算）
-        let maxHeight: CGFloat = 1000
-        let estimatedHeight = min(baseHeight + additionalHeight, maxHeight)
-        
-        // 加上顶部区域高度（切换器和工具栏）
-        return CGSize(width: width, height: estimatedHeight + padding * 2 + topAreaHeight)
+        let contentHeight = ceil(size.height)
+        let totalHeight = contentHeight + padding * 2 + topAreaHeight
+        return CGSize(width: width, height: totalHeight)
     }
     
     /// 计算包含特殊节点的段落布局
@@ -1019,9 +979,6 @@ public class UIKitFrameAsyncCalculator {
         let toolbarPadding = context.theme.toolbarPadding
         // 顶部标题栏高度（toolbar + padding）- 独立的标题栏区域
         let headerBarHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : 0
-        
-        // 在计算布局之前，预渲染所有行内数学公式
-        preloadInlineMathInTable(node, context: context)
         
         // 表格内容从标题栏下方开始
         var currentY: CGFloat = 0
@@ -1606,92 +1563,6 @@ public class UIKitFrameAsyncCalculator {
             frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: height)),
             content: mutableAttrString
         )
-    }
-    
-    /// 预加载表格中的所有行内数学公式
-    /// 异步触发图片渲染，不等待结果。渲染完成后会触发 onLayoutHeightChanged 回调
-    private static func preloadInlineMathInTable(_ node: TableNode, context: UIKitRenderContext) {
-        // 如果没有缓存代理，无法预加载（但MathTextAttachment仍会显示占位符）
-        guard let cacheDelegate = context.formulaSizeCacheDelegate else {
-            return
-        }
-        
-        // 收集所有行内数学公式节点
-        var inlineMathNodes: [MathNode] = []
-        
-        for row in node.rows {
-            for cell in row.cells {
-                collectInlineMathNodes(from: cell.children, into: &inlineMathNodes)
-            }
-        }
-        
-        // 如果没有行内数学公式，直接返回
-        guard !inlineMathNodes.isEmpty else { return }
-        
-        // 异步渲染所有行内数学公式（不等待）
-        for mathNode in inlineMathNodes {
-            // 计算目标尺寸（行内公式需要根据字体计算）
-            let font = context.currentFont ?? context.theme.font
-            let lineHeight = font.lineHeight
-            let textColor = context.currentTextColor ?? context.theme.textColor
-            let components = textColor.cgColor.components ?? [0, 0, 0, 1]
-            let colorHex = String(format: "#%02X%02X%02X",
-                                  Int(components[0] * 255),
-                                  Int(components[1] * 255),
-                                  Int(components[2] * 255))
-            let fontSize = font.pointSize
-            
-            // 估算目标尺寸（宽度会在渲染后确定）
-            let estimatedTargetSize = CGSize(width: lineHeight * 2, height: lineHeight)
-            let cacheKey = MathHTMLRenderer.generateMathCacheKey(
-                mathContent: mathNode.content,
-                display: false,
-                textColor: colorHex,
-                fontSize: fontSize,
-                targetSize: estimatedTargetSize
-            )
-            
-            // 检查缓存，如果已经有了就跳过
-            if cacheDelegate.getFormulaImage(for: cacheKey) != nil {
-                continue
-            }
-            
-            // 异步触发渲染
-            triggerInlineMathRendering(mathNode: mathNode, context: context, cacheKey: cacheKey, cacheDelegate: cacheDelegate)
-        }
-    }
-    
-    /// 触发行内数学公式的异步渲染
-    private static func triggerInlineMathRendering(
-        mathNode: MathNode,
-        context: UIKitRenderContext,
-        cacheKey: String,
-        cacheDelegate: UIKitFormulaSizeCacheDelegate
-    ) {
-        let textColor = context.currentTextColor ?? context.theme.textColor
-        let font = context.currentFont ?? context.theme.font
-        let fontSize = font.pointSize
-        let lineHeight = font.lineHeight
-        
-        // 使用共享的渲染方法
-        MathHTMLRenderer.renderInlineMath(
-            mathContent: mathNode.content,
-            textColor: textColor,
-            fontSize: fontSize,
-            lineHeight: lineHeight
-        ) { scaledImage, scaledSize in
-            guard let scaledImage = scaledImage else { return }
-            
-            // 保存到缓存
-            cacheDelegate.saveFormulaImage(scaledImage, for: cacheKey)
-            cacheDelegate.setCachedSize(scaledSize, for: cacheKey)
-            
-            // 触发高度变化回调，让上层业务重新布局
-            if let onHeightChanged = context.onLayoutHeightChanged {
-                // 传递一个标记值，表示需要重新计算
-                onHeightChanged(-1)
-            }
-        }
     }
     
     /// 从节点列表中收集所有行内数学公式节点（递归）
