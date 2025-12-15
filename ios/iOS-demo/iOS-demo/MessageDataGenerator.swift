@@ -91,6 +91,25 @@ class MessageDataGenerator {
                    
             """,
             """
+            ```javascript
+            // JavaScript 代码示例
+            const greet = (name) => {
+                console.log(`Hello, ${name}!`);
+            };
+            
+            // 使用 Promise
+            const fetchData = async () => {
+                try {
+                    const response = await fetch('https://api.example.com/data');
+                    const data = await response.json();
+                    return data;
+                } catch (error) {
+                    console.error('Error:', error);
+                }
+            };
+            ```
+            """,
+            """
             
             您好，您2025年12月福利餐补已到账，可打开Teams-工作台-智慧食堂查看餐补余额。
 

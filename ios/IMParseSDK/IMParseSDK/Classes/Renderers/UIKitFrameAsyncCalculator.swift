@@ -233,6 +233,11 @@ public class UIKitFrameAsyncCalculator {
             
         case .codeBlock(let cNode):
             // 代码块布局
+            let toolbarHeight = context.theme.toolbarHeight
+            let toolbarPadding = context.theme.toolbarPadding
+            // 顶部标题栏高度（toolbar + padding）- 独立的标题栏区域
+            let headerBarHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : 0
+            
             let padding = context.theme.codeBlockPadding
             let contentWidth = width - padding * 2
             
@@ -245,16 +250,19 @@ public class UIKitFrameAsyncCalculator {
                 context: nil
             ).size
             
-            let height = ceil(size.height) + padding * 2
+            // 代码内容高度
+            let contentHeight = ceil(size.height) + padding * 2
+            // 总高度 = 标题栏高度 + 代码内容高度
+            let totalHeight = headerBarHeight + contentHeight
             
-            // 创建内部文本的 layout
+            // 创建内部文本的 layout（在标题栏下方）
             let textLayout = NodeLayout(
-                frame: CGRect(x: padding, y: padding, width: contentWidth, height: ceil(size.height)),
+                frame: CGRect(x: padding, y: headerBarHeight + padding, width: contentWidth, height: ceil(size.height)),
                 content: attrString
             )
             
             return NodeLayout(
-                frame: CGRect(origin: origin, size: CGSize(width: width, height: height)),
+                frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
                 children: [textLayout],
                 node: node,
                 backgroundColor: context.theme.codeBackgroundColor,

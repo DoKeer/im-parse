@@ -300,10 +300,59 @@ public class UIKitFrameRender {
     static func renderCodeBlock(_ node: CodeBlockNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
         let containerView = UIView()
         containerView.frame = CGRect(origin: .zero, size: frame.size)
-        containerView.backgroundColor = context.theme.codeBackgroundColor
-        containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
-        containerView.clipsToBounds = true
         
+        // 代码块整体圆角
+        containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
+        containerView.layer.masksToBounds = true
+        
+        containerView.backgroundColor = context.theme.codeBackgroundColor
+        
+        let toolbarHeight = context.theme.toolbarHeight
+        let toolbarWidth = context.theme.toolbarWidth
+        let toolbarPadding = context.theme.toolbarPadding
+        
+        // 标题栏高度
+        let headerBarHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : 0
+        
+        // 代码内容区域（在标题栏下方）
+        let contentAreaHeight = frame.size.height - headerBarHeight
+        let contentAreaWidth = frame.size.width
+        
+        // 创建标题栏（如果有toolbar）
+        if context.toolbarActionDelegate != nil {
+            let headerBar = UIView()
+            headerBar.frame = CGRect(
+                x: 0,
+                y: 0,
+                width: contentAreaWidth,
+                height: headerBarHeight
+            )
+            headerBar.backgroundColor = context.theme.codeBackgroundColor
+            
+            
+            // 添加工具栏（右侧）
+            let toolbar = UIKitToolbar(theme: context.theme)
+            toolbar.frame = CGRect(
+                x: contentAreaWidth - toolbarWidth - toolbarPadding,
+                y: toolbarPadding,
+                width: toolbarWidth,
+                height: toolbarHeight
+            )
+            
+            toolbar.onCopy = {
+                context.toolbarActionDelegate?.copyContent(node.content, type: "code")
+            }
+            toolbar.onDownload = {
+                context.toolbarActionDelegate?.downloadContent(node.content, type: "code", image: nil)
+            }
+            toolbar.onFullscreen = {
+                context.toolbarActionDelegate?.showFullscreen(node.content, type: "code", image: nil)
+            }
+            headerBar.addSubview(toolbar)
+            containerView.addSubview(headerBar)
+        }
+        
+        // 代码内容区域
         let padding = context.theme.codeBlockPadding
         let label = UILabel()
         label.text = node.content
@@ -312,9 +361,9 @@ public class UIKitFrameRender {
         label.numberOfLines = 0
         label.frame = CGRect(
             x: padding,
-            y: padding,
-            width: frame.size.width - padding * 2,
-            height: frame.size.height - padding * 2
+            y: headerBarHeight + padding,
+            width: contentAreaWidth - padding * 2,
+            height: contentAreaHeight - padding * 2
         )
         containerView.addSubview(label)
         
