@@ -639,9 +639,9 @@ public class UIKitFrameAsyncCalculator {
                 flushTextNodes()
                 // 只有块级数学公式才单独处理，行内数学公式应该在文本中作为附件处理
                 if mathNode.display {
-                    let mathLayout = calculateNodeLayout(.math(mathNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
-                    childLayouts.append(mathLayout)
-                    currentY += mathLayout.frame.height
+                let mathLayout = calculateNodeLayout(.math(mathNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(mathLayout)
+                currentY += mathLayout.frame.height
                 } else {
                     // 行内数学公式应该包含在文本节点中，不应该单独处理
                     currentTextNodes.append(child)
@@ -849,9 +849,9 @@ public class UIKitFrameAsyncCalculator {
                 flushTextNodes()
                 // 只有块级数学公式才单独处理，行内数学公式应该在文本中作为附件处理
                 if mathNode.display {
-                    let mathLayout = calculateNodeLayout(.math(mathNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
-                    childLayouts.append(mathLayout)
-                    currentY += mathLayout.frame.height
+                let mathLayout = calculateNodeLayout(.math(mathNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(mathLayout)
+                currentY += mathLayout.frame.height
                 } else {
                     // 行内数学公式应该包含在文本节点中，不应该单独处理
                     currentTextNodes.append(child)
@@ -1001,20 +1001,61 @@ public class UIKitFrameAsyncCalculator {
     
     /// 计算表格布局
     private static func calculateTableLayout(_ node: TableNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
-        let toolbarHeight: CGFloat = context.toolbarActionDelegate != nil ? context.theme.toolbarHeight + 16 : 0 // 工具栏高度 + 间距
-        var currentY: CGFloat = toolbarHeight
+        let toolbarHeight = context.theme.toolbarHeight
+        let toolbarPadding = context.theme.toolbarPadding
+        // 顶部区域高度（toolbar + padding）
+        let topAreaHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : 0
+        
+        // 表格内容从顶部区域下方开始
+        var currentY: CGFloat = 0 // 表格内容区域的相对Y坐标
         var rowLayouts: [NodeLayout] = []
         let cellPadding = context.theme.tableCellPadding
+        let maxCellWidth = context.theme.tableMaxCellWidth // 单元格最大宽度限制
+        
+        // 先计算所有单元格的实际宽度
+        var maxCellWidths: [CGFloat] = []
+        for row in node.rows {
+            for (cellIndex, cell) in row.cells.enumerated() {
+                let attrString = context.stringBuilder.buildAttributedString(from: cell.children, context: context)
+                
+                // 使用最大单元格宽度计算实际宽度，让文本在必要时换行
+                let size = attrString.boundingRect(
+                    with: CGSize(width: maxCellWidth - cellPadding * 2, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    context: nil
+                ).size
+                
+                let cellContentWidth = ceil(size.width) + cellPadding * 2
+                
+                // 确保最小单元格宽度
+                let minCellWidth: CGFloat = 80
+                // 限制单元格最大宽度
+                let actualCellWidth = min(max(cellContentWidth, minCellWidth), maxCellWidth)
+                
+                // 更新或设置该列的最大宽度
+                if cellIndex >= maxCellWidths.count {
+                    maxCellWidths.append(actualCellWidth)
+                } else {
+                    maxCellWidths[cellIndex] = max(maxCellWidths[cellIndex], actualCellWidth)
+                }
+            }
+        }
+        
+        // 计算表格总宽度
+        let tableActualWidth = maxCellWidths.reduce(0, +)
         
         for (rowIndex, row) in node.rows.enumerated() {
             var currentX: CGFloat = 0
             var cellLayouts: [NodeLayout] = []
-            let cellWidth = width / CGFloat(row.cells.count)
             
-            for cell in row.cells {
+            for (cellIndex, cell) in row.cells.enumerated() {
+                // 使用该列的最大宽度
+                let cellWidth = maxCellWidths[cellIndex]
                 let cellContentWidth = cellWidth - cellPadding * 2
+                
                 let attrString = context.stringBuilder.buildAttributedString(from: cell.children, context: context)
                 
+                // 使用该列的实际宽度计算高度（与宽度计算时一致）
                 let size = attrString.boundingRect(
                     with: CGSize(width: cellContentWidth, height: .greatestFiniteMagnitude),
                     options: [.usesLineFragmentOrigin, .usesFontLeading],
@@ -1044,7 +1085,7 @@ public class UIKitFrameAsyncCalculator {
             }
             
             let rowLayout = NodeLayout(
-                frame: CGRect(x: 0, y: currentY, width: width, height: rowHeight),
+                frame: CGRect(x: 0, y: currentY, width: tableActualWidth, height: rowHeight),
                 children: cellLayouts,
                 backgroundColor: rowIndex == 0 ? context.theme.tableHeaderBackground : nil
             )
@@ -1057,14 +1098,20 @@ public class UIKitFrameAsyncCalculator {
             }
         }
         
+        // 总高度 = 顶部区域高度 + 表格内容高度
+        let tableContentHeight = currentY
+        let totalHeight = topAreaHeight + tableContentHeight
+        
+        // 返回的 frame 宽度使用传入的 width（可见区域宽度），但 children 使用 tableActualWidth
         return NodeLayout(
-            frame: CGRect(origin: origin, size: CGSize(width: width, height: currentY)),
+            frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
             children: rowLayouts,
             node: .table(node),
             borderColor: context.theme.tableBorderColor,
             borderWidth: 1
         )
     }
+    
     
     /// 计算列表布局
     private static func calculateListLayout(_ node: ListNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
@@ -1256,9 +1303,9 @@ public class UIKitFrameAsyncCalculator {
                 flushTextNodes()
                 // 只有块级数学公式才单独处理，行内数学公式应该在文本中作为附件处理
                 if mathNode.display {
-                    let mathLayout = calculateNodeLayout(.math(mathNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
-                    childLayouts.append(mathLayout)
-                    currentY += mathLayout.frame.height
+                let mathLayout = calculateNodeLayout(.math(mathNode), context: context, origin: CGPoint(x: 0, y: currentY), width: width)
+                childLayouts.append(mathLayout)
+                currentY += mathLayout.frame.height
                 } else {
                     // 行内数学公式应该包含在文本节点中，不应该单独处理
                     currentTextNodes.append(child)

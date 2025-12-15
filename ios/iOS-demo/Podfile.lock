@@ -11,9 +11,17 @@ PODS:
     - IMParseSDK/SwiftUI
   - IMParseSDK/SwiftUI (1.0.0):
     - IMParseSDK/Core
+  - LookinServer (1.2.8):
+    - LookinServer/Core (= 1.2.8)
+  - LookinServer/Core (1.2.8)
 
 DEPENDENCIES:
   - IMParseSDK/Full (from `../IMParseSDK`)
+  - LookinServer
+
+SPEC REPOS:
+  trunk:
+    - LookinServer
 
 EXTERNAL SOURCES:
   IMParseSDK:
@@ -21,7 +29,8 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   IMParseSDK: 893fe59529ae83284531c98070110338469c5d0e
+  LookinServer: 1b2b61c6402ae29fa22182d48f5cd067b4e99e80
 
-PODFILE CHECKSUM: c14d4cc3ff9b01d000a87e49182b9821f8cb3f30
+PODFILE CHECKSUM: aa91a250566d0212b11318b7f97a53f9759e29a7
 
 COCOAPODS: 1.16.2

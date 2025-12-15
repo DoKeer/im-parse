@@ -143,12 +143,9 @@ public class UIKitFrameRender {
         // 注意：某些节点类型已经在其 render 方法内部处理了 children，需要跳过通用渲染逻辑
         if let nodeWrapper = layout.node {
             switch nodeWrapper {
-            case .codeBlock, .image, .math, .mermaid, .html, .emoji, .mention, .horizontalRule:
+            case .codeBlock, .image, .math, .mermaid, .html, .emoji, .mention, .horizontalRule, .table:
                 // 这些节点已经在各自的 render 方法中创建了完整视图，不需要再处理 children
                 break
-            case .table:
-                // 表格：需要特殊处理，渲染行、单元格分隔线和单元格内容
-                renderTableChildren(children: layout.children, into: view, context: context)
             case .paragraph, .heading, .list, .blockquote:
                 // 这些节点已经在各自的 render 方法内部递归渲染了 children，不需要再次渲染
                 break
@@ -558,14 +555,17 @@ public class UIKitFrameRender {
         
         let toolbarHeight = context.theme.toolbarHeight
         let toolbarWidth = context.theme.toolbarWidth
-        let padding = context.theme.toolbarPadding
+        let toolbarPadding = context.theme.toolbarPadding
         
-        // 添加工具栏（如果有代理）
+        // 顶部区域高度（toolbar + padding）
+        let topAreaHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : 0
+        
+        // 添加工具栏（如果有代理，在顶部）
         if context.toolbarActionDelegate != nil {
             let toolbar = UIKitToolbar(theme: context.theme)
             toolbar.frame = CGRect(
-                x: layout.frame.size.width - toolbarWidth - padding,
-                y: padding,
+                x: layout.frame.size.width - toolbarWidth - toolbarPadding,
+                y: toolbarPadding,
                 width: toolbarWidth,
                 height: toolbarHeight
             )
@@ -586,21 +586,46 @@ public class UIKitFrameRender {
             containerView.addSubview(toolbar)
         }
         
-        // 表格内容通过 renderTableChildren 渲染
-        let tableContentY: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + padding * 2 : 0
+        // 表格内容区域（在toolbar下方）
+        let contentAreaHeight = layout.frame.size.height - topAreaHeight
+        let contentAreaWidth = layout.frame.size.width
+        
+        // 创建 ScrollView 用于横向滚动
+        let scrollView = UIScrollView()
+        scrollView.frame = CGRect(
+            x: 0,
+            y: topAreaHeight,
+            width: contentAreaWidth,
+            height: contentAreaHeight
+        )
+        scrollView.showsHorizontalScrollIndicator = true
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.bounces = true
+        scrollView.alwaysBounceHorizontal = true
+        
+        // 计算表格的实际宽度（从 layout.children 中获取，因为已经在布局计算时计算好了）
+        // layout.children 中的 rowLayout 的 frame.width 就是表格的实际宽度
+        let tableActualWidth = layout.children.first?.frame.width ?? contentAreaWidth
+        
+        // 设置 ScrollView 的 contentSize
+        scrollView.contentSize = CGSize(width: tableActualWidth, height: contentAreaHeight)
+        
+        // 创建表格内容视图（放在 ScrollView 中）
         let tableContentView = UIView()
         tableContentView.frame = CGRect(
             x: 0,
-            y: tableContentY,
-            width: layout.frame.size.width,
-            height: layout.frame.size.height - tableContentY
+            y: 0,
+            width: tableActualWidth,
+            height: contentAreaHeight
         )
-        containerView.addSubview(tableContentView)
+        scrollView.addSubview(tableContentView)
+        containerView.addSubview(scrollView)
         
         renderTableChildren(children: layout.children, into: tableContentView, context: context)
         
         return containerView
     }
+    
     
     /// 将表格节点转换为字符串（用于复制）
     private static func convertTableToString(_ node: TableNode) -> String {

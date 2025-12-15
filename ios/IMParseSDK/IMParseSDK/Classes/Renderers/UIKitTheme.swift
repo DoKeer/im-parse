@@ -59,6 +59,8 @@ public struct UIKitTheme {
     public var tableBorderColor: UIColor
     /// 表头背景色
     public var tableHeaderBackground: UIColor
+    /// 表格单元格最大宽度
+    public var tableMaxCellWidth: CGFloat
     
     // 引用块
     /// 引用块边框宽度
@@ -128,6 +130,7 @@ public struct UIKitTheme {
         self.tableCellPadding = CGFloat(config.tableCellPadding)
         self.tableBorderColor = UIColor(hex: config.tableBorderColor) ?? UIColor.gray.withAlphaComponent(0.3)
         self.tableHeaderBackground = UIColor(hex: config.tableHeaderBackground) ?? UIColor.gray.withAlphaComponent(0.1)
+        self.tableMaxCellWidth = CGFloat(config.tableMaxCellWidth)
         self.blockquoteBorderWidth = CGFloat(config.blockquoteBorderWidth)
         self.blockquoteBorderColor = UIColor(hex: config.blockquoteBorderColor) ?? UIColor.gray.withAlphaComponent(0.3)
         self.blockquoteTextColor = UIColor(hex: config.blockquoteTextColor) ?? .secondaryLabel
@@ -144,15 +147,15 @@ public struct UIKitTheme {
         self.maxContentWidth = CGFloat(config.maxContentWidth)
         self.contentPadding = CGFloat(config.contentPadding)
         
-        // 工具栏尺寸（默认值）
-        self.toolbarHeight = 36
-        self.toolbarWidth = 120
-        self.toolbarPadding = 8
-        self.toolbarButtonSize = 32
-        self.toolbarButtonSpacing = 8
-        self.toolbarSwitcherHeight = 32
-        self.toolbarSwitcherButtonWidth = 60
-        self.toolbarSwitcherButtonSpacing = 4
+        // 工具栏尺寸（从 config 读取，如果有的话）
+        self.toolbarHeight = CGFloat(config.toolbarHeight)
+        self.toolbarWidth = CGFloat(config.toolbarWidth)
+        self.toolbarPadding = CGFloat(config.toolbarPadding)
+        self.toolbarButtonSize = CGFloat(config.toolbarButtonSize)
+        self.toolbarButtonSpacing = CGFloat(config.toolbarButtonSpacing)
+        self.toolbarSwitcherHeight = CGFloat(config.toolbarSwitcherHeight)
+        self.toolbarSwitcherButtonWidth = CGFloat(config.toolbarSwitcherButtonWidth)
+        self.toolbarSwitcherButtonSpacing = CGFloat(config.toolbarSwitcherButtonSpacing)
     }
     
     /// 默认主题（从 StyleConfig.default() 创建）
@@ -178,6 +181,7 @@ public struct UIKitTheme {
             tableCellPadding: 2,
             tableBorderColor: "#C7C7CC",
             tableHeaderBackground: "#E5E5EA",
+            tableMaxCellWidth: 400,
             blockquoteBorderWidth: 4,
             blockquoteBorderColor: "#C7C7CC",
             blockquoteTextColor: "#8E8E93",
@@ -192,7 +196,15 @@ public struct UIKitTheme {
             hrColor: "#C6C6C8",
             lineHeight: 1.0,
             maxContentWidth: 800,
-            contentPadding: 0
+            contentPadding: 0,
+            toolbarHeight: 36,
+            toolbarWidth: 120,
+            toolbarPadding: 8,
+            toolbarButtonSize: 32,
+            toolbarButtonSpacing: 8,
+            toolbarSwitcherHeight: 32,
+            toolbarSwitcherButtonWidth: 60,
+            toolbarSwitcherButtonSpacing: 4
         )
         return UIKitTheme(from: fallbackConfig)
     }

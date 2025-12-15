@@ -74,12 +74,22 @@ class MessageDataGenerator {
     /// 生成 Markdown 模板
     private static func generateMarkdownTemplates() -> [String] {
         return [
-            #"""
-            $\int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$
-            $$
-            \int_{0}^{\infty} e^{-x^2} \, dx = \frac{\sqrt{\pi}}{2}
-            $$
-            """#,
+            """
+            ## 表格测试
+            
+            | 列1 | 列2 | 列3 | 列4 |
+            |-----|-----|-----|-----|
+            | 数据1 | **粗体数据** | *斜体数据ABCabc* | `代码数据` |
+            | 数据2https://fastly.picsum.photos/id/987/300/200.jpg?hmac=lJV-MNZkUF2dOSdcuChxuE5smUQzHj6t3UFq9va9uK0https://fastly.picsum.photos/id/987/300/200.jpg?hmac=lJV-MNZkUF2dOSdcuChxuE5smUQzHj6t3UFq9va9uK0 | 文本和[链接](https://example.com) | 普通文本 | 混合格式 |
+            | 数据3 | 长文本内容，用于测试表格单元格中的文本换行效果 | 短文本 | 数据 |
+            | 数据4 | 左对齐 | 居中 | 右对齐 |
+            
+            | 左对齐 | 居中 | 右对齐 |
+            |:-------|:----:|------:|
+            | 左 | 中 | 右 |
+            | 左对齐文本 | 居中文本 | 右对齐文本 |
+                   
+            """,
             """
             
             您好，您2025年12月福利餐补已到账，可打开Teams-工作台-智慧食堂查看餐补余额。
@@ -395,8 +405,7 @@ class MessageDataGenerator {
             这是一篇完整的 Markdown 测试文档，涵盖了所有常见的 Markdown 元素。通过这篇文档，我们可以全面测试 UIKitRenderer 和 SwiftUIRenderer 的排版效果，确保它们能够正确处理各种复杂场景。
             
             文档应该具有良好的可读性，各种元素之间应该有适当的间距，文本应该能够正确地换行，格式应该能够正确地应用。希望这篇测试文档能够帮助我们发现和修复渲染器中的问题。
-            """
-            ,
+            """,
             
             """
             段落中有行内数学 $a^2 + b^2 = c^2$，前后还有普通文本。

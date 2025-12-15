@@ -64,6 +64,10 @@ pub struct StyleConfig {
     #[serde(default = "default_table_header_background")]
     pub table_header_background: String,
     
+    /// 表格单元格最大宽度（px）
+    #[serde(default = "default_table_max_cell_width")]
+    pub table_max_cell_width: f32,
+    
     /// 引用块左边框宽度（px）
     #[serde(default = "default_blockquote_border_width")]
     pub blockquote_border_width: f32,
@@ -123,6 +127,39 @@ pub struct StyleConfig {
     /// 内容内边距（px）
     #[serde(default = "default_content_padding")]
     pub content_padding: f32,
+    
+    // 工具栏配置
+    /// 工具栏高度（px）
+    #[serde(default = "default_toolbar_height")]
+    pub toolbar_height: f32,
+    
+    /// 工具栏宽度（px）
+    #[serde(default = "default_toolbar_width")]
+    pub toolbar_width: f32,
+    
+    /// 工具栏内边距（px）
+    #[serde(default = "default_toolbar_padding")]
+    pub toolbar_padding: f32,
+    
+    /// 工具栏按钮尺寸（px）
+    #[serde(default = "default_toolbar_button_size")]
+    pub toolbar_button_size: f32,
+    
+    /// 工具栏按钮间距（px）
+    #[serde(default = "default_toolbar_button_spacing")]
+    pub toolbar_button_spacing: f32,
+    
+    /// Mermaid 切换器高度（px）
+    #[serde(default = "default_toolbar_switcher_height")]
+    pub toolbar_switcher_height: f32,
+    
+    /// Mermaid 切换器按钮宽度（px）
+    #[serde(default = "default_toolbar_switcher_button_width")]
+    pub toolbar_switcher_button_width: f32,
+    
+    /// Mermaid 切换器按钮间距（px）
+    #[serde(default = "default_toolbar_switcher_button_spacing")]
+    pub toolbar_switcher_button_spacing: f32,
 }
 
 impl Default for StyleConfig {
@@ -143,6 +180,7 @@ impl Default for StyleConfig {
             table_cell_padding: default_table_cell_padding(),
             table_border_color: default_table_border_color(),
             table_header_background: default_table_header_background(),
+            table_max_cell_width: default_table_max_cell_width(),
             blockquote_border_width: default_blockquote_border_width(),
             blockquote_border_color: default_blockquote_border_color(),
             blockquote_text_color: default_blockquote_text_color(),
@@ -158,6 +196,14 @@ impl Default for StyleConfig {
             line_height: default_line_height(),
             max_content_width: default_max_content_width(),
             content_padding: default_content_padding(),
+            toolbar_height: default_toolbar_height(),
+            toolbar_width: default_toolbar_width(),
+            toolbar_padding: default_toolbar_padding(),
+            toolbar_button_size: default_toolbar_button_size(),
+            toolbar_button_spacing: default_toolbar_button_spacing(),
+            toolbar_switcher_height: default_toolbar_switcher_height(),
+            toolbar_switcher_button_width: default_toolbar_switcher_button_width(),
+            toolbar_switcher_button_spacing: default_toolbar_switcher_button_spacing(),
         }
     }
 }
@@ -187,6 +233,7 @@ fn default_code_block_border_radius() -> f32 { 8.0 }
 fn default_table_cell_padding() -> f32 { 8.0 }
 fn default_table_border_color() -> String { "#dddddd".to_string() }
 fn default_table_header_background() -> String { "#f4f4f4".to_string() }
+fn default_table_max_cell_width() -> f32 { 400.0 }
 fn default_blockquote_border_width() -> f32 { 4.0 }
 fn default_blockquote_border_color() -> String { "#dddddd".to_string() }
 fn default_blockquote_text_color() -> String { "#666666".to_string() }
@@ -202,6 +249,14 @@ fn default_hr_color() -> String { "#dddddd".to_string() }
 fn default_line_height() -> f32 { 1.0 }
 fn default_max_content_width() -> f32 { 800.0 }
 fn default_content_padding() -> f32 { 2.0 }
+fn default_toolbar_height() -> f32 { 36.0 }
+fn default_toolbar_width() -> f32 { 120.0 }
+fn default_toolbar_padding() -> f32 { 8.0 }
+fn default_toolbar_button_size() -> f32 { 32.0 }
+fn default_toolbar_button_spacing() -> f32 { 8.0 }
+fn default_toolbar_switcher_height() -> f32 { 32.0 }
+fn default_toolbar_switcher_button_width() -> f32 { 60.0 }
+fn default_toolbar_switcher_button_spacing() -> f32 { 4.0 }
 
 impl StyleConfig {
     /// 创建深色模式配置

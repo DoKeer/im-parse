@@ -26,6 +26,7 @@ public struct StyleConfig: Codable {
     public var tableCellPadding: Float
     public var tableBorderColor: String
     public var tableHeaderBackground: String
+    public var tableMaxCellWidth: Float
     public var blockquoteBorderWidth: Float
     public var blockquoteBorderColor: String
     public var blockquoteTextColor: String
@@ -41,6 +42,14 @@ public struct StyleConfig: Codable {
     public var lineHeight: Float
     public var maxContentWidth: Float
     public var contentPadding: Float
+    public var toolbarHeight: Float
+    public var toolbarWidth: Float
+    public var toolbarPadding: Float
+    public var toolbarButtonSize: Float
+    public var toolbarButtonSpacing: Float
+    public var toolbarSwitcherHeight: Float
+    public var toolbarSwitcherButtonWidth: Float
+    public var toolbarSwitcherButtonSpacing: Float
     
     public init(fontSize: Float,
                 codeFontSize: Float,
@@ -57,6 +66,7 @@ public struct StyleConfig: Codable {
                 tableCellPadding: Float,
                 tableBorderColor: String,
                 tableHeaderBackground: String,
+                tableMaxCellWidth: Float,
                 blockquoteBorderWidth: Float,
                 blockquoteBorderColor: String,
                 blockquoteTextColor: String,
@@ -71,7 +81,15 @@ public struct StyleConfig: Codable {
                 hrColor: String,
                 lineHeight: Float,
                 maxContentWidth: Float,
-                contentPadding: Float) {
+                contentPadding: Float,
+                toolbarHeight: Float,
+                toolbarWidth: Float,
+                toolbarPadding: Float,
+                toolbarButtonSize: Float,
+                toolbarButtonSpacing: Float,
+                toolbarSwitcherHeight: Float,
+                toolbarSwitcherButtonWidth: Float,
+                toolbarSwitcherButtonSpacing: Float) {
         self.fontSize = fontSize
         self.codeFontSize = codeFontSize
         self.textColor = textColor
@@ -87,6 +105,7 @@ public struct StyleConfig: Codable {
         self.tableCellPadding = tableCellPadding
         self.tableBorderColor = tableBorderColor
         self.tableHeaderBackground = tableHeaderBackground
+        self.tableMaxCellWidth = tableMaxCellWidth
         self.blockquoteBorderWidth = blockquoteBorderWidth
         self.blockquoteBorderColor = blockquoteBorderColor
         self.blockquoteTextColor = blockquoteTextColor
@@ -102,6 +121,14 @@ public struct StyleConfig: Codable {
         self.lineHeight = lineHeight
         self.maxContentWidth = maxContentWidth
         self.contentPadding = contentPadding
+        self.toolbarHeight = toolbarHeight
+        self.toolbarWidth = toolbarWidth
+        self.toolbarPadding = toolbarPadding
+        self.toolbarButtonSize = toolbarButtonSize
+        self.toolbarButtonSpacing = toolbarButtonSpacing
+        self.toolbarSwitcherHeight = toolbarSwitcherHeight
+        self.toolbarSwitcherButtonWidth = toolbarSwitcherButtonWidth
+        self.toolbarSwitcherButtonSpacing = toolbarSwitcherButtonSpacing
     }
     
     enum CodingKeys: String, CodingKey {
@@ -120,6 +147,7 @@ public struct StyleConfig: Codable {
         case tableCellPadding = "table_cell_padding"
         case tableBorderColor = "table_border_color"
         case tableHeaderBackground = "table_header_background"
+        case tableMaxCellWidth = "table_max_cell_width"
         case blockquoteBorderWidth = "blockquote_border_width"
         case blockquoteBorderColor = "blockquote_border_color"
         case blockquoteTextColor = "blockquote_text_color"
@@ -135,6 +163,14 @@ public struct StyleConfig: Codable {
         case lineHeight = "line_height"
         case maxContentWidth = "max_content_width"
         case contentPadding = "content_padding"
+        case toolbarHeight = "toolbar_height"
+        case toolbarWidth = "toolbar_width"
+        case toolbarPadding = "toolbar_padding"
+        case toolbarButtonSize = "toolbar_button_size"
+        case toolbarButtonSpacing = "toolbar_button_spacing"
+        case toolbarSwitcherHeight = "toolbar_switcher_height"
+        case toolbarSwitcherButtonWidth = "toolbar_switcher_button_width"
+        case toolbarSwitcherButtonSpacing = "toolbar_switcher_button_spacing"
     }
 }
 
