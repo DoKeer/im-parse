@@ -39,12 +39,7 @@ class UIKitToolbar: UIView {
         let buttonSize = theme.toolbarButtonSize
         let buttonSpacing = theme.toolbarButtonSpacing
         let containerPadding = theme.toolbarPadding
-        backgroundColor = UIColor.systemBackground.withAlphaComponent(0.9)
-        layer.cornerRadius = 6
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOffset = CGSize(width: 0, height: 2)
-        layer.shadowRadius = 4
-        layer.shadowOpacity = 0.1
+        backgroundColor = UIColor.clear
         
         // 创建按钮
         copyButton = createButton(icon: "doc.on.doc", type: .copy, size: buttonSize)
@@ -166,17 +161,15 @@ class MermaidViewModeSwitcher: UIView {
         previewButton.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
         previewButton.translatesAutoresizingMaskIntoConstraints = false
         previewButton.addTarget(self, action: #selector(previewTapped), for: .touchUpInside)
-        previewButton.layer.cornerRadius = 4
-        previewButton.clipsToBounds = true
-        
+        previewButton.backgroundColor = .clear
+
         // 代码按钮
         codeButton.setTitle("代码", for: .normal)
         codeButton.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
         codeButton.translatesAutoresizingMaskIntoConstraints = false
         codeButton.addTarget(self, action: #selector(codeTapped), for: .touchUpInside)
-        codeButton.layer.cornerRadius = 4
-        codeButton.clipsToBounds = true
-        
+        codeButton.backgroundColor = .clear
+
         // 指示器
         indicatorView.backgroundColor = UIColor.systemBlue
         indicatorView.layer.cornerRadius = 3
@@ -238,9 +231,7 @@ class MermaidViewModeSwitcher: UIView {
         if isPreviewMode {
             // 选中状态：使用深色文字，确保在浅灰色背景上有足够的对比度
             previewButton.setTitleColor(.label, for: .normal)
-            previewButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.1) // 浅蓝色背景
             codeButton.setTitleColor(.secondaryLabel, for: .normal)
-            codeButton.backgroundColor = .clear
             
             // 移动指示器到预览按钮下方
             indicatorLeadingConstraint = indicatorView.leadingAnchor.constraint(equalTo: previewButton.leadingAnchor)
@@ -248,10 +239,8 @@ class MermaidViewModeSwitcher: UIView {
         } else {
             // 未选中状态
             previewButton.setTitleColor(.secondaryLabel, for: .normal)
-            previewButton.backgroundColor = .clear
             // 选中状态：使用深色文字
             codeButton.setTitleColor(.label, for: .normal)
-            codeButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.1) // 浅蓝色背景
             
             // 移动指示器到代码按钮下方
             indicatorLeadingConstraint = indicatorView.leadingAnchor.constraint(equalTo: codeButton.leadingAnchor)

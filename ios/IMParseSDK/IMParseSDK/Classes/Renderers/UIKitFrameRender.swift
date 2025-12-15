@@ -550,21 +550,55 @@ public class UIKitFrameRender {
     static func renderTable(_ node: TableNode, layout: NodeLayout, context: UIKitRenderContext) -> UIView {
         let containerView = UIView()
         containerView.frame = CGRect(origin: .zero, size: layout.frame.size)
+        
+        // 表格整体圆角
+        containerView.layer.cornerRadius = 8
+        containerView.layer.masksToBounds = true
+        
         containerView.layer.borderWidth = 1
         containerView.layer.borderColor = context.theme.tableBorderColor.cgColor
+        containerView.backgroundColor = .clear
         
         let toolbarHeight = context.theme.toolbarHeight
         let toolbarWidth = context.theme.toolbarWidth
         let toolbarPadding = context.theme.toolbarPadding
         
-        // 顶部区域高度（toolbar + padding）
-        let topAreaHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : 0
+        // 标题栏高度
+        let headerBarHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : 0
         
-        // 添加工具栏（如果有代理，在顶部）
+        // 表格内容区域（在标题栏下方）
+        let contentAreaHeight = layout.frame.size.height - headerBarHeight
+        let contentAreaWidth = layout.frame.size.width
+        
+        // 创建标题栏（如果有toolbar）
         if context.toolbarActionDelegate != nil {
+            let headerBar = UIView()
+            headerBar.frame = CGRect(
+                x: 0,
+                y: 0,
+                width: contentAreaWidth,
+                height: headerBarHeight
+            )
+            headerBar.backgroundColor = context.theme.tableHeaderBackground
+            
+            // 添加"表格"标题文字（左侧）
+            let titleLabel = UILabel()
+            titleLabel.text = "表格"
+            titleLabel.font = .systemFont(ofSize: 16, weight: .medium)
+            titleLabel.textColor = context.theme.textColor
+            titleLabel.textAlignment = .left
+            titleLabel.frame = CGRect(
+                x: toolbarPadding,
+                y: 0,
+                width: 100,
+                height: headerBarHeight
+            )
+            headerBar.addSubview(titleLabel)
+            
+            // 添加工具栏（右侧）
             let toolbar = UIKitToolbar(theme: context.theme)
             toolbar.frame = CGRect(
-                x: layout.frame.size.width - toolbarWidth - toolbarPadding,
+                x: contentAreaWidth - toolbarWidth - toolbarPadding,
                 y: toolbarPadding,
                 width: toolbarWidth,
                 height: toolbarHeight
@@ -577,24 +611,20 @@ public class UIKitFrameRender {
                 context.toolbarActionDelegate?.copyContent(tableContent, type: "table")
             }
             toolbar.onDownload = {
-                // 表格下载：可以生成图片或导出为CSV
                 context.toolbarActionDelegate?.downloadContent(tableContent, type: "table", image: nil)
             }
             toolbar.onFullscreen = {
                 context.toolbarActionDelegate?.showFullscreen(tableContent, type: "table", image: nil)
             }
-            containerView.addSubview(toolbar)
+            headerBar.addSubview(toolbar)
+            containerView.addSubview(headerBar)
         }
         
-        // 表格内容区域（在toolbar下方）
-        let contentAreaHeight = layout.frame.size.height - topAreaHeight
-        let contentAreaWidth = layout.frame.size.width
-        
-        // 创建 ScrollView 用于横向滚动
+        // 创建 ScrollView 用于横向滚动（在标题栏下方）
         let scrollView = UIScrollView()
         scrollView.frame = CGRect(
             x: 0,
-            y: topAreaHeight,
+            y: headerBarHeight,
             width: contentAreaWidth,
             height: contentAreaHeight
         )
@@ -602,9 +632,9 @@ public class UIKitFrameRender {
         scrollView.showsVerticalScrollIndicator = false
         scrollView.bounces = true
         scrollView.alwaysBounceHorizontal = true
+        scrollView.backgroundColor = .clear
         
-        // 计算表格的实际宽度（从 layout.children 中获取，因为已经在布局计算时计算好了）
-        // layout.children 中的 rowLayout 的 frame.width 就是表格的实际宽度
+        // 计算表格的实际宽度
         let tableActualWidth = layout.children.first?.frame.width ?? contentAreaWidth
         
         // 设置 ScrollView 的 contentSize
@@ -618,10 +648,11 @@ public class UIKitFrameRender {
             width: tableActualWidth,
             height: contentAreaHeight
         )
+        tableContentView.backgroundColor = .clear
         scrollView.addSubview(tableContentView)
         containerView.addSubview(scrollView)
         
-        renderTableChildren(children: layout.children, into: tableContentView, context: context)
+        renderTableChildren(children: layout.children, into: tableContentView, context: context, node: node)
         
         return containerView
     }
@@ -666,17 +697,16 @@ public class UIKitFrameRender {
     }
     
     /// 渲染表格的子视图（行和单元格）
-    static func renderTableChildren(children: [NodeLayout], into containerView: UIView, context: UIKitRenderContext) {
+    static func renderTableChildren(children: [NodeLayout], into containerView: UIView, context: UIKitRenderContext, node: TableNode) {
         let cellPadding = context.theme.tableCellPadding
-        var currentY: CGFloat = 0
         
         for (rowIndex, rowLayout) in children.enumerated() {
-            // 渲染行（包含单元格）
+            // 直接使用 rowLayout.frame，不要重新计算位置
             let rowView = UIView()
-            rowView.frame = CGRect(x: 0, y: currentY, width: rowLayout.frame.width, height: rowLayout.frame.height)
-            if let bgColor = rowLayout.backgroundColor {
-                rowView.backgroundColor = bgColor
-            }
+            rowView.frame = rowLayout.frame
+            
+            // 所有行使用相同的背景色（透明，显示默认背景）
+            rowView.backgroundColor = .clear
             containerView.addSubview(rowView)
             
             // 渲染行内的单元格
@@ -753,20 +783,18 @@ public class UIKitFrameRender {
                 currentX += cellLayout.frame.width
             }
             
-            currentY += rowLayout.frame.height
-            
             // 在行下方添加水平分隔线（除了最后一行）
+            // 分隔线的位置应该在当前行的下方
             if rowIndex < children.count - 1 {
                 let divider = UIView()
                 divider.backgroundColor = context.theme.tableBorderColor
                 divider.frame = CGRect(
                     x: 0,
-                    y: currentY,
+                    y: rowLayout.frame.maxY,
                     width: rowLayout.frame.width,
                     height: 1
                 )
                 containerView.addSubview(divider)
-                currentY += 1
             }
         }
     }

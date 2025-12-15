@@ -1003,64 +1003,81 @@ public class UIKitFrameAsyncCalculator {
     private static func calculateTableLayout(_ node: TableNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
         let toolbarHeight = context.theme.toolbarHeight
         let toolbarPadding = context.theme.toolbarPadding
-        // 顶部区域高度（toolbar + padding）
-        let topAreaHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : 0
+        // 顶部标题栏高度（toolbar + padding）- 独立的标题栏区域
+        let headerBarHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : 0
         
-        // 表格内容从顶部区域下方开始
-        var currentY: CGFloat = 0 // 表格内容区域的相对Y坐标
+        // 表格内容从标题栏下方开始
+        var currentY: CGFloat = 0
         var rowLayouts: [NodeLayout] = []
         let cellPadding = context.theme.tableCellPadding
         let maxCellWidth = context.theme.tableMaxCellWidth // 单元格最大宽度限制
+        let minCellWidth = context.theme.tableMinCellWidth // 单元格最小宽度限制
         
-        // 先计算所有单元格的实际宽度
-        var maxCellWidths: [CGFloat] = []
+        // 可用于表格内容的宽度（排除边框）
+        let availableWidth = width - 2 // 减去左右边框
+        
+        // 第一步：计算每列的理想宽度（基于内容）
+        var idealCellWidths: [CGFloat] = []
+        
         for row in node.rows {
             for (cellIndex, cell) in row.cells.enumerated() {
                 let attrString = context.stringBuilder.buildAttributedString(from: cell.children, context: context)
                 
-                // 使用最大单元格宽度计算实际宽度，让文本在必要时换行
-                let size = attrString.boundingRect(
-                    with: CGSize(width: maxCellWidth - cellPadding * 2, height: .greatestFiniteMagnitude),
-                    options: [.usesLineFragmentOrigin, .usesFontLeading],
-                    context: nil
-                ).size
+                // 计算富文本的理想宽度，考虑附件尺寸
+                let idealWidth = calculateIdealCellWidth(attrString, maxWidth: maxCellWidth - cellPadding * 2)
+                let cellContentWidth = idealWidth + cellPadding * 2
                 
-                let cellContentWidth = ceil(size.width) + cellPadding * 2
-                
-                // 确保最小单元格宽度
-                let minCellWidth: CGFloat = 80
-                // 限制单元格最大宽度
-                let actualCellWidth = min(max(cellContentWidth, minCellWidth), maxCellWidth)
+                // 限制在最小和最大宽度之间
+                let clampedWidth = min(max(cellContentWidth, minCellWidth), maxCellWidth)
                 
                 // 更新或设置该列的最大宽度
-                if cellIndex >= maxCellWidths.count {
-                    maxCellWidths.append(actualCellWidth)
+                if cellIndex >= idealCellWidths.count {
+                    idealCellWidths.append(clampedWidth)
                 } else {
-                    maxCellWidths[cellIndex] = max(maxCellWidths[cellIndex], actualCellWidth)
+                    idealCellWidths[cellIndex] = max(idealCellWidths[cellIndex], clampedWidth)
                 }
             }
         }
         
-        // 计算表格总宽度
-        let tableActualWidth = maxCellWidths.reduce(0, +)
+        // 第二步：应用智能压缩算法（如果某列过宽）
+        let compressedWidths = applyCompressionAlgorithm(idealCellWidths, maxWidth: maxCellWidth, minWidth: minCellWidth)
         
+        // 第三步：计算总宽度，并决定是否需要拉伸
+        let totalIdealWidth = compressedWidths.reduce(0, +)
+        var finalCellWidths: [CGFloat]
+        
+        if totalIdealWidth < availableWidth {
+            // 按比例拉伸以填满容器
+            finalCellWidths = stretchCellWidthsProportionally(
+                compressedWidths,
+                targetWidth: availableWidth,
+                maxWidth: maxCellWidth
+            )
+        } else {
+            // 使用压缩后的宽度，允许横向滚动
+            finalCellWidths = compressedWidths
+        }
+        
+        let tableActualWidth = finalCellWidths.reduce(0, +)
+        
+        // 第四步：渲染每一行
         for (rowIndex, row) in node.rows.enumerated() {
             var currentX: CGFloat = 0
             var cellLayouts: [NodeLayout] = []
             
             for (cellIndex, cell) in row.cells.enumerated() {
-                // 使用该列的最大宽度
-                let cellWidth = maxCellWidths[cellIndex]
+                guard cellIndex < finalCellWidths.count else { continue }
+                
+                let cellWidth = finalCellWidths[cellIndex]
                 let cellContentWidth = cellWidth - cellPadding * 2
                 
                 let attrString = context.stringBuilder.buildAttributedString(from: cell.children, context: context)
                 
-                // 使用该列的实际宽度计算高度（与宽度计算时一致）
-                let size = attrString.boundingRect(
-                    with: CGSize(width: cellContentWidth, height: .greatestFiniteMagnitude),
-                    options: [.usesLineFragmentOrigin, .usesFontLeading],
-                    context: nil
-                ).size
+                // 使用该列的实际宽度计算高度
+                let size = calculateAttributedStringSize(
+                    attrString,
+                    width: cellContentWidth
+                )
                 
                 let cellHeight = ceil(size.height) + cellPadding * 2
                 
@@ -1084,10 +1101,11 @@ public class UIKitFrameAsyncCalculator {
                 )
             }
             
+            // 所有行都不设置背景色，使用默认透明背景
             let rowLayout = NodeLayout(
                 frame: CGRect(x: 0, y: currentY, width: tableActualWidth, height: rowHeight),
                 children: cellLayouts,
-                backgroundColor: rowIndex == 0 ? context.theme.tableHeaderBackground : nil
+                backgroundColor: nil
             )
             rowLayouts.append(rowLayout)
             currentY += rowHeight
@@ -1098,9 +1116,9 @@ public class UIKitFrameAsyncCalculator {
             }
         }
         
-        // 总高度 = 顶部区域高度 + 表格内容高度
+        // 总高度 = 标题栏高度 + 表格内容高度
         let tableContentHeight = currentY
-        let totalHeight = topAreaHeight + tableContentHeight
+        let totalHeight = headerBarHeight + tableContentHeight
         
         // 返回的 frame 宽度使用传入的 width（可见区域宽度），但 children 使用 tableActualWidth
         return NodeLayout(
@@ -1110,6 +1128,135 @@ public class UIKitFrameAsyncCalculator {
             borderColor: context.theme.tableBorderColor,
             borderWidth: 1
         )
+    }
+    
+    /// 计算富文本的理想宽度（考虑附件）
+    private static func calculateIdealCellWidth(_ attrString: NSAttributedString, maxWidth: CGFloat) -> CGFloat {
+        var maxLineWidth: CGFloat = 0
+        
+        // 检查是否包含附件（如行内公式）
+        var hasAttachment = false
+        attrString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attrString.length), options: []) { value, _, stop in
+            if value != nil {
+                hasAttachment = true
+                stop.pointee = true
+            }
+        }
+        
+        if hasAttachment {
+            // 如果有附件，使用更精确的计算方式
+            let textStorage = NSTextStorage(attributedString: attrString)
+            let layoutManager = NSLayoutManager()
+            let textContainer = NSTextContainer(size: CGSize(width: maxWidth, height: .greatestFiniteMagnitude))
+            textContainer.lineFragmentPadding = 0
+            layoutManager.addTextContainer(textContainer)
+            textStorage.addLayoutManager(layoutManager)
+            
+            layoutManager.ensureLayout(for: textContainer)
+            let usedRect = layoutManager.usedRect(for: textContainer)
+            maxLineWidth = ceil(usedRect.width)
+        } else {
+            // 纯文本，使用简单的计算方式
+            let size = attrString.boundingRect(
+                with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).size
+            maxLineWidth = ceil(size.width)
+        }
+        
+        return min(maxLineWidth, maxWidth)
+    }
+    
+    /// 计算富文本尺寸（考虑附件）
+    private static func calculateAttributedStringSize(_ attrString: NSAttributedString, width: CGFloat) -> CGSize {
+        // 检查是否包含附件
+        var hasAttachment = false
+        attrString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attrString.length), options: []) { value, _, stop in
+            if value != nil {
+                hasAttachment = true
+                stop.pointee = true
+            }
+        }
+        
+        if hasAttachment {
+            // 使用 NSLayoutManager 进行更精确的计算
+            let textStorage = NSTextStorage(attributedString: attrString)
+            let layoutManager = NSLayoutManager()
+            let textContainer = NSTextContainer(size: CGSize(width: width, height: .greatestFiniteMagnitude))
+            textContainer.lineFragmentPadding = 0
+            layoutManager.addTextContainer(textContainer)
+            textStorage.addLayoutManager(layoutManager)
+            
+            layoutManager.ensureLayout(for: textContainer)
+            let usedRect = layoutManager.usedRect(for: textContainer)
+            return CGSize(width: ceil(usedRect.width), height: ceil(usedRect.height))
+        } else {
+            // 纯文本使用简单计算
+            let size = attrString.boundingRect(
+                with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).size
+            return CGSize(width: ceil(size.width), height: ceil(size.height))
+        }
+    }
+    
+    /// 智能压缩算法：如果某列过宽，进行压缩
+    private static func applyCompressionAlgorithm(_ widths: [CGFloat], maxWidth: CGFloat, minWidth: CGFloat) -> [CGFloat] {
+        var result = widths
+        
+        // 找出过宽的列（超过平均宽度的1.5倍）
+        let totalWidth = widths.reduce(0, +)
+        let averageWidth = totalWidth / CGFloat(widths.count)
+        let compressionThreshold = min(averageWidth * 1.5, maxWidth)
+        
+        for (index, width) in widths.enumerated() {
+            if width > compressionThreshold {
+                // 压缩到阈值，但不低于最小宽度
+                result[index] = max(compressionThreshold, minWidth)
+            }
+        }
+        
+        return result
+    }
+    
+    /// 按比例拉伸列宽以填满容器
+    private static func stretchCellWidthsProportionally(_ widths: [CGFloat], targetWidth: CGFloat, maxWidth: CGFloat) -> [CGFloat] {
+        let currentTotal = widths.reduce(0, +)
+        guard currentTotal > 0 else { return widths }
+        
+        let scale = targetWidth / currentTotal
+        var result: [CGFloat] = []
+        var actualTotal: CGFloat = 0
+        
+        for width in widths {
+            // 按比例拉伸，但不超过最大宽度
+            let stretched = min(width * scale, maxWidth)
+            result.append(stretched)
+            actualTotal += stretched
+        }
+        
+        // 如果由于最大宽度限制导致总宽度不足，将剩余空间平均分配给未达到最大宽度的列
+        if actualTotal < targetWidth {
+            let remaining = targetWidth - actualTotal
+            var eligibleIndices: [Int] = []
+            
+            for (index, width) in result.enumerated() {
+                if width < maxWidth {
+                    eligibleIndices.append(index)
+                }
+            }
+            
+            if !eligibleIndices.isEmpty {
+                let extraPerColumn = remaining / CGFloat(eligibleIndices.count)
+                for index in eligibleIndices {
+                    result[index] = min(result[index] + extraPerColumn, maxWidth)
+                }
+            }
+        }
+        
+        return result
     }
     
     

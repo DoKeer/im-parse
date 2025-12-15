@@ -68,6 +68,10 @@ pub struct StyleConfig {
     #[serde(default = "default_table_max_cell_width")]
     pub table_max_cell_width: f32,
     
+    /// 表格单元格最小宽度（px）
+    #[serde(default = "default_table_min_cell_width")]
+    pub table_min_cell_width: f32,
+    
     /// 引用块左边框宽度（px）
     #[serde(default = "default_blockquote_border_width")]
     pub blockquote_border_width: f32,
@@ -181,6 +185,7 @@ impl Default for StyleConfig {
             table_border_color: default_table_border_color(),
             table_header_background: default_table_header_background(),
             table_max_cell_width: default_table_max_cell_width(),
+            table_min_cell_width: default_table_min_cell_width(),
             blockquote_border_width: default_blockquote_border_width(),
             blockquote_border_color: default_blockquote_border_color(),
             blockquote_text_color: default_blockquote_text_color(),
@@ -234,6 +239,7 @@ fn default_table_cell_padding() -> f32 { 8.0 }
 fn default_table_border_color() -> String { "#dddddd".to_string() }
 fn default_table_header_background() -> String { "#f4f4f4".to_string() }
 fn default_table_max_cell_width() -> f32 { 400.0 }
+fn default_table_min_cell_width() -> f32 { 80.0 }
 fn default_blockquote_border_width() -> f32 { 4.0 }
 fn default_blockquote_border_color() -> String { "#dddddd".to_string() }
 fn default_blockquote_text_color() -> String { "#666666".to_string() }

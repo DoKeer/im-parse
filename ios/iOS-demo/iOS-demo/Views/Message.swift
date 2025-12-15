@@ -81,6 +81,7 @@ public struct Message: Identifiable, Codable {
             imageLoaderDelegate: delegate as? UIKitImageLoaderDelegate,
             formulaSizeCacheDelegate:delegate as? UIKitFormulaSizeCacheDelegate,
             inlineImageLoaderDelegate: delegate as? UIKitInlineImageLoaderDelegate,
+            toolbarActionDelegate: delegate as? UIKitToolbarActionDelegate
         )
         
         // 计算布局

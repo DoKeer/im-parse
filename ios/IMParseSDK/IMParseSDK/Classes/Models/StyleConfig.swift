@@ -27,6 +27,7 @@ public struct StyleConfig: Codable {
     public var tableBorderColor: String
     public var tableHeaderBackground: String
     public var tableMaxCellWidth: Float
+    public var tableMinCellWidth: Float
     public var blockquoteBorderWidth: Float
     public var blockquoteBorderColor: String
     public var blockquoteTextColor: String
@@ -67,6 +68,7 @@ public struct StyleConfig: Codable {
                 tableBorderColor: String,
                 tableHeaderBackground: String,
                 tableMaxCellWidth: Float,
+                tableMinCellWidth: Float,
                 blockquoteBorderWidth: Float,
                 blockquoteBorderColor: String,
                 blockquoteTextColor: String,
@@ -106,6 +108,7 @@ public struct StyleConfig: Codable {
         self.tableBorderColor = tableBorderColor
         self.tableHeaderBackground = tableHeaderBackground
         self.tableMaxCellWidth = tableMaxCellWidth
+        self.tableMinCellWidth = tableMinCellWidth
         self.blockquoteBorderWidth = blockquoteBorderWidth
         self.blockquoteBorderColor = blockquoteBorderColor
         self.blockquoteTextColor = blockquoteTextColor
@@ -148,6 +151,7 @@ public struct StyleConfig: Codable {
         case tableBorderColor = "table_border_color"
         case tableHeaderBackground = "table_header_background"
         case tableMaxCellWidth = "table_max_cell_width"
+        case tableMinCellWidth = "table_min_cell_width"
         case blockquoteBorderWidth = "blockquote_border_width"
         case blockquoteBorderColor = "blockquote_border_color"
         case blockquoteTextColor = "blockquote_text_color"

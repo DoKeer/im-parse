@@ -61,6 +61,8 @@ public struct UIKitTheme {
     public var tableHeaderBackground: UIColor
     /// 表格单元格最大宽度
     public var tableMaxCellWidth: CGFloat
+    /// 表格单元格最小宽度
+    public var tableMinCellWidth: CGFloat
     
     // 引用块
     /// 引用块边框宽度
@@ -131,6 +133,7 @@ public struct UIKitTheme {
         self.tableBorderColor = UIColor(hex: config.tableBorderColor) ?? UIColor.gray.withAlphaComponent(0.3)
         self.tableHeaderBackground = UIColor(hex: config.tableHeaderBackground) ?? UIColor.gray.withAlphaComponent(0.1)
         self.tableMaxCellWidth = CGFloat(config.tableMaxCellWidth)
+        self.tableMinCellWidth = CGFloat(config.tableMinCellWidth)
         self.blockquoteBorderWidth = CGFloat(config.blockquoteBorderWidth)
         self.blockquoteBorderColor = UIColor(hex: config.blockquoteBorderColor) ?? UIColor.gray.withAlphaComponent(0.3)
         self.blockquoteTextColor = UIColor(hex: config.blockquoteTextColor) ?? .secondaryLabel
@@ -182,6 +185,7 @@ public struct UIKitTheme {
             tableBorderColor: "#C7C7CC",
             tableHeaderBackground: "#E5E5EA",
             tableMaxCellWidth: 400,
+            tableMinCellWidth: 80,
             blockquoteBorderWidth: 4,
             blockquoteBorderColor: "#C7C7CC",
             blockquoteTextColor: "#8E8E93",
