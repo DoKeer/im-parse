@@ -433,6 +433,75 @@ public class MathHTMLRenderer {
         return "\(hash)_\(display)_\(textColor)_\(Int(fontSize))"
     }
     
+    // MARK: - 行内数学公式渲染工具方法
+    
+    /// 渲染行内数学公式并调整尺寸以适应行高
+    /// 这是一个共享的工具方法，用于统一处理行内数学公式的渲染逻辑
+    /// - Parameters:
+    ///   - mathContent: 数学公式内容（LaTeX 格式）
+    ///   - textColor: 文本颜色
+    ///   - fontSize: 字体大小
+    ///   - lineHeight: 行高（用于调整图片尺寸）
+    ///   - completion: 完成回调，返回调整后的图片和尺寸
+    static func renderInlineMath(
+        mathContent: String,
+        textColor: UIColor,
+        fontSize: CGFloat,
+        lineHeight: CGFloat,
+        completion: @escaping (UIImage?, CGSize) -> Void
+    ) {
+        // 在后台线程处理
+        DispatchQueue.global(qos: .userInitiated).async {
+            // 从 rust-core 获取 HTML
+            let result = IMParseCore.mathToHTML(mathContent, display: false)
+            
+            guard result.success, let html = result.astJSON else {
+                DispatchQueue.main.async {
+                    completion(nil, .zero)
+                }
+                return
+            }
+            
+            // 转换颜色为十六进制
+            let components = textColor.cgColor.components ?? [0, 0, 0, 1]
+            let colorHex = String(format: "#%02X%02X%02X",
+                                  Int(components[0] * 255),
+                                  Int(components[1] * 255),
+                                  Int(components[2] * 255))
+            
+            // 使用 MathHTMLRenderer 渲染
+            MathHTMLRenderer.shared.render(
+                html: html,
+                display: false,
+                textColor: colorHex,
+                fontSize: fontSize
+            ) { image in
+                guard let image = image else {
+                    DispatchQueue.main.async {
+                        completion(nil, .zero)
+                    }
+                    return
+                }
+                
+                // 在主线程调整图片尺寸以适应行高
+                DispatchQueue.main.async {
+                    let targetHeight = lineHeight
+                    let scale = targetHeight / image.size.height
+                    let scaledWidth = image.size.width * scale
+                    let scaledSize = CGSize(width: scaledWidth, height: targetHeight)
+                    
+                    // 缩放图片
+                    let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                    let scaledImage = renderer.image { _ in
+                        image.draw(in: CGRect(origin: .zero, size: scaledSize))
+                    }
+                    
+                    completion(scaledImage, scaledSize)
+                }
+            }
+        }
+    }
+    
     /// 清除缓存
     func clearCache() {
         cacheQueue.async(flags: .barrier) { [weak self] in

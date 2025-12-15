@@ -298,9 +298,29 @@ internal class MathTextAttachment: NSTextAttachment {
         self.font = context.currentFont ?? context.theme.font
         super.init(data: nil, ofType: nil)
         
-        // 行内公式的初始尺寸（使用字体行高）
+        // 行内公式的初始尺寸
         let lineHeight = font.lineHeight
-        let attachmentSize = CGSize(width: lineHeight * 1.5, height: lineHeight)
+        
+        // 计算占位图片的宽度：根据公式文本的实际宽度动态计算
+        // 使用临时attributedString计算文本宽度，确保能完整显示公式
+        let tempAttrString = NSAttributedString(
+            string: mathNode.content,
+            attributes: [
+                .font: UIFont.systemFont(ofSize: font.pointSize * 0.8)
+            ]
+        )
+        let textWidth = tempAttrString.boundingRect(
+            with: CGSize(width: .greatestFiniteMagnitude, height: lineHeight),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        ).width
+        
+        // 占位图片宽度：至少是行高的1.5倍，但不超过文本宽度的2倍，最大不超过500pt
+        let minWidth = lineHeight * 1.5
+        let maxWidth = min(textWidth * 2, 500)
+        let placeholderWidth = max(minWidth, min(maxWidth, textWidth + 20)) // 加20pt padding
+        
+        let attachmentSize = CGSize(width: placeholderWidth, height: lineHeight)
         
         // 设置初始 bounds（会在 attachmentBounds 方法中动态调整）
         self.bounds = CGRect(origin: .zero, size: attachmentSize)
@@ -314,10 +334,12 @@ internal class MathTextAttachment: NSTextAttachment {
             // 调整 bounds 以适应图片尺寸
             updateBoundsForImage(cachedImage)
         } else {
-            // 创建占位图片
+            // 创建占位图片（显示公式原文）
             createPlaceholderImage(size: attachmentSize)
-            // 异步加载公式图片
-            loadMathImageAsync(cacheKey: cacheKey)
+            // 异步加载公式图片（如果有缓存代理）
+            if context.formulaSizeCacheDelegate != nil {
+                loadMathImageAsync(cacheKey: cacheKey)
+            }
         }
     }
     
@@ -347,24 +369,31 @@ internal class MathTextAttachment: NSTextAttachment {
         let renderer = UIGraphicsImageRenderer(size: size)
         self.image = renderer.image { context in
             // 绘制文本占位符
+            let placeholderFont = UIFont.systemFont(ofSize: font.pointSize * 0.8)
             let attrString = NSAttributedString(
                 string: mathNode.content,
                 attributes: [
-                    .font: UIFont.systemFont(ofSize: font.pointSize * 0.8),
+                    .font: placeholderFont,
                     .foregroundColor: color.withAlphaComponent(0.6)
                 ]
             )
+            
+            // 计算文本尺寸，允许换行
             let textSize = attrString.boundingRect(
-                with: size,
+                with: CGSize(width: size.width, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin, .usesFontLeading],
                 context: nil
             ).size
+            
+            // 如果文本宽度超过图片宽度，需要换行显示
             let textRect = CGRect(
-                x: (size.width - textSize.width) / 2,
-                y: (size.height - textSize.height) / 2,
-                width: textSize.width,
-                height: textSize.height
+                x: 0,
+                y: max(0, (size.height - min(textSize.height, size.height)) / 2),
+                width: size.width,
+                height: min(textSize.height, size.height)
             )
+            
+            // 绘制文本（支持多行）
             attrString.draw(in: textRect)
         }
     }
@@ -375,61 +404,38 @@ internal class MathTextAttachment: NSTextAttachment {
         
         isLoading = true
         
-        // 在后台线程渲染公式
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        let textColor = context.currentTextColor ?? context.theme.textColor
+        let fontSize = font.pointSize
+        let lineHeight = font.lineHeight
+        
+        // 使用共享的渲染方法
+        MathHTMLRenderer.renderInlineMath(
+            mathContent: mathNode.content,
+            textColor: textColor,
+            fontSize: fontSize,
+            lineHeight: lineHeight
+        ) { [weak self] scaledImage, scaledSize in
             guard let self = self else { return }
             
-            // 从 rust-core 获取 HTML
-            let result = IMParseCore.mathToHTML(self.mathNode.content, display: false) // 行内公式
-            
-            guard result.success, let html = result.astJSON else {
-                DispatchQueue.main.async {
-                    self.isLoading = false
-                }
+            guard let scaledImage = scaledImage else {
+                self.isLoading = false
                 return
             }
             
-            // 转换颜色为十六进制
-            let textColor = self.context.currentTextColor ?? self.context.theme.textColor
-            let components = textColor.cgColor.components ?? [0, 0, 0, 1]
-            let colorHex = String(format: "#%02X%02X%02X",
-                                  Int(components[0] * 255),
-                                  Int(components[1] * 255),
-                                  Int(components[2] * 255))
+            self.image = scaledImage
+            self.cachedImage = scaledImage
+            self.updateBoundsForImage(scaledImage)
             
-            let fontSize = self.font.pointSize
+            // 保存到缓存
+            self.context.formulaSizeCacheDelegate?.saveFormulaImage(scaledImage, for: cacheKey)
+            self.context.formulaSizeCacheDelegate?.setCachedSize(scaledSize, for: cacheKey)
             
-            // 使用 MathHTMLRenderer 渲染（行内公式）
-            MathHTMLRenderer.shared.render(
-                html: html,
-                display: false, // 行内公式
-                textColor: colorHex,
-                fontSize: fontSize
-            ) { image in
-                DispatchQueue.main.async {
-                    if let image = image {
-                        // 调整图片尺寸以适应行高
-                        let targetHeight = self.font.lineHeight
-                        let scale = targetHeight / image.size.height
-                        let scaledWidth = image.size.width * scale
-                        let scaledSize = CGSize(width: scaledWidth, height: targetHeight)
-                        
-                        // 缩放图片
-                        let renderer = UIGraphicsImageRenderer(size: scaledSize)
-                        let scaledImage = renderer.image { context in
-                            image.draw(in: CGRect(origin: .zero, size: scaledSize))
-                        }
-                        
-                        self.image = scaledImage
-                        self.cachedImage = scaledImage
-                        self.updateBoundsForImage(scaledImage)
-                        
-                        // 保存到缓存
-                        self.context.formulaSizeCacheDelegate?.saveFormulaImage(scaledImage, for: cacheKey)
-                        self.context.formulaSizeCacheDelegate?.setCachedSize(scaledSize, for: cacheKey)
-                    }
-                    self.isLoading = false
-                }
+            self.isLoading = false
+            
+            // 触发高度变化回调，让上层业务重新布局
+            if let onHeightChanged = self.context.onLayoutHeightChanged {
+                // 传递 -1 表示需要重新计算布局
+                onHeightChanged(-1)
             }
         }
     }

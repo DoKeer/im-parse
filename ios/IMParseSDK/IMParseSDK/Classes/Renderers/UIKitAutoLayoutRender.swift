@@ -1000,7 +1000,7 @@ public class UIKitAutoLayoutRender {
             containerView.setNeedsLayout()
             containerView.layoutIfNeeded()
             
-            if let onHeightChanged = context.onLayoutHeightChanged {
+            if let onHeightChanged = context.onLayoutHeightChanged, context.imageLoaderDelegate != nil, context.formulaSizeCacheDelegate != nil {
                 let newHeight = containerView.bounds.height
                 onHeightChanged(newHeight)
             }

@@ -506,7 +506,7 @@ public class UIKitFrameRender {
 //                height: newContainerHeight
 //            )
 //            print("IMParseSDK 图片加载完成：\(node.url) ，高度是否改变：\(newContainerHeight != containerView.frame.height)")
-            if newContainerHeight != containerView.frame.height , let onHeightChanged = context.onLayoutHeightChanged {
+            if abs(newContainerHeight - containerView.frame.height) > 0.5 , let onHeightChanged = context.onLayoutHeightChanged {
                 onHeightChanged(newContainerHeight)
             }
         }
@@ -1027,7 +1027,7 @@ public class UIKitFrameRender {
                     let currentHeight = containerView.frame.height
                     
                     // 如果实际高度与当前高度不同，触发高度刷新回调
-                    if abs(actualHeight - currentHeight) > 1.0, let onHeightChanged = context.onLayoutHeightChanged {
+                    if abs(actualHeight - currentHeight) > 0.5, let onHeightChanged = context.onLayoutHeightChanged {
                         onHeightChanged(actualHeight)
                     }
                 } else {
@@ -1284,7 +1284,7 @@ public class UIKitFrameRender {
                     let currentHeight = containerView.frame.height
                     
                     // 如果实际高度与当前高度不同，触发高度刷新回调
-                    if abs(actualHeight - currentHeight) > 1.0, let onHeightChanged = context.onLayoutHeightChanged {
+                    if abs(actualHeight - currentHeight) > 0.5, let onHeightChanged = context.onLayoutHeightChanged {
                         onHeightChanged(actualHeight)
                     }
                 } else {

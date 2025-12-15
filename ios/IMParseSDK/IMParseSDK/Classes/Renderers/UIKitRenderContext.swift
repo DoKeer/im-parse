@@ -101,8 +101,8 @@ public struct UIKitRenderContext {
     // 图片加载代理（可选）
     public weak var imageLoaderDelegate: UIKitImageLoaderDelegate?
     
-    // 数学公式和Mermaid尺寸缓存代理（可选）
-    public weak var formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate?
+    // 数学公式和Mermaid尺寸缓存代理（可选，用于缓存公式图片尺寸）
+    public weak var formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate!
     
     // 行内图片加载代理（可选，用于 Emoji 和 Mention 状态图片）
     public weak var inlineImageLoaderDelegate: UIKitInlineImageLoaderDelegate?
@@ -130,6 +130,7 @@ public struct UIKitRenderContext {
                 onLayoutHeightChanged: ((CGFloat) -> Void)? = nil) {
         self.theme = theme
         self.width = width
+        self.formulaSizeCacheDelegate = formulaSizeCacheDelegate
         self.onLinkTap = onLinkTap
         self.onImageTap = onImageTap
         self.onMentionTap = onMentionTap
@@ -139,7 +140,6 @@ public struct UIKitRenderContext {
         self.currentFont = currentFont
         self.currentTextColor = currentTextColor
         self.imageLoaderDelegate = imageLoaderDelegate
-        self.formulaSizeCacheDelegate = formulaSizeCacheDelegate
         self.inlineImageLoaderDelegate = inlineImageLoaderDelegate
         self.toolbarActionDelegate = toolbarActionDelegate
         self.onLayoutHeightChanged = onLayoutHeightChanged

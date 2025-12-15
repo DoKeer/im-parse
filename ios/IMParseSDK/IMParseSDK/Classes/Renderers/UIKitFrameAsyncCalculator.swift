@@ -290,7 +290,7 @@ public class UIKitFrameAsyncCalculator {
                     semaphore.signal()
                 }
                 
-                let timeout = DispatchTime.now() + .milliseconds(100)
+                let timeout = DispatchTime.now() + .milliseconds(1000)
                 if semaphore.wait(timeout: timeout) == .success, let image = loadedImage {
                     // 成功获取缓存的图片，使用图片的实际尺寸
                     cachedImageSize = image.size
@@ -473,6 +473,12 @@ public class UIKitFrameAsyncCalculator {
             // 如果缓存中有尺寸，使用缓存的尺寸
             // 注意：缓存的尺寸是图片的实际尺寸，需要加上padding和工具栏高度
             // 但图片高度应该独立计算，工具栏不应该挤占图片高度
+            let imageHeight = cachedSize.height
+            let totalHeight = imageHeight + padding * 2 + toolbarHeight
+            // 宽度使用传入的width（限制最大宽度）
+            return CGSize(width: width, height: totalHeight)
+        }else if let cachedSize = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey)?.size {
+            // 没尺寸缓存，直接用图片缓存的尺寸。
             let imageHeight = cachedSize.height
             let totalHeight = imageHeight + padding * 2 + toolbarHeight
             // 宽度使用传入的width（限制最大宽度）
@@ -1013,6 +1019,9 @@ public class UIKitFrameAsyncCalculator {
         let toolbarPadding = context.theme.toolbarPadding
         // 顶部标题栏高度（toolbar + padding）- 独立的标题栏区域
         let headerBarHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : 0
+        
+        // 在计算布局之前，预渲染所有行内数学公式
+        preloadInlineMathInTable(node, context: context)
         
         // 表格内容从标题栏下方开始
         var currentY: CGFloat = 0
@@ -1597,5 +1606,109 @@ public class UIKitFrameAsyncCalculator {
             frame: CGRect(origin: origin, size: CGSize(width: actualWidth, height: height)),
             content: mutableAttrString
         )
+    }
+    
+    /// 预加载表格中的所有行内数学公式
+    /// 异步触发图片渲染，不等待结果。渲染完成后会触发 onLayoutHeightChanged 回调
+    private static func preloadInlineMathInTable(_ node: TableNode, context: UIKitRenderContext) {
+        // 如果没有缓存代理，无法预加载（但MathTextAttachment仍会显示占位符）
+        guard let cacheDelegate = context.formulaSizeCacheDelegate else {
+            return
+        }
+        
+        // 收集所有行内数学公式节点
+        var inlineMathNodes: [MathNode] = []
+        
+        for row in node.rows {
+            for cell in row.cells {
+                collectInlineMathNodes(from: cell.children, into: &inlineMathNodes)
+            }
+        }
+        
+        // 如果没有行内数学公式，直接返回
+        guard !inlineMathNodes.isEmpty else { return }
+        
+        // 异步渲染所有行内数学公式（不等待）
+        for mathNode in inlineMathNodes {
+            let cacheKey = "math:\(mathNode.content):false" // 行内公式的display为false
+            
+            // 检查缓存，如果已经有了就跳过
+            if cacheDelegate.getFormulaImage(for: cacheKey) != nil {
+                continue
+            }
+            
+            // 异步触发渲染
+            triggerInlineMathRendering(mathNode: mathNode, context: context, cacheKey: cacheKey, cacheDelegate: cacheDelegate)
+        }
+    }
+    
+    /// 触发行内数学公式的异步渲染
+    private static func triggerInlineMathRendering(
+        mathNode: MathNode,
+        context: UIKitRenderContext,
+        cacheKey: String,
+        cacheDelegate: UIKitFormulaSizeCacheDelegate
+    ) {
+        let textColor = context.currentTextColor ?? context.theme.textColor
+        let font = context.currentFont ?? context.theme.font
+        let fontSize = font.pointSize
+        let lineHeight = font.lineHeight
+        
+        // 使用共享的渲染方法
+        MathHTMLRenderer.renderInlineMath(
+            mathContent: mathNode.content,
+            textColor: textColor,
+            fontSize: fontSize,
+            lineHeight: lineHeight
+        ) { scaledImage, scaledSize in
+            guard let scaledImage = scaledImage else { return }
+            
+            // 保存到缓存
+            cacheDelegate.saveFormulaImage(scaledImage, for: cacheKey)
+            cacheDelegate.setCachedSize(scaledSize, for: cacheKey)
+            
+            // 触发高度变化回调，让上层业务重新布局
+            if let onHeightChanged = context.onLayoutHeightChanged {
+                // 传递一个标记值，表示需要重新计算
+                onHeightChanged(-1)
+            }
+        }
+    }
+    
+    /// 从节点列表中收集所有行内数学公式节点（递归）
+    private static func collectInlineMathNodes(from nodes: [ASTNodeWrapper], into collection: inout [MathNode]) {
+        for node in nodes {
+            switch node {
+            case .math(let mathNode):
+                // 只收集行内数学公式（display = false）
+                if !mathNode.display {
+                    collection.append(mathNode)
+                }
+                
+            case .paragraph(let pNode):
+                collectInlineMathNodes(from: pNode.children, into: &collection)
+                
+            case .strong(let strongNode):
+                collectInlineMathNodes(from: strongNode.children, into: &collection)
+                
+            case .em(let emNode):
+                collectInlineMathNodes(from: emNode.children, into: &collection)
+                
+            case .underline(let underlineNode):
+                collectInlineMathNodes(from: underlineNode.children, into: &collection)
+                
+            case .strike(let strikeNode):
+                collectInlineMathNodes(from: strikeNode.children, into: &collection)
+                
+            case .link(let linkNode):
+                collectInlineMathNodes(from: linkNode.children, into: &collection)
+                
+            case .color(let colorNode):
+                collectInlineMathNodes(from: colorNode.children, into: &collection)
+                
+            default:
+                break
+            }
+        }
     }
 }

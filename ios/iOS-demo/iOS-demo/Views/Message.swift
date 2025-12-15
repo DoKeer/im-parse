@@ -74,7 +74,6 @@ public struct Message: Identifiable, Codable {
             return
         }
         
-        // 创建布局上下文
         let context = UIKitRenderContext(
             theme: UIKitTheme.default, // 使用默认主题，实际项目中可能需要从配置获取
             width: width,

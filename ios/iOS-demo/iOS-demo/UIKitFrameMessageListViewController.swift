@@ -115,10 +115,13 @@ extension UIKitFrameMessageListViewController: UITableViewDataSource {
                     let currentHeight = cell.frame.height
                     
                     // 只有当高度变化超过阈值时才刷新
-                    if abs(height - currentHeight) > 1.0 {
-                        // 使用 beginUpdates/endUpdates 来避免完全重新加载
-                        tableView.beginUpdates()
-                        tableView.endUpdates()
+                    if abs(height - currentHeight) >= 0.5 {
+                        // 清理当前的layout，重新计算
+                        self.messages[indexPath.row].layout = nil;
+                        
+                        self.messages[indexPath.row].calculateLayout(width: contentWidth, delegate: self)
+                        // 使用 indexPath 刷新当前 cell
+                        tableView.reloadRows(at: [indexPath], with: .none)
                     }
                 }
             }
@@ -244,7 +247,7 @@ class MessageTableViewCell: UITableViewCell {
         let onHeightChanged: ((CGFloat) -> Void)? = { [weak self] heightDiff in
             guard let self = self else { return }
             // 只有在配置完成后才允许高度变化回调，且高度变化超过阈值
-            if !self.isConfiguring && abs(heightDiff) > 1.0 {
+            if !self.isConfiguring && abs(heightDiff) >= 0.5 {
                 // heightDiff 是内容高度的变化，计算新的总高度（当前总高度 + 内容高度变化）
                 let newTotalHeight = self.lastReportedHeight + heightDiff
                 self.lastReportedHeight = newTotalHeight
@@ -253,11 +256,13 @@ class MessageTableViewCell: UITableViewCell {
         }
         
         // 创建渲染上下文（包含所有点击事件处理）
-        let context = createRenderContext(
+        guard let context = createRenderContext(
             width: width,
             viewController: viewController,
             onHeightChanged: onHeightChanged
-        )
+        ) else {
+            return
+        }
         
         // 优先使用预计算的布局
         if let layout = message.layout {
@@ -277,80 +282,6 @@ class MessageTableViewCell: UITableViewCell {
             return
         }
         
-        // 如果有 AST JSON，解析并计算布局
-        if let astJSON = message.astJSON {
-            DispatchQueue.global(qos: .utility).async { [weak self] in
-                do {
-                    // 解析 JSON 字符串为 RootNode
-                    guard let jsonData = astJSON.data(using: .utf8) else {
-                        throw NSError(domain: "ParseError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to convert JSON string to Data"])
-                    }
-                    
-                    let decoder = JSONDecoder()
-                    let rootNode = try decoder.decode(RootNode.self, from: jsonData)
-                    
-                    // 创建渲染上下文（包含所有点击事件处理）
-                    let context = self?.createRenderContext(
-                        width: width,
-                        viewController: viewController,
-                        onHeightChanged: onHeightChanged
-                    )
-                    
-                    guard let context = context else { return }
-                    
-                    // 使用 UIKitFrameAsyncCalculator 和 UIKitFrameRender 的 frame 渲染方法
-                    let layout = UIKitFrameAsyncCalculator.calculateLayout(ast: rootNode, context: context)
-                    
-                    // 回到主线程渲染
-                    DispatchQueue.main.async {
-                        guard let self = self else { return }
-                        
-                        // 使用 UIKitFrameRender 渲染布局
-                        let astView = UIKitFrameRender.render(layout: layout, context: context)
-                        // 使用 frame 布局
-                        astView.frame = CGRect(origin: .zero, size: astView.bounds.size)
-                        self.contentView_wrapper.addSubview(astView)
-                        
-                        // 使用计算出的高度
-                        let actualHeight = astView.bounds.height
-                        let totalHeight = actualHeight + 70 // 加上容器 padding
-                        self.isConfiguring = false
-                        self.lastReportedHeight = totalHeight
-                        // 只在高度确实变化时才触发回调
-                        onLayoutComplete?(totalHeight)
-                    }
-                } catch { 
-                    // 解析失败，显示原始内容
-                    print("Failed to parse AST JSON: \(error)")
-                    DispatchQueue.main.async {
-                        guard let self = self else { return }
-                        self.showPlainText(message.content)
-                    }
-                }
-            }
-        } else {
-            // 如果没有 AST，显示原始内容
-            showPlainText(message.content)
-            
-            // 计算纯文本高度
-            if let onLayoutComplete = onLayoutComplete {
-                let text = message.content
-                let font = UIFont.systemFont(ofSize: 16)
-                let size = (text as NSString).boundingRect(
-                    with: CGSize(width: width, height: .greatestFiniteMagnitude),
-                    options: [.usesLineFragmentOrigin, .usesFontLeading],
-                    attributes: [.font: font],
-                    context: nil
-                ).size
-                let textHeight = ceil(size.height)
-                let totalHeight = textHeight + 70 // 加上容器 padding
-                isConfiguring = false
-                lastReportedHeight = totalHeight
-                onLayoutComplete(totalHeight)
-            } else {
-                isConfiguring = false
-            }
-        }
     }
     
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
@@ -416,7 +347,8 @@ class MessageTableViewCell: UITableViewCell {
         width: CGFloat,
         viewController: UIViewController?,
         onHeightChanged: ((CGFloat) -> Void)?
-    ) -> UIKitRenderContext {
+    ) -> UIKitRenderContext? {
+        
         return UIKitRenderContext(
             theme: UIKitTheme.default,
             width: width,
@@ -539,9 +471,8 @@ extension UIKitFrameMessageListViewController: UIKitInlineImageLoaderDelegate {
 
 extension UIKitFrameMessageListViewController: UIKitImageLoaderDelegate {
     func loadImage(url: URL, into imageView: UIImageView?, completion: @escaping (UIImage?, Error?) -> Void) {
-        // 使用 Kingfisher 加载图片
         if let imageView = imageView {
-            
+            // 使用 Kingfisher 加载图片到 imageView
             imageView.kf.setImage(
                 with: url,
                 placeholder: nil,
@@ -558,6 +489,37 @@ extension UIKitFrameMessageListViewController: UIKitImageLoaderDelegate {
                     }
                 }
             )
+        } else {
+            // 如果 imageView 为空，直接从 Kingfisher 缓存读取图片
+            ImageCache.default.retrieveImage(forKey: url.absoluteString) { result in
+                switch result {
+                case .success(let value):
+                    if let image = value.image {
+                        // 缓存命中，直接返回
+                        completion(image, nil)
+                    } else {
+                        // 缓存未命中，从网络下载
+                        KingfisherManager.shared.retrieveImage(with: url, options: [.cacheOriginalImage]) { result in
+                            switch result {
+                            case .success(let value):
+                                completion(value.image, nil)
+                            case .failure(let error):
+                                completion(nil, error)
+                            }
+                        }
+                    }
+                case .failure:
+                    // 缓存读取失败，从网络下载
+                    KingfisherManager.shared.retrieveImage(with: url, options: [.cacheOriginalImage]) { result in
+                        switch result {
+                        case .success(let value):
+                            completion(value.image, nil)
+                        case .failure(let error):
+                            completion(nil, error)
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -611,8 +573,28 @@ extension UIKitFrameMessageListViewController: UIKitFormulaSizeCacheDelegate {
     /// - Returns: 缓存的图片，如果不存在则返回nil
     func getFormulaImage(for key: String) -> UIImage? {
         let cacheKey = generateCacheKey(for: key)
-        // 从 Kingfisher 内存缓存中同步读取图片
-        return ImageCache.default.retrieveImageInMemoryCache(forKey: cacheKey)
+        // 先从内存缓存读取（快速）
+        if let memoryImage = ImageCache.default.retrieveImageInMemoryCache(forKey: cacheKey) {
+            return memoryImage
+        }
+        
+        // 如果内存缓存没有，从磁盘缓存同步读取（使用信号量等待异步结果）
+        var diskImage: UIImage?
+        let semaphore = DispatchSemaphore(value: 0)
+        
+        ImageCache.default.retrieveImage(forKey: cacheKey) { result in
+            switch result {
+            case .success(let value):
+                diskImage = value.image
+            case .failure:
+                diskImage = nil
+            }
+            semaphore.signal()
+        }
+        
+        // 等待异步结果，最多等待 0.1 秒
+        _ = semaphore.wait(timeout: .now() + 0.1)
+        return diskImage
     }
     
     /// 从 Kingfisher 缓存获取公式图片（异步方法，用于内部调用）
