@@ -492,13 +492,7 @@ public class UIKitFrameRender {
             // 如果图片高度与当前容器高度不同，重新计算布局
             if abs(newContainerHeight - containerView.frame.height) > 0.5 {
                 // 重新计算图片节点的布局
-                let newLayout = UIKitFrameAsyncCalculator.calculateNodeLayout(
-                    .image(node),
-                    context: context,
-                    origin: containerView.frame.origin,
-                    width: containerWidth
-                )
-                context.onNodeLayoutChanged?(newLayout)
+                context.onNodeLayoutChanged?(node)
             }
         }
     }
@@ -1040,16 +1034,9 @@ public class UIKitFrameRender {
                     // 如果实际高度与当前高度不同，重新计算布局并触发回调
                     let currentHeight = containerView.frame.height
                     if abs(actualHeight - currentHeight) > 0.5 {
-                        // 重新计算当前 Math 节点的布局
-                        let newLayout = UIKitFrameAsyncCalculator.calculateNodeLayout(
-                            .math(node),
-                            context: context,
-                            origin: frame.origin,
-                            width: frame.width
-                        )
                         
                         // 触发布局更新回调
-                        context.onNodeLayoutChanged?(newLayout)
+                        context.onNodeLayoutChanged?(node)
                     }
                 } else {
                     // 渲染失败时，显示原始内容（已经显示了）
@@ -1282,13 +1269,7 @@ public class UIKitFrameRender {
                     
                     // 如果实际高度与当前高度不同，重新计算布局并触发回调
                     if abs(actualHeight - currentHeight) > 0.5 {
-                        let newLayout = UIKitFrameAsyncCalculator.calculateNodeLayout(
-                            .mermaid(node),
-                            context: context,
-                            origin: frame.origin,
-                            width: frame.width
-                        )
-                        context.onNodeLayoutChanged?(newLayout)
+                        context.onNodeLayoutChanged?(node)
                     }
                 } else {
                     // 渲染失败时，显示原始内容（已经显示了）

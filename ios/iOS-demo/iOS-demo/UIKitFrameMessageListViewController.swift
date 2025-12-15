@@ -101,28 +101,19 @@ extension UIKitFrameMessageListViewController: UITableViewDataSource {
         let message = messages[indexPath.row]
         
         // 创建节点布局变化回调（在 viewController 中处理）
-        let onNodeLayoutChanged: ((NodeLayout) -> Void)? = { [weak tableView, weak self] updatedNodeLayout in
+        let onNodeLayoutChanged: ((any Codable) -> Void)? = { [weak tableView, weak self] updatedNodeLayout in
             DispatchQueue.main.async {
                 guard let tableView = tableView,
                       let self = self,
                       indexPath.row < self.messages.count else { return }
                 
-                // 查找并更新对应的节点布局
-                if var layout = self.messages[indexPath.row].layout {
-                    // 递归查找并替换匹配的节点
+                // 递归查找并替换匹配的节点
 //                    layout = updateNodeLayout(in: layout, with: updatedNodeLayout)
-                    self.messages[indexPath.row].layout = nil;
-                    self.messages[indexPath.row].calculateLayout(width: contentWidth, delegate: self)
-                    
-                    // 触发 UI 更新
-                    let newHeight = layout.frame.height + 70
-                    let currentHeight = cell.frame.height
-                    
-                    // 只有当高度变化超过阈值时才刷新
-                    if abs(newHeight - currentHeight) >= 0.5 {
-                        tableView.reloadRows(at: [indexPath], with: .none)
-                    }
-                }
+                self.messages[indexPath.row].layout = nil;
+                self.messages[indexPath.row].calculateLayout(width: contentWidth, delegate: self)
+                
+                tableView.reloadRows(at: [indexPath], with: .none)
+
             }
         }
         
@@ -229,7 +220,7 @@ class MessageTableViewCell: UITableViewCell {
         ])
     }
     
-    func configure(with message: Message, indexPath: IndexPath, width: CGFloat, viewController: UIViewController? = nil, onNodeLayoutChanged: ((NodeLayout) -> Void)? = nil) {
+    func configure(with message: Message, indexPath: IndexPath, width: CGFloat, viewController: UIViewController? = nil, onNodeLayoutChanged: ((any Codable) -> Void)? = nil) {
         self.message = message
         self.viewController = viewController
         
@@ -345,7 +336,7 @@ class MessageTableViewCell: UITableViewCell {
         viewController: UIViewController?,
         message: Message,
         indexPath: IndexPath,
-        onNodeLayoutChanged: ((NodeLayout) -> Void)?
+        onNodeLayoutChanged: ((any Codable) -> Void)?
     ) -> UIKitRenderContext? {
         
         return UIKitRenderContext(

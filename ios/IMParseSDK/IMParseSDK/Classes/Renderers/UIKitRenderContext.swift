@@ -112,7 +112,7 @@ public struct UIKitRenderContext {
     
     // 布局高度变化回调（用于通知 cell 高度变化）
     // 回调参数：新的 NodeLayout（包含更新后的节点布局信息）
-    public var onNodeLayoutChanged: ((NodeLayout) -> Void)?
+    public var onNodeLayoutChanged: ((any Codable) -> Void)?
     
     public init(theme: UIKitTheme,
                 width: CGFloat,
@@ -128,7 +128,7 @@ public struct UIKitRenderContext {
                 formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil,
                 inlineImageLoaderDelegate: UIKitInlineImageLoaderDelegate? = nil,
                 toolbarActionDelegate: UIKitToolbarActionDelegate? = nil,
-                onNodeLayoutChanged: ((NodeLayout) -> Void)? = nil) {
+                onNodeLayoutChanged: ((any Codable) -> Void)? = nil) {
         self.theme = theme
         self.width = width
         self.formulaSizeCacheDelegate = formulaSizeCacheDelegate
