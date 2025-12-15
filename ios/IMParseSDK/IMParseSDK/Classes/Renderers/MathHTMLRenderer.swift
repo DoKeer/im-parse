@@ -435,6 +435,31 @@ public class MathHTMLRenderer {
     
     // MARK: - 行内数学公式渲染工具方法
     
+    /// 生成包含尺寸信息的缓存key
+    /// - Parameters:
+    ///   - mathContent: 数学公式内容
+    ///   - display: 是否为块级显示
+    ///   - textColor: 文本颜色（十六进制）
+    ///   - fontSize: 字体大小
+    ///   - targetSize: 目标尺寸（可选，用于行内公式）
+    /// - Returns: 缓存key
+    static func generateMathCacheKey(
+        mathContent: String,
+        display: Bool,
+        textColor: String,
+        fontSize: CGFloat,
+        targetSize: CGSize? = nil
+    ) -> String {
+        let contentHash = mathContent.hashValue
+        if let size = targetSize {
+            // 行内公式：key包含目标尺寸
+            return "math:\(contentHash):\(display):\(textColor):\(Int(fontSize)):\(Int(size.width))x\(Int(size.height))"
+        } else {
+            // 块级公式：不包含尺寸（使用原始尺寸）
+            return "math:\(contentHash):\(display):\(textColor):\(Int(fontSize))"
+        }
+    }
+    
     /// 渲染行内数学公式并调整尺寸以适应行高
     /// 这是一个共享的工具方法，用于统一处理行内数学公式的渲染逻辑
     /// - Parameters:
@@ -490,9 +515,13 @@ public class MathHTMLRenderer {
                     let scaledWidth = image.size.width * scale
                     let scaledSize = CGSize(width: scaledWidth, height: targetHeight)
                     
-                    // 缩放图片
+                    // 缩放图片，UIGraphicsImageRenderer会自动处理屏幕scale
+                    // 使用目标尺寸（点数），renderer会自动生成对应scale的像素图片
                     let renderer = UIGraphicsImageRenderer(size: scaledSize)
-                    let scaledImage = renderer.image { _ in
+                    let scaledImage = renderer.image { context in
+                        // 设置高质量插值以保持清晰度
+                        context.cgContext.interpolationQuality = .high
+                        // 绘制到目标尺寸
                         image.draw(in: CGRect(origin: .zero, size: scaledSize))
                     }
                     

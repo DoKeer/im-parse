@@ -1630,7 +1630,26 @@ public class UIKitFrameAsyncCalculator {
         
         // 异步渲染所有行内数学公式（不等待）
         for mathNode in inlineMathNodes {
-            let cacheKey = "math:\(mathNode.content):false" // 行内公式的display为false
+            // 计算目标尺寸（行内公式需要根据字体计算）
+            let font = context.currentFont ?? context.theme.font
+            let lineHeight = font.lineHeight
+            let textColor = context.currentTextColor ?? context.theme.textColor
+            let components = textColor.cgColor.components ?? [0, 0, 0, 1]
+            let colorHex = String(format: "#%02X%02X%02X",
+                                  Int(components[0] * 255),
+                                  Int(components[1] * 255),
+                                  Int(components[2] * 255))
+            let fontSize = font.pointSize
+            
+            // 估算目标尺寸（宽度会在渲染后确定）
+            let estimatedTargetSize = CGSize(width: lineHeight * 2, height: lineHeight)
+            let cacheKey = MathHTMLRenderer.generateMathCacheKey(
+                mathContent: mathNode.content,
+                display: false,
+                textColor: colorHex,
+                fontSize: fontSize,
+                targetSize: estimatedTargetSize
+            )
             
             // 检查缓存，如果已经有了就跳过
             if cacheDelegate.getFormulaImage(for: cacheKey) != nil {

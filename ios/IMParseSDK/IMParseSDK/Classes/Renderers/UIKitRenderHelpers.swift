@@ -325,8 +325,22 @@ internal class MathTextAttachment: NSTextAttachment {
         // 设置初始 bounds（会在 attachmentBounds 方法中动态调整）
         self.bounds = CGRect(origin: .zero, size: attachmentSize)
         
-        // 尝试从缓存获取图片
-        let cacheKey = "math:\(mathNode.content):\(mathNode.display)"
+        // 生成包含尺寸信息的缓存key（行内公式需要包含目标尺寸）
+        let textColor = context.currentTextColor ?? context.theme.textColor
+        let components = textColor.cgColor.components ?? [0, 0, 0, 1]
+        let colorHex = String(format: "#%02X%02X%02X",
+                              Int(components[0] * 255),
+                              Int(components[1] * 255),
+                              Int(components[2] * 255))
+        let fontSize = font.pointSize
+        let cacheKey = MathHTMLRenderer.generateMathCacheKey(
+            mathContent: mathNode.content,
+            display: mathNode.display,
+            textColor: colorHex,
+            fontSize: fontSize,
+            targetSize: mathNode.display ? nil : attachmentSize
+        )
+        
         if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey) {
             // 缓存命中，使用缓存的图片
             self.image = cachedImage
@@ -338,7 +352,7 @@ internal class MathTextAttachment: NSTextAttachment {
             createPlaceholderImage(size: attachmentSize)
             // 异步加载公式图片（如果有缓存代理）
             if context.formulaSizeCacheDelegate != nil {
-                loadMathImageAsync(cacheKey: cacheKey)
+                loadMathImageAsync(cacheKey: cacheKey, targetSize: attachmentSize)
             }
         }
     }
@@ -399,7 +413,7 @@ internal class MathTextAttachment: NSTextAttachment {
     }
     
     /// 异步加载数学公式图片
-    private func loadMathImageAsync(cacheKey: String) {
+    private func loadMathImageAsync(cacheKey: String, targetSize: CGSize) {
         guard !isLoading else { return }
         
         isLoading = true
@@ -426,7 +440,7 @@ internal class MathTextAttachment: NSTextAttachment {
             self.cachedImage = scaledImage
             self.updateBoundsForImage(scaledImage)
             
-            // 保存到缓存
+            // 保存到缓存（使用包含尺寸的key）
             self.context.formulaSizeCacheDelegate?.saveFormulaImage(scaledImage, for: cacheKey)
             self.context.formulaSizeCacheDelegate?.setCachedSize(scaledSize, for: cacheKey)
             

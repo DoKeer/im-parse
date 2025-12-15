@@ -330,8 +330,8 @@ public class UIKitFrameRender {
             headerBar.backgroundColor = context.theme.codeBackgroundColor
             
             
-            // 添加工具栏（右侧）
-            let toolbar = UIKitToolbar(theme: context.theme)
+            // 添加工具栏（右侧）- 代码块不显示下载按钮
+            let toolbar = UIKitToolbar(theme: context.theme, configuration: .codeBlock)
             toolbar.frame = CGRect(
                 x: contentAreaWidth - toolbarWidth - toolbarPadding,
                 y: toolbarPadding,
@@ -341,9 +341,6 @@ public class UIKitFrameRender {
             
             toolbar.onCopy = {
                 context.toolbarActionDelegate?.copyContent(node.content, type: "code")
-            }
-            toolbar.onDownload = {
-                context.toolbarActionDelegate?.downloadContent(node.content, type: "code", image: nil)
             }
             toolbar.onFullscreen = {
                 context.toolbarActionDelegate?.showFullscreen(node.content, type: "code", image: nil)
@@ -862,7 +859,21 @@ public class UIKitFrameRender {
         containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
         containerView.clipsToBounds = true
         
-        let cacheKey = "math:\(node.content):\(node.display)"
+        // 生成包含尺寸信息的缓存key（块级公式不包含尺寸，使用原始尺寸）
+        let textColor = context.theme.textColor
+        let components = textColor.cgColor.components ?? [0, 0, 0, 1]
+        let colorHex = String(format: "#%02X%02X%02X",
+                              Int(components[0] * 255),
+                              Int(components[1] * 255),
+                              Int(components[2] * 255))
+        let fontSize = node.display ? 16.0 : 14.0
+        let cacheKey = MathHTMLRenderer.generateMathCacheKey(
+            mathContent: node.content,
+            display: node.display,
+            textColor: colorHex,
+            fontSize: fontSize,
+            targetSize: nil // 块级公式不使用目标尺寸
+        )
         let toolbarHeight = context.theme.toolbarHeight
         let toolbarWidth = context.theme.toolbarWidth
         let toolbarPadding = context.theme.toolbarPadding
@@ -901,11 +912,27 @@ public class UIKitFrameRender {
             let imageView = UIImageView()
             imageView.image = cachedImage
             imageView.contentMode = .scaleAspectFit
+            
+            // 根据图片的实际显示尺寸（考虑scale）来设置imageView的frame
+            // UIImage.size 返回的是逻辑尺寸（点数），已经考虑了scale
+            let imageSize = cachedImage.size
+            let availableWidth = frame.size.width - contentPadding * 2
+            let availableHeight = imageAreaHeight
+            
+            // 计算图片在可用空间内的实际显示尺寸（保持宽高比）
+            let imageAspectRatio = imageSize.width / imageSize.height
+            let displayWidth = min(availableWidth, imageSize.width)
+            let displayHeight = min(availableHeight, displayWidth / imageAspectRatio)
+            
+            // 居中显示
+            let imageX = contentPadding + (availableWidth - displayWidth) / 2
+            let imageY = imageAreaY + (availableHeight - displayHeight) / 2
+            
             imageView.frame = CGRect(
-                x: contentPadding,
-                y: imageAreaY,
-                width: frame.size.width - contentPadding * 2,
-                height: imageAreaHeight
+                x: imageX,
+                y: imageY,
+                width: displayWidth,
+                height: displayHeight
             )
             containerView.addSubview(imageView)
             
@@ -956,14 +983,7 @@ public class UIKitFrameRender {
             return containerView
         }
         
-        let textColor = context.theme.textColor
-        let components = textColor.cgColor.components ?? [0, 0, 0, 1]
-        let colorHex = String(format: "#%02X%02X%02X",
-                              Int(components[0] * 255),
-                              Int(components[1] * 255),
-                              Int(components[2] * 255)
-        )
-        
+        // textColor 和 colorHex 已经在上面声明过了，直接使用
         let imageView = UIImageView()
         imageView.contentMode = .scaleAspectFit
         imageView.frame = CGRect(
@@ -992,8 +1012,7 @@ public class UIKitFrameRender {
             }
         }
         
-        let fontSize = node.display ? 16.0 : 14.0
-        
+        // fontSize 已经在上面声明过了，直接使用
         MathHTMLRenderer.shared.render(
             html: html,
             display: node.display,
@@ -1005,23 +1024,40 @@ public class UIKitFrameRender {
                 activityIndicator.removeFromSuperview()
                 
                 if let image = image {
+                    // 根据图片的实际显示尺寸（考虑scale）来调整imageView的frame
+                    // UIImage.size 返回的是逻辑尺寸（点数），已经考虑了scale
+                    let imageSize = image.size
+                    let availableWidth = frame.size.width - contentPadding * 2
+                    let availableHeight = imageAreaHeight
+                    
+                    // 计算图片在可用空间内的实际显示尺寸（保持宽高比）
+                    let imageAspectRatio = imageSize.width / imageSize.height
+                    let displayWidth = min(availableWidth, imageSize.width)
+                    let displayHeight = min(availableHeight, displayWidth / imageAspectRatio)
+                    
+                    // 居中显示
+                    let imageX = contentPadding + (availableWidth - displayWidth) / 2
+                    let imageY = imageAreaY + (availableHeight - displayHeight) / 2
+                    
+                    imageView.frame = CGRect(
+                        x: imageX,
+                        y: imageY,
+                        width: displayWidth,
+                        height: displayHeight
+                    )
                     imageView.image = image
                     
                     // 保存图片到 Kingfisher 缓存
                     context.formulaSizeCacheDelegate?.saveFormulaImage(image, for: cacheKey)
                     
-                    // 获取图片的实际尺寸
-                    let imageSize = image.size
-                    
-                    // 保存尺寸到缓存
+                    // 保存尺寸到缓存（使用图片的逻辑尺寸）
                     context.formulaSizeCacheDelegate?.setCachedSize(imageSize, for: cacheKey)
                     
-                    // 计算实际需要的总高度（图片高度 + padding + 工具栏高度）
-                    // 工具栏高度不应该挤占图片高度，所以总高度 = 图片高度 + padding + 工具栏高度
-                    let contentPadding = context.theme.codeBlockPadding
+                    // 计算实际需要的总高度（图片显示高度 + padding + 工具栏高度）
+                    // 工具栏高度不应该挤占图片高度，所以总高度 = 图片显示高度 + padding + 工具栏高度
                     let toolbarPadding = context.theme.toolbarPadding
                     let toolbarHeightForCalc = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : 0
-                    let actualHeight = imageSize.height + contentPadding * 2 + toolbarHeightForCalc
+                    let actualHeight = displayHeight + contentPadding * 2 + toolbarHeightForCalc
                     
                     // 获取当前容器的高度
                     let currentHeight = containerView.frame.height

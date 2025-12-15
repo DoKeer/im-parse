@@ -14,25 +14,42 @@ enum ToolbarButtonType: Int {
     case fullscreen = 2
 }
 
+/// 工具栏配置选项
+struct ToolbarConfiguration: OptionSet {
+    let rawValue: Int
+    
+    static let copy = ToolbarConfiguration(rawValue: 1 << 0)
+    static let download = ToolbarConfiguration(rawValue: 1 << 1)
+    static let fullscreen = ToolbarConfiguration(rawValue: 1 << 2)
+    
+    /// 默认配置：显示所有按钮
+    static let `default`: ToolbarConfiguration = [.copy, .download, .fullscreen]
+    
+    /// 代码块配置：只显示复制和全屏按钮
+    static let codeBlock: ToolbarConfiguration = [.copy, .fullscreen]
+}
+
 /// 工具栏组件
 class UIKitToolbar: UIView {
     private let theme: UIKitTheme
-    private var copyButton: UIButton!
-    private var downloadButton: UIButton!
-    private var fullscreenButton: UIButton!
+    private let configuration: ToolbarConfiguration
+    private var copyButton: UIButton?
+    private var downloadButton: UIButton?
+    private var fullscreenButton: UIButton?
     
     var onCopy: (() -> Void)?
     var onDownload: (() -> Void)?
     var onFullscreen: (() -> Void)?
     
-    init(theme: UIKitTheme, frame: CGRect = .zero) {
+    init(theme: UIKitTheme, configuration: ToolbarConfiguration = .default, frame: CGRect = .zero) {
         self.theme = theme
+        self.configuration = configuration
         super.init(frame: frame)
         setupToolbar()
     }
     
     required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented. Use init(theme:) instead.")
+        fatalError("init(coder:) has not been implemented. Use init(theme:configuration:) instead.")
     }
     
     private func setupToolbar() {
@@ -41,13 +58,31 @@ class UIKitToolbar: UIView {
         let containerPadding = theme.toolbarPadding
         backgroundColor = UIColor.clear
         
-        // 创建按钮
-        copyButton = createButton(icon: "doc.on.doc", type: .copy, size: buttonSize)
-        downloadButton = createButton(icon: "arrow.down.circle", type: .download, size: buttonSize)
-        fullscreenButton = createButton(icon: "arrow.up.left.and.arrow.down.right", type: .fullscreen, size: buttonSize)
+        var buttons: [UIButton] = []
+        
+        // 根据配置创建按钮
+        if configuration.contains(.copy) {
+            copyButton = createButton(icon: "doc.on.doc", type: .copy, size: buttonSize)
+            buttons.append(copyButton!)
+        }
+        
+        if configuration.contains(.download) {
+            downloadButton = createButton(icon: "arrow.down.circle", type: .download, size: buttonSize)
+            buttons.append(downloadButton!)
+        }
+        
+        if configuration.contains(.fullscreen) {
+            fullscreenButton = createButton(icon: "arrow.up.left.and.arrow.down.right", type: .fullscreen, size: buttonSize)
+            buttons.append(fullscreenButton!)
+        }
+        
+        // 如果没有按钮，不创建stackView
+        guard !buttons.isEmpty else {
+            return
+        }
         
         // 布局按钮
-        let stackView = UIStackView(arrangedSubviews: [copyButton, downloadButton, fullscreenButton])
+        let stackView = UIStackView(arrangedSubviews: buttons)
         stackView.axis = .horizontal
         stackView.spacing = buttonSpacing
         stackView.distribution = .equalSpacing
