@@ -55,11 +55,11 @@ IMParseResult * _Nullable delta_to_html_with_config(const char * _Nonnull input,
 
 /// 获取默认样式配置 JSON
 /// @return JSON 字符串，需要调用 free_string 释放
-const char * _Nullable get_default_style_config(void);
+char * _Nullable get_default_style_config(void);
 
 /// 获取深色模式样式配置 JSON
 /// @return JSON 字符串，需要调用 free_string 释放
-const char * _Nullable get_dark_style_config(void);
+char * _Nullable get_dark_style_config(void);
 
 /// 将数学公式转换为 HTML
 /// @param formula 数学公式字符串（LaTeX 格式）
@@ -75,8 +75,8 @@ IMParseResult * _Nullable math_to_html(const char * _Nonnull formula, bool displ
 IMParseResult * _Nullable mermaid_to_html(const char * _Nonnull mermaid_code, const char * _Nonnull text_color, const char * _Nonnull background_color);
 
 /// 释放字符串
-/// @param ptr 字符串指针（const，因为只是释放内存，不修改内容）
-void free_string(const char * _Nullable ptr);
+/// @param ptr 字符串指针，需要是 get_default_style_config 或 get_dark_style_config 返回的指针
+void free_string(char * _Nullable ptr);
 
 NS_ASSUME_NONNULL_END
 

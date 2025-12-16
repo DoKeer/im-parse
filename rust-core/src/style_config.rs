@@ -52,6 +52,14 @@ pub struct StyleConfig {
     #[serde(default = "default_code_block_border_radius")]
     pub code_block_border_radius: f32,
     
+    /// 代码块最大宽度（px）
+    #[serde(default = "default_code_block_max_width")]
+    pub code_block_max_width: f32,
+    
+    /// 代码块最小宽度（px）
+    #[serde(default = "default_code_block_min_width")]
+    pub code_block_min_width: f32,
+    
     /// 表格单元格内边距（px）
     #[serde(default = "default_table_cell_padding")]
     pub table_cell_padding: f32,
@@ -181,6 +189,8 @@ impl Default for StyleConfig {
             list_item_spacing: default_list_item_spacing(),
             code_block_padding: default_code_block_padding(),
             code_block_border_radius: default_code_block_border_radius(),
+            code_block_max_width: default_code_block_max_width(),
+            code_block_min_width: default_code_block_min_width(),
             table_cell_padding: default_table_cell_padding(),
             table_border_color: default_table_border_color(),
             table_header_background: default_table_header_background(),
@@ -235,6 +245,8 @@ fn default_paragraph_spacing() -> f32 { 16.0 }
 fn default_list_item_spacing() -> f32 { 8.0 }
 fn default_code_block_padding() -> f32 { 16.0 }
 fn default_code_block_border_radius() -> f32 { 8.0 }
+fn default_code_block_max_width() -> f32 { 800.0 }
+fn default_code_block_min_width() -> f32 { 200.0 }
 fn default_table_cell_padding() -> f32 { 8.0 }
 fn default_table_border_color() -> String { "#dddddd".to_string() }
 fn default_table_header_background() -> String { "#f4f4f4".to_string() }
@@ -257,7 +269,7 @@ fn default_max_content_width() -> f32 { 800.0 }
 fn default_content_padding() -> f32 { 2.0 }
 fn default_toolbar_height() -> f32 { 36.0 }
 fn default_toolbar_width() -> f32 { 120.0 }
-fn default_toolbar_padding() -> f32 { 8.0 }
+fn default_toolbar_padding() -> f32 { 2.0 }
 fn default_toolbar_button_size() -> f32 { 32.0 }
 fn default_toolbar_button_spacing() -> f32 { 8.0 }
 fn default_toolbar_switcher_height() -> f32 { 32.0 }

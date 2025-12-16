@@ -23,6 +23,8 @@ public struct StyleConfig: Codable {
     public var listItemSpacing: Float
     public var codeBlockPadding: Float
     public var codeBlockBorderRadius: Float
+    public var codeBlockMaxWidth: Float
+    public var codeBlockMinWidth: Float
     public var tableCellPadding: Float
     public var tableBorderColor: String
     public var tableHeaderBackground: String
@@ -64,6 +66,8 @@ public struct StyleConfig: Codable {
                 listItemSpacing: Float,
                 codeBlockPadding: Float,
                 codeBlockBorderRadius: Float,
+                codeBlockMaxWidth: Float,
+                codeBlockMinWidth: Float,
                 tableCellPadding: Float,
                 tableBorderColor: String,
                 tableHeaderBackground: String,
@@ -104,6 +108,8 @@ public struct StyleConfig: Codable {
         self.listItemSpacing = listItemSpacing
         self.codeBlockPadding = codeBlockPadding
         self.codeBlockBorderRadius = codeBlockBorderRadius
+        self.codeBlockMaxWidth = codeBlockMaxWidth
+        self.codeBlockMinWidth = codeBlockMinWidth
         self.tableCellPadding = tableCellPadding
         self.tableBorderColor = tableBorderColor
         self.tableHeaderBackground = tableHeaderBackground
@@ -147,6 +153,8 @@ public struct StyleConfig: Codable {
         case listItemSpacing = "list_item_spacing"
         case codeBlockPadding = "code_block_padding"
         case codeBlockBorderRadius = "code_block_border_radius"
+        case codeBlockMaxWidth = "code_block_max_width"
+        case codeBlockMinWidth = "code_block_min_width"
         case tableCellPadding = "table_cell_padding"
         case tableBorderColor = "table_border_color"
         case tableHeaderBackground = "table_header_background"
@@ -192,8 +200,13 @@ extension StyleConfig {
         guard let jsonData = jsonString.data(using: String.Encoding.utf8) else {
             return nil
         }
+        do {
+           return try JSONDecoder().decode(StyleConfig.self, from: jsonData)
+        }catch {
+            print("StyleConfig 解码失败：",error.localizedDescription)
+        }
         
-        return try? JSONDecoder().decode(StyleConfig.self, from: jsonData)
+        return nil
     }
     
     /// 获取深色模式样式配置
@@ -210,7 +223,13 @@ extension StyleConfig {
             return nil
         }
         
-        return try? JSONDecoder().decode(StyleConfig.self, from: jsonData)
+        do {
+           return try JSONDecoder().decode(StyleConfig.self, from: jsonData)
+        }catch {
+            print("StyleConfig 解码失败：",error.localizedDescription)
+        }
+        
+        return nil
     }
     
     /// 转换为 JSON 字符串

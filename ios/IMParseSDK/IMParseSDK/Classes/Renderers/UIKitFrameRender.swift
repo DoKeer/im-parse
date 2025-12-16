@@ -301,7 +301,7 @@ public class UIKitFrameRender {
         let containerView = UIView()
         containerView.frame = CGRect(origin: .zero, size: frame.size)
         
-        // 代码块整体圆角
+        // 代码块整体圆角（和表格一样）
         containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
         containerView.layer.masksToBounds = true
         
@@ -349,8 +349,55 @@ public class UIKitFrameRender {
             containerView.addSubview(headerBar)
         }
         
-        // 代码内容区域
+        // 创建 ScrollView 用于横向滚动（在标题栏下方）
+        let scrollView = UIScrollView()
+        scrollView.frame = CGRect(
+            x: 0,
+            y: headerBarHeight,
+            width: contentAreaWidth,
+            height: contentAreaHeight
+        )
+        scrollView.showsHorizontalScrollIndicator = true
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.bounces = true
+        scrollView.alwaysBounceHorizontal = true
+        scrollView.backgroundColor = .clear
+        
+        // 计算代码内容的实际宽度
         let padding = context.theme.codeBlockPadding
+        let font = context.theme.codeFont
+        
+        // 计算每行的最大宽度
+        let lines = node.content.components(separatedBy: .newlines)
+        var maxLineWidth: CGFloat = 0
+        for line in lines {
+            let lineAttr = NSAttributedString(string: line.isEmpty ? " " : line, attributes: [.font: font])
+            let lineSize = lineAttr.boundingRect(
+                with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).size
+            maxLineWidth = max(maxLineWidth, ceil(lineSize.width))
+        }
+        
+        // 代码内容实际宽度（包含 padding）
+        // 最小宽度应该填充满 scrollview 的父容器
+        let codeActualWidth = max(maxLineWidth + padding * 2, contentAreaWidth)
+        
+        // 设置 ScrollView 的 contentSize
+        scrollView.contentSize = CGSize(width: codeActualWidth, height: contentAreaHeight)
+        
+        // 创建代码内容视图（放在 ScrollView 中）
+        let codeContentView = UIView()
+        codeContentView.frame = CGRect(
+            x: 0,
+            y: 0,
+            width: codeActualWidth,
+            height: contentAreaHeight
+        )
+        codeContentView.backgroundColor = .clear
+        
+        // 代码文本标签
         let label = UILabel()
         label.text = node.content
         label.font = context.theme.codeFont
@@ -358,11 +405,14 @@ public class UIKitFrameRender {
         label.numberOfLines = 0
         label.frame = CGRect(
             x: padding,
-            y: headerBarHeight + padding,
-            width: contentAreaWidth - padding * 2,
+            y: padding,
+            width: codeActualWidth - padding * 2,
             height: contentAreaHeight - padding * 2
         )
-        containerView.addSubview(label)
+        codeContentView.addSubview(label)
+        
+        scrollView.addSubview(codeContentView)
+        containerView.addSubview(scrollView)
         
         // 添加点击手势
         if let onCodeBlockTap = context.onCodeBlockTap {
@@ -383,8 +433,9 @@ public class UIKitFrameRender {
         
         let imageMargin = context.theme.imageMargin
         let imageView = UIImageView()
+        imageView.layer.cornerRadius = context.theme.codeBlockBorderRadius
+        imageView.layer.masksToBounds = true
         imageView.contentMode = .scaleAspectFit
-        imageView.clipsToBounds = true
         imageView.backgroundColor = UIColor.clear
         imageView.frame = CGRect(
             x: 0,
@@ -586,7 +637,7 @@ public class UIKitFrameRender {
         containerView.frame = CGRect(origin: .zero, size: layout.frame.size)
         
         // 表格整体圆角
-        containerView.layer.cornerRadius = 8
+        containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
         containerView.layer.masksToBounds = true
         
         containerView.layer.borderWidth = 1
@@ -844,8 +895,9 @@ public class UIKitFrameRender {
         let containerView = UIView()
         containerView.frame = CGRect(origin: .zero, size: frame.size)
         containerView.backgroundColor = context.theme.codeBackgroundColor
+        // 圆角和表格一样
         containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
-        containerView.clipsToBounds = true
+        containerView.layer.masksToBounds = true
         
         // 生成包含尺寸信息的缓存key（块级公式不包含尺寸，使用原始尺寸）
         let textColor = context.theme.textColor
@@ -1066,8 +1118,9 @@ public class UIKitFrameRender {
         let containerView = UIView()
         containerView.frame = CGRect(origin: .zero, size: frame.size)
         containerView.backgroundColor = context.theme.codeBackgroundColor
-        containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
-        containerView.clipsToBounds = true
+        // 圆角和表格一样
+        containerView.layer.cornerRadius = 8
+        containerView.layer.masksToBounds = true
         
         let padding = context.theme.codeBlockPadding
         

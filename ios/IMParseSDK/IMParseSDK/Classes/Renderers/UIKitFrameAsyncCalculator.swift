@@ -232,18 +232,44 @@ public class UIKitFrameAsyncCalculator {
             }
             
         case .codeBlock(let cNode):
-            // 代码块布局
+            // 代码块布局（支持智能压缩和横向滚动）
             let toolbarHeight = context.theme.toolbarHeight
             let toolbarPadding = context.theme.toolbarPadding
             // 顶部标题栏高度（toolbar + padding）- 独立的标题栏区域
             let headerBarHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : 0
             
             let padding = context.theme.codeBlockPadding
-            let contentWidth = width - padding * 2
+            let maxCodeWidth = context.theme.codeBlockMaxWidth
+            let minCodeWidth = context.theme.codeBlockMinWidth
             
             let font = context.theme.codeFont
             let attrString = NSAttributedString(string: cNode.content, attributes: [.font: font])
             
+            // 计算代码内容的理想宽度（不限制宽度，让每行自然显示）
+            let lines = cNode.content.components(separatedBy: .newlines)
+            var maxLineWidth: CGFloat = 0
+            for line in lines {
+                let lineAttr = NSAttributedString(string: line.isEmpty ? " " : line, attributes: [.font: font])
+                let lineSize = lineAttr.boundingRect(
+                    with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    context: nil
+                ).size
+                maxLineWidth = max(maxLineWidth, ceil(lineSize.width))
+            }
+            
+            // 理想内容宽度（不包含 padding）
+            let idealContentWidth = maxLineWidth
+            
+            // 应用智能压缩：限制在最小和最大宽度之间
+            // 最小宽度应该填充满容器（width），而不是使用 minCodeWidth
+            let minContentWidth = width - padding * 2
+            let contentWidth = min(max(idealContentWidth, minContentWidth), maxCodeWidth - padding * 2)
+            
+            // 实际代码块宽度（包含 padding）
+            let actualCodeBlockWidth = contentWidth + padding * 2
+            
+            // 计算在实际内容宽度下的高度
             let size = attrString.boundingRect(
                 with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin, .usesFontLeading],
@@ -256,13 +282,14 @@ public class UIKitFrameAsyncCalculator {
             let totalHeight = headerBarHeight + contentHeight
             
             // 创建内部文本的 layout（在标题栏下方）
+            // 注意：这里的 width 使用 idealContentWidth，因为在 ScrollView 中可以横向滚动
             let textLayout = NodeLayout(
-                frame: CGRect(x: padding, y: headerBarHeight + padding, width: contentWidth, height: ceil(size.height)),
+                frame: CGRect(x: padding, y: headerBarHeight + padding, width: max(contentWidth, idealContentWidth), height: ceil(size.height)),
                 content: attrString
             )
             
             return NodeLayout(
-                frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
+                frame: CGRect(origin: origin, size: CGSize(width: min(actualCodeBlockWidth, width), height: totalHeight)),
                 children: [textLayout],
                 node: node,
                 backgroundColor: context.theme.codeBackgroundColor,

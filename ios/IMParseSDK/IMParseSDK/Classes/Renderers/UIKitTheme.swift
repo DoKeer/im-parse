@@ -51,6 +51,10 @@ public struct UIKitTheme {
     public var codeBlockPadding: CGFloat
     /// 代码块圆角
     public var codeBlockBorderRadius: CGFloat
+    /// 代码块最大宽度
+    public var codeBlockMaxWidth: CGFloat
+    /// 代码块最小宽度
+    public var codeBlockMinWidth: CGFloat
     
     // 表格
     /// 表格单元格内边距
@@ -129,6 +133,8 @@ public struct UIKitTheme {
         self.listItemSpacing = CGFloat(config.listItemSpacing)
         self.codeBlockPadding = CGFloat(config.codeBlockPadding)
         self.codeBlockBorderRadius = CGFloat(config.codeBlockBorderRadius)
+        self.codeBlockMaxWidth = CGFloat(config.codeBlockMaxWidth)
+        self.codeBlockMinWidth = CGFloat(config.codeBlockMinWidth)
         self.tableCellPadding = CGFloat(config.tableCellPadding)
         self.tableBorderColor = UIColor(hex: config.tableBorderColor) ?? UIColor.gray.withAlphaComponent(0.3)
         self.tableHeaderBackground = UIColor(hex: config.tableHeaderBackground) ?? UIColor.gray.withAlphaComponent(0.1)
@@ -180,7 +186,9 @@ public struct UIKitTheme {
             paragraphSpacing: 6,
             listItemSpacing: 2,
             codeBlockPadding: 2,
-            codeBlockBorderRadius: 2,
+            codeBlockBorderRadius: 8,
+            codeBlockMaxWidth: 800,
+            codeBlockMinWidth: 200,
             tableCellPadding: 2,
             tableBorderColor: "#C7C7CC",
             tableHeaderBackground: "#E5E5EA",
