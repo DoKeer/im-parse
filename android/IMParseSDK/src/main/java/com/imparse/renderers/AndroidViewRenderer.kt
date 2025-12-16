@@ -324,19 +324,122 @@ class AndroidViewRenderer {
      * 渲染代码块
      */
     private fun renderCodeBlock(node: CodeBlockNode, context: AndroidRenderContext): View {
+        // 创建主容器
+        val containerView = android.widget.FrameLayout(context.context)
+        
+        // 设置圆角
+        val radius = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            context.theme.codeBlockBorderRadius.toFloat(),
+            context.context.resources.displayMetrics
+        )
+        containerView.background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(context.theme.codeBackgroundColor)
+            cornerRadius = radius
+        }
+        
+        val toolbarHeight = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            context.theme.toolbarHeight?.toFloat() ?: 48f,
+            context.context.resources.displayMetrics
+        ).toInt()
+        val toolbarWidth = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            context.theme.toolbarWidth?.toFloat() ?: 120f,
+            context.context.resources.displayMetrics
+        ).toInt()
+        val padding = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            context.theme.toolbarPadding?.toFloat() ?: 8f,
+            context.context.resources.displayMetrics
+        ).toInt()
+        
+        // 标题栏高度
+        val headerBarHeight: Int = if (context.toolbarActionDelegate != null) toolbarHeight else 0
+        
+        // 创建标题栏（如果有toolbar）
+        if (context.toolbarActionDelegate != null) {
+            val headerBar = android.widget.FrameLayout(context.context)
+            headerBar.setBackgroundColor(context.theme.codeBackgroundColor)
+            headerBar.layoutParams = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                headerBarHeight
+            )
+            
+            // 添加工具栏（右侧）- 代码块不显示下载按钮
+            val toolbar = AndroidToolbar(context.context)
+            toolbar.onCopy = {
+                context.toolbarActionDelegate?.copyContent(node.content, "code")
+            }
+            toolbar.onFullscreen = {
+                context.toolbarActionDelegate?.showFullscreen(node.content, "code", null)
+            }
+            
+            val toolbarParams = android.widget.FrameLayout.LayoutParams(
+                toolbarWidth,
+                toolbarHeight - padding * 2
+            )
+            toolbarParams.gravity = android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+            toolbarParams.setMargins(0, 0, padding, 0)
+            headerBar.addView(toolbar, toolbarParams)
+            containerView.addView(headerBar)
+        }
+        
+        // 创建 ScrollView 用于横向滚动（在标题栏下方）
+        val scrollView = HorizontalScrollView(context.context)
+        scrollView.isFillViewport = false
+        scrollView.setHorizontalScrollBarEnabled(true)
+        scrollView.isHorizontalFadingEdgeEnabled = true
+        
+        val scrollParams = android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        scrollParams.setMargins(0, headerBarHeight, 0, 0)
+        containerView.addView(scrollView, scrollParams)
+        
+        // 代码内容视图
+        val codeContentView = LinearLayout(context.context)
+        codeContentView.orientation = LinearLayout.VERTICAL
+        
         val textView = TextView(context.context)
         textView.text = node.content
         textView.textSize = context.theme.codeFontSize
         textView.setTypeface(Typeface.MONOSPACE)
         textView.setTextColor(context.theme.codeTextColor)
-        textView.setBackgroundColor(context.theme.codeBackgroundColor)
+        textView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
         textView.setPadding(context.theme.codeBlockPadding)
         
-        // 添加圆角（需要自定义 View 或使用 CardView）
-        val scrollView = HorizontalScrollView(context.context)
-        scrollView.addView(textView)
+        // 计算代码内容的实际宽度
+        val paint = textView.paint
+        val lines = node.content.split("\n")
+        var maxLineWidth = 0f
+        for (line in lines) {
+            val lineWidth = paint.measureText(line)
+            maxLineWidth = maxOf(maxLineWidth, lineWidth)
+        }
         
-        return scrollView
+        // 代码内容实际宽度（包含 padding）
+        val codeActualWidth = maxOf(
+            maxLineWidth.toInt() + context.theme.codeBlockPadding * 2,
+            context.context.resources.displayMetrics.widthPixels // 最小宽度应该填充满 scrollview 的父容器
+        )
+        
+        textView.layoutParams = LinearLayout.LayoutParams(
+            codeActualWidth,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        codeContentView.addView(textView)
+        scrollView.addView(codeContentView)
+        
+        // 添加点击手势
+        if (context.onCodeBlockTap != null) {
+            containerView.setOnClickListener {
+                context.onCodeBlockTap?.invoke(node)
+            }
+        }
+        
+        return containerView
     }
     
     /**
@@ -664,12 +767,24 @@ class AndroidViewRenderer {
         val padding = context.theme.tableCellPadding
         textView.setPadding(padding, padding, padding, padding)
         
-        // 最小宽度，确保单元格不会太窄
+        // 最小宽度和最大宽度，确保单元格不会太窄或太宽
         val minWidth = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP, 80f,
+            TypedValue.COMPLEX_UNIT_DIP,
+            context.theme.tableMinCellWidth?.toFloat() ?: 80f,
             context.context.resources.displayMetrics
         ).toInt()
         textView.minimumWidth = minWidth
+        
+        val maxWidth = context.theme.tableMaxCellWidth?.let {
+            TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP,
+                it.toFloat(),
+                context.context.resources.displayMetrics
+            ).toInt()
+        }
+        if (maxWidth != null) {
+            textView.maxWidth = maxWidth
+        }
         
         textView.gravity = when (node.align) {
             "center" -> Gravity.CENTER
@@ -677,13 +792,37 @@ class AndroidViewRenderer {
             else -> Gravity.START
         }
         
-        val spannable = SpannableStringBuilder()
-        for (child in node.children) {
-            appendInlineNode(spannable, child, context)
+        // 设置行高，确保换行时有足够的间距
+        val fontSizePx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP,
+            context.theme.fontSize,
+            textView.context.resources.displayMetrics
+        )
+        val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            textView.lineHeight = lineHeightPx
+        } else {
+            val addSpacing = (lineHeightPx - fontSizePx).toFloat().coerceAtLeast(0f)
+            textView.setLineSpacing(addSpacing, 1.0f)
         }
+        
+        val spannable = SpannableStringBuilder()
+        // 用于记录行内数学公式的位置
+        val mathNodes = mutableListOf<Pair<Int, MathNode>>()
+        
+        for (child in node.children) {
+            appendInlineNode(spannable, child, context, mathNodes)
+        }
+        
         textView.text = spannable
         textView.textSize = context.theme.fontSize
         textView.setTextColor(context.theme.textColor)
+        textView.movementMethod = LinkMovementMethod.getInstance()
+        
+        // 异步渲染行内数学公式（作为富文本附件）
+        if (mathNodes.isNotEmpty()) {
+            renderInlineMathNodes(textView, spannable, mathNodes, context)
+        }
         
         return textView
     }

@@ -622,6 +622,40 @@ public class UIKitFrameAsyncCalculator {
         return CGSize(width: width, height: totalHeight)
     }
     
+    // MARK: - 统一的高度计算方法（供 Render 使用）
+    
+    /// 计算 Math 节点的总高度（基于实际显示尺寸）
+    /// - Parameters:
+    ///   - displayHeight: 图片的实际显示高度（可能被缩放）
+    ///   - context: 渲染上下文
+    /// - Returns: 总高度（包含 padding 和 toolbar）
+    /// - Note: 此方法用于 Render 中检查实际高度，确保与预计算高度一致
+    public static func calculateMathTotalHeight(displayHeight: CGFloat, context: UIKitRenderContext) -> CGFloat {
+        let contentPadding = context.theme.codeBlockPadding
+        let toolbarPadding = context.theme.toolbarPadding
+        // 工具栏区域高度：如果有代理，则包含工具栏高度和上下间距
+        // 与 estimateMathSize 中的计算逻辑保持一致
+        let toolbarHeight: CGFloat = context.toolbarActionDelegate != nil ? context.theme.toolbarHeight + toolbarPadding * 2 : 0
+        // 总高度 = 显示高度 + 上下 padding + 工具栏区域高度
+        return displayHeight + contentPadding * 2 + toolbarHeight
+    }
+    
+    /// 计算 Mermaid 节点的总高度（基于实际显示尺寸）
+    /// - Parameters:
+    ///   - imageHeight: 图片的实际高度
+    ///   - context: 渲染上下文
+    /// - Returns: 总高度（包含 padding 和顶部区域高度）
+    public static func calculateMermaidTotalHeight(imageHeight: CGFloat, context: UIKitRenderContext) -> CGFloat {
+        let padding = context.theme.codeBlockPadding
+        let toolbarHeight = context.theme.toolbarHeight
+        let toolbarPadding = context.theme.toolbarPadding
+        let switcherHeight = context.theme.toolbarSwitcherHeight
+        // 顶部区域高度：工具栏和切换器的最大值 + 上下间距
+        let topAreaHeight: CGFloat = max(toolbarHeight, switcherHeight) + toolbarPadding * 2
+        // 总高度 = 图片高度 + 上下 padding + 顶部区域高度
+        return imageHeight + padding * 2 + topAreaHeight
+    }
+    
     /// 计算包含特殊节点的段落布局
     private static func calculateParagraphWithSpecialNodes(_ node: ParagraphNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
         var currentY: CGFloat = 0

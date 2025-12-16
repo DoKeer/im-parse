@@ -43,6 +43,18 @@ class AndroidMermaidHTMLRenderer private constructor() {
                 "" // 返回空字符串
             }
         }
+        
+        /**
+         * 生成 Mermaid 图表缓存键
+         * @param mermaidCode Mermaid 代码
+         * @param textColor 文本颜色（十六进制，如 "#000000"）
+         * @param backgroundColor 背景颜色（十六进制，如 "#ffffff"）
+         * @return 缓存键
+         */
+        fun generateCacheKey(mermaidCode: String, textColor: String, backgroundColor: String): String {
+            val hash = mermaidCode.hashCode()
+            return "mermaid_${hash}_${textColor}_${backgroundColor}"
+        }
     }
     
     // 图片缓存
@@ -637,11 +649,10 @@ class AndroidMermaidHTMLRenderer private constructor() {
     }
     
     /**
-     * 生成缓存键
+     * 生成缓存键（内部使用，兼容旧代码）
      */
     private fun generateCacheKey(mermaidCode: String, textColor: String, backgroundColor: String): String {
-        val hash = mermaidCode.hashCode()
-        return "mermaid_${hash}_${textColor}_${backgroundColor}"
+        return AndroidMermaidHTMLRenderer.generateCacheKey(mermaidCode, textColor, backgroundColor)
     }
     
     /**

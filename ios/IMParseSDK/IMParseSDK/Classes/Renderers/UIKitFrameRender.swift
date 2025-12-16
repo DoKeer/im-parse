@@ -983,6 +983,21 @@ public class UIKitFrameRender {
                 }
             }
             
+            // 如果这里的imageView的frame和cachedImage对不上，则需要刷新当前cell。
+            // 计算实际需要的总高度（使用统一的计算方法）
+            // 执行到这这里可能是预渲染比较快，在render之前就渲染缓存完成了。
+            let actualHeight = UIKitFrameAsyncCalculator.calculateMathTotalHeight(
+                displayHeight: displayHeight,
+                context: context
+            )
+            
+            // 如果实际高度与当前高度不同，重新计算布局并触发回调
+            let currentHeight = containerView.frame.height
+            if abs(actualHeight - currentHeight) > 0.5 {
+                // 触发布局更新回调
+                context.onNodeLayoutChanged?(node)
+            }
+            
             return containerView
         }
         
@@ -1052,15 +1067,15 @@ public class UIKitFrameRender {
                     )
                     containerView.addSubview(imageView)
                     
-                    // 计算实际需要的总高度
-                    let toolbarPadding = context.theme.toolbarPadding
-                    let toolbarHeightForCalc = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : 0
-                    let actualHeight = displayHeight + contentPadding * 2 + toolbarHeightForCalc
+                    // 计算实际需要的总高度（使用统一的计算方法）
+                    let actualHeight = UIKitFrameAsyncCalculator.calculateMathTotalHeight(
+                        displayHeight: displayHeight,
+                        context: context
+                    )
                     
                     // 如果实际高度与当前高度不同，重新计算布局并触发回调
                     let currentHeight = containerView.frame.height
                     if abs(actualHeight - currentHeight) > 0.5 {
-                        
                         // 触发布局更新回调
                         context.onNodeLayoutChanged?(node)
                     }
@@ -1227,7 +1242,21 @@ public class UIKitFrameRender {
                     onMermaidTap(node)
                 }
             }
+            // 如果这里的imageView的frame和cachedImage对不上，则需要刷新当前cell。
+            // 计算实际需要的总高度（使用统一的计算方法）
+            // 执行到这这里可能是预渲染比较快，在render之前就渲染缓存完成了。
+            // 注意：使用图片原始高度计算总高度，与 Calculator 中的预计算逻辑保持一致
+            // 如果计算出的总高度与当前容器高度不一致，说明预计算不准确，需要重新布局
+            let actualHeight = UIKitFrameAsyncCalculator.calculateMermaidTotalHeight(
+                imageHeight: cachedImage.size.height,
+                context: context
+            )
+            let currentHeight = containerView.frame.height
             
+            // 如果实际高度与当前高度不同，重新计算布局并触发回调
+            if abs(actualHeight - currentHeight) > 0.5 {
+                context.onNodeLayoutChanged?(node)
+            }
             return containerView
         }
         

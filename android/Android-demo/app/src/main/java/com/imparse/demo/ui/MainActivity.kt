@@ -35,7 +35,7 @@ class MainActivity : AppCompatActivity() {
         val marginPx = (marginDp * resources.displayMetrics.density).toInt()
         val contentWidth = screenWidth - marginPx
         
-        adapter = MessageAdapter(emptyList(), contentWidth)
+        adapter = MessageAdapter(emptyList(), contentWidth, this)
         binding.recyclerView.adapter = adapter
     }
     
@@ -57,7 +57,7 @@ class MainActivity : AppCompatActivity() {
                 val marginDp = 64
                 val marginPx = (marginDp * resources.displayMetrics.density).toInt()
                 val contentWidth = screenWidth - marginPx
-                adapter = MessageAdapter(messages, contentWidth)
+                adapter = MessageAdapter(messages, contentWidth, this@MainActivity)
                 binding.recyclerView.adapter = adapter
             }
         }

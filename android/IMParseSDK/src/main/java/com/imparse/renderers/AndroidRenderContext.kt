@@ -92,6 +92,7 @@ data class AndroidTheme(
     val fontSize: Float = 16f,
     val codeFontSize: Float = 14f,
     val textColor: Int = Color.BLACK,
+    val backgroundColor: Int = Color.WHITE,
     val linkColor: Int = Color.BLUE,
     val codeBackgroundColor: Int = Color.parseColor("#F5F5F5"),
     val codeTextColor: Int = Color.BLACK,
@@ -103,9 +104,13 @@ data class AndroidTheme(
     val listItemSpacing: Int = 4,
     val codeBlockPadding: Int = 16,
     val codeBlockBorderRadius: Int = 8,
+    val codeBlockMaxWidth: Int? = null,
+    val codeBlockMinWidth: Int? = null,
     val tableCellPadding: Int = 8,
     val tableBorderColor: Int = Color.parseColor("#E0E0E0"),
     val tableHeaderBackground: Int = Color.parseColor("#F5F5F5"),
+    val tableMaxCellWidth: Int? = null,
+    val tableMinCellWidth: Int? = null,
     val blockquoteBorderWidth: Int = 4,
     val blockquoteBorderColor: Int = Color.parseColor("#E0E0E0"),
     val blockquoteTextColor: Int = Color.parseColor("#666666"),
@@ -120,7 +125,18 @@ data class AndroidTheme(
     val hrColor: Int = Color.parseColor("#E0E0E0"),
     val lineHeight: Float = 1.6f,
     val maxContentWidth: Int = 800,
-    val contentPadding: Int = 20
+    val contentPadding: Int = 20,
+    val toolbarHeight: Int? = null,
+    val toolbarWidth: Int? = null,
+    val toolbarPadding: Int? = null,
+    val toolbarButtonSize: Int? = null,
+    val toolbarButtonSpacing: Int? = null,
+    val toolbarSwitcherHeight: Int? = null,
+    val toolbarSwitcherButtonWidth: Int? = null,
+    val toolbarSwitcherButtonSpacing: Int? = null,
+    val tableTitle: String? = null,
+    val toolbarPreviewText: String? = null,
+    val toolbarCodeText: String? = null
 ) {
     companion object {
         fun default(): AndroidTheme {
