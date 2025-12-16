@@ -336,7 +336,7 @@ public class UIKitFrameRender {
                 x: contentAreaWidth - toolbarWidth - toolbarPadding,
                 y: toolbarPadding,
                 width: toolbarWidth,
-                height: toolbarHeight
+                height:toolbarHeight-toolbarPadding*2
             )
             
             toolbar.onCopy = {
@@ -686,7 +686,7 @@ public class UIKitFrameRender {
                 x: contentAreaWidth - toolbarWidth - toolbarPadding,
                 y: toolbarPadding,
                 width: toolbarWidth,
-                height: toolbarHeight
+                height: toolbarHeight-toolbarPadding*2
             )
             
             // 将表格内容转换为字符串（用于复制）
@@ -1128,7 +1128,7 @@ public class UIKitFrameRender {
         let switcherButtonWidth = context.theme.toolbarSwitcherButtonWidth
         let switcherButtonSpacing = context.theme.toolbarSwitcherButtonSpacing
         let switcherWidth = switcherButtonWidth * 2 + switcherButtonSpacing + toolbarPadding * 2
-        let topAreaHeight: CGFloat = max(toolbarHeight, switcherHeight) + toolbarPadding * 2
+        let topAreaHeight: CGFloat = max(toolbarHeight, switcherHeight)
         
         // 添加预览/代码切换器（左侧）
         let modeSwitcher = MermaidViewModeSwitcher(
@@ -1138,7 +1138,7 @@ public class UIKitFrameRender {
         )
         modeSwitcher.frame = CGRect(
             x: padding,
-            y: toolbarPadding,
+            y: (topAreaHeight-switcherHeight)/2,
             width: switcherWidth,
             height: switcherHeight
         )
@@ -1149,7 +1149,7 @@ public class UIKitFrameRender {
             let toolbar = UIKitToolbar(theme: context.theme)
             toolbar.frame = CGRect(
                 x: frame.size.width - toolbarWidth - toolbarPadding,
-                y: toolbarPadding,
+                y: (topAreaHeight-toolbarHeight)/2,
                 width: toolbarWidth,
                 height: toolbarHeight
             )
