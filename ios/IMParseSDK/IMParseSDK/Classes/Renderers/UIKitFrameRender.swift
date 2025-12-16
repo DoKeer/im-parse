@@ -665,7 +665,7 @@ public class UIKitFrameRender {
                 height: headerBarHeight
             )
             headerBar.backgroundColor = context.theme.tableHeaderBackground
-            
+            let titleLeftPadding = context.theme.tableCellPadding
             // 添加"表格"标题文字（左侧）
             let titleLabel = UILabel()
             titleLabel.text = context.getTableTitle()
@@ -673,7 +673,7 @@ public class UIKitFrameRender {
             titleLabel.textColor = context.theme.textColor
             titleLabel.textAlignment = .left
             titleLabel.frame = CGRect(
-                x: toolbarPadding,
+                x: titleLeftPadding,
                 y: 0,
                 width: 100,
                 height: headerBarHeight

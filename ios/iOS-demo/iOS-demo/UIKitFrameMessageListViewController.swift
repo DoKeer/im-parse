@@ -13,7 +13,7 @@ class UIKitFrameMessageListViewController: UIViewController {
     
     private var messages: [Message] = []
     private var tableView: UITableView!
-    
+    private var layouting:Bool = false
     // 使用 Kingfisher 的图片缓存来缓存数学公式和 Mermaid 图表的图片
     // 不再需要高度反馈系统，直接使用预计算的高度
     
@@ -83,11 +83,25 @@ class UIKitFrameMessageListViewController: UIViewController {
     private var contentWidth:CGFloat = 0
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        if abs(contentWidth - self.view.frame.width) > 64 {
-            contentWidth = self.view.frame.width - 64
+        if messages.isEmpty {
+            if abs(contentWidth - self.view.frame.width) > 64 {
+                contentWidth = self.view.frame.width - 64
+                loadMessages()
+            }
+        }
+    }
+
+    
+    override func viewWillTransition(to size: CGSize, with coordinator: any UIViewControllerTransitionCoordinator) {
+        layouting = true
+        print("尺寸变化：\(size)")
+        if abs(contentWidth - size.width) > 64 {
+            layouting = false
+            contentWidth = size.width - 64
             loadMessages()
         }
     }
+    
 }
 
 extension UIKitFrameMessageListViewController: UITableViewDataSource {
@@ -104,6 +118,9 @@ extension UIKitFrameMessageListViewController: UITableViewDataSource {
         // 创建节点布局变化回调（在 viewController 中处理）
         let onNodeLayoutChanged: ((any Codable) -> Void)? = { [weak tableView, weak self] updatedNodeLayout in
             DispatchQueue.main.async {
+                if let layouting = self?.layouting, layouting == true {
+                    return
+                }
                 guard let tableView = tableView,
                       let self = self,
                       indexPath.row < self.messages.count else { return }

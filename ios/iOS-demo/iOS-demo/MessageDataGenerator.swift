@@ -74,7 +74,11 @@ class MessageDataGenerator {
     /// 生成 Markdown 模板
     private static func generateMarkdownTemplates() -> [String] {
         return [
-            """
+            #"""
+            $$
+            \int_{0}^{\infty} e^{-x^{2}} \, dx \approx \frac{\sqrt{\pi}}{2}
+            $$
+
             ```mermaid
             graph TD
                 A[开始] --> B{判断条件}
@@ -83,7 +87,7 @@ class MessageDataGenerator {
                 C --> E[结束]
                 D --> E
             ```
-            """,
+            """#,
             """
             ## 表格测试
             
