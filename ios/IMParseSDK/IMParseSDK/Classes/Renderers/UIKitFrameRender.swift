@@ -312,7 +312,7 @@ public class UIKitFrameRender {
         let toolbarPadding = context.theme.toolbarPadding
         
         // 标题栏高度
-        let headerBarHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : 0
+        let headerBarHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight : 0
         
         // 代码内容区域（在标题栏下方）
         let contentAreaHeight = frame.size.height - headerBarHeight
@@ -649,7 +649,7 @@ public class UIKitFrameRender {
         let toolbarPadding = context.theme.toolbarPadding
         
         // 标题栏高度
-        let headerBarHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : 0
+        let headerBarHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight: 0
         
         // 表格内容区域（在标题栏下方）
         let contentAreaHeight = layout.frame.size.height - headerBarHeight
