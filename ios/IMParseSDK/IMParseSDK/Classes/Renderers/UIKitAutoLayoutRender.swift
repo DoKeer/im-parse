@@ -1525,14 +1525,12 @@ public class UIKitAutoLayoutRender {
         
         let fontSize = node.display ? 16.0 : 14.0
         
-        // 生成缓存键（使用内容字符串作为key）
-        let cacheKey = "math:\(node.content):\(node.display)"
-        
         MathHTMLRenderer.shared.render(
             html: html,
             display: node.display,
             textColor: colorHex,
             fontSize: fontSize,
+            mathContent: node.content,
             formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
         ) { image in
             DispatchQueue.main.async {

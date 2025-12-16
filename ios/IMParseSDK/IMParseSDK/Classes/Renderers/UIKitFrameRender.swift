@@ -1008,34 +1008,9 @@ public class UIKitFrameRender {
             }
         }
         
-        // 异步渲染公式图片
-        let result = IMParseCore.mathToHTML(node.content, display: node.display)
-        
-        guard result.success, let html = result.astJSON else {
-            // 语法错误时，更新标签显示错误信息
-            DispatchQueue.main.async {
-                let errorLabel = UILabel()
-                errorLabel.text = "⚠️ 数学公式语法错误"
-                errorLabel.font = UIFont.systemFont(ofSize: 12, weight: .medium)
-                errorLabel.textColor = .systemRed
-                errorLabel.numberOfLines = 0
-                errorLabel.frame = CGRect(
-                    x: contentPadding,
-                    y: imageAreaY,
-                    width: frame.size.width - contentPadding * 2,
-                    height: imageAreaHeight
-                )
-                
-                // 移除原始内容标签
-                containerView.viewWithTag(9001)?.removeFromSuperview()
-                containerView.addSubview(errorLabel)
-            }
-            return containerView
-        }
-        
         // fontSize 已经在上面声明过了，直接使用
         MathHTMLRenderer.shared.render(
-            html: html,
+            mathContent: node.content,
             display: node.display,
             textColor: colorHex,
             fontSize: fontSize,

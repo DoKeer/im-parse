@@ -1138,7 +1138,8 @@ struct MathSVGView: View {
             html: html,
             display: display,
             textColor: colorHex,
-            fontSize: fontSize
+            fontSize: fontSize,
+            mathContent: mathContent
         ) { image in
             DispatchQueue.main.async {
                 self.renderedImage = image

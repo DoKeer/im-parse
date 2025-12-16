@@ -522,21 +522,16 @@ public class UIKitFrameAsyncCalculator {
             return CGSize(width: width, height: totalHeight)
         }
         
-        // 没有缓存时，触发异步渲染（不触发回调），只让图片生成和缓存，提高性能
-        // 这样当实际 render 时，图片可能已经缓存好了
-        let result = IMParseCore.mathToHTML(node.content, display: node.display)
-        if result.success, let html = result.astJSON {
-            // 触发异步渲染，但不触发回调，只生成和缓存图片
-            MathHTMLRenderer.shared.render(
-                html: html,
-                display: node.display,
-                textColor: colorHex,
-                fontSize: fontSize,
-                formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
-            ) { _ in
-                // 空回调，只用于触发渲染和缓存，不执行任何操作
-                // 图片会自动缓存到 MathHTMLRenderer 的 imageCache 中
-            }
+        // 触发异步渲染，但不触发回调，只生成和缓存图片
+        MathHTMLRenderer.shared.render(
+            mathContent: node.content,
+            display: node.display,
+            textColor: colorHex,
+            fontSize: fontSize,
+            formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
+        ) { _ in
+            // 空回调，只用于触发渲染和缓存，不执行任何操作
+            // 图片会自动缓存到 MathHTMLRenderer 的 imageCache 中
         }
         
         // 返回原始文本内容的尺寸（作为估算值）

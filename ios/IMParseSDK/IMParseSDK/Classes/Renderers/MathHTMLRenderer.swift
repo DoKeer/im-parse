@@ -55,18 +55,24 @@ public class MathHTMLRenderer {
     ///   - display: 是否为块级显示
     ///   - textColor: 文本颜色（十六进制，如 "#000000"）
     ///   - fontSize: 字体大小（px）
+    ///   - mathContent: 可选的原始数学公式内容（LaTeX 格式），如果提供则用于生成缓存键，确保与其他地方一致
     ///   - formulaSizeCacheDelegate: 可选的缓存代理（如果提供，将优先使用）
     ///   - completion: 完成回调，返回渲染的图片
     func render(
-        html: String,
+        mathContent: String,
         display: Bool,
         textColor: String = "#000000",
         fontSize: CGFloat = 16,
         formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil,
         completion: @escaping (UIImage?) -> Void
     ) {
-        // 生成缓存键
-        let cacheKey = generateCacheKey(html: html, display: display, textColor: textColor, fontSize: fontSize)
+        // 生成缓存键：优先使用 mathContent（如果提供），确保与其他地方一致
+        let cacheKey = MathHTMLRenderer.generateMathCacheKey(
+            mathContent: mathContent,
+            display: display,
+            textColor: textColor,
+            fontSize: fontSize
+        )
         
         // 优先使用传入的 delegate，否则使用实例的 delegate
         let cacheDelegate = formulaSizeCacheDelegate ?? self.formulaSizeCacheDelegate
@@ -78,7 +84,14 @@ public class MathHTMLRenderer {
             }
             return
         }
-        
+        // 异步渲染公式图片
+        let result = IMParseCore.mathToHTML(mathContent, display: display)
+        guard result.success, let html = result.astJSON else {
+            DispatchQueue.main.async {
+                completion(nil)
+            }
+            return
+        }
         // 如果没有 delegate，检查内部缓存（向后兼容）
         cacheQueue.async { [weak self] in
             if let cachedImage = self?.imageCache[cacheKey] {
@@ -197,14 +210,15 @@ public class MathHTMLRenderer {
                 return
             }
             
-            // 缓存未命中，进行渲染
+            // 缓存未命中，直接调用 renderHTML 进行渲染（避免重复的缓存检查）
             DispatchQueue.main.async {
-                self?.render(
+                self?.renderHTML(
                     html: html,
                     display: false,
                     textColor: colorHex,
                     fontSize: fontSize,
-                    formulaSizeCacheDelegate: cacheDelegate
+                    cacheKey: cacheKey,
+                    cacheDelegate: cacheDelegate
                 ) { image in
                     guard let image = image else {
                         DispatchQueue.main.async {
