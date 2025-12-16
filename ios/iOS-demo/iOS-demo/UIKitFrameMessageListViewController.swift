@@ -94,8 +94,8 @@ class UIKitFrameMessageListViewController: UIViewController {
     
     override func viewWillTransition(to size: CGSize, with coordinator: any UIViewControllerTransitionCoordinator) {
         layouting = true
-        print("尺寸变化：\(size)")
-        if abs(contentWidth - size.width) > 64 {
+        print("尺寸变化：\(size)，\(view.frame.size.width - size.width)")
+        if abs(view.frame.size.width - size.width) >= 1.0 {
             layouting = false
             contentWidth = size.width - 64
             loadMessages()
@@ -112,7 +112,6 @@ extension UIKitFrameMessageListViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "MessageCell", for: indexPath) as! MessageTableViewCell
         // 计算 contentWidth: Screen - 32 (Container Margin) - 32 (Content Padding) = Screen - 64
-        let contentWidth = tableView.bounds.width - 64
         let message = messages[indexPath.row]
         
         // 创建节点布局变化回调（在 viewController 中处理）
@@ -128,7 +127,7 @@ extension UIKitFrameMessageListViewController: UITableViewDataSource {
                 // 递归查找并替换匹配的节点
 //                    layout = updateNodeLayout(in: layout, with: updatedNodeLayout)
                 self.messages[indexPath.row].layout = nil;
-                self.messages[indexPath.row].calculateLayout(width: contentWidth, delegate: self)
+                self.messages[indexPath.row].calculateLayout(width: self.contentWidth, delegate: self)
                 
                 tableView.reloadRows(at: [indexPath], with: .none)
 
