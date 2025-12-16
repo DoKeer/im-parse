@@ -78,14 +78,24 @@ class MessageDataGenerator {
             $$
             \int_{0}^{\infty} e^{-x^{2}} \, dx \approx \frac{\sqrt{\pi}}{2}
             $$
-
+            
             ```mermaid
-            graph TD
-                A[开始] --> B{判断条件}
-                B -->|是| C[执行操作1]
-                B -->|否| D[执行操作2]
-                C --> E[结束]
-                D --> E
+            sequenceDiagram
+                participant A as Alice
+                participant B as Bob
+                A->>B: 发送消息
+                B-->>A: 回复消息
+            ```
+            
+            ```mermaid
+              gantt
+                  title 项目进度
+                  dateFormat  YYYY-MM-DD
+                  section 阶段1
+                  任务1           :a1, 2024-01-01, 30d
+                  任务2           :a2, 2024-01-15, 20d
+                  section 阶段2
+                  任务3           :a3, 2024-02-01, 30d
             ```
             """#,
             """

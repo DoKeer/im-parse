@@ -121,11 +121,16 @@ class MermaidHTMLRenderer {
         // 从池中获取或创建 WebView（必须在主线程）
         let webView = getOrCreateWebView()
         
-        // 构建完整的 HTML（包含 mermaid.js）
-        let fullHTML = buildFullHTML(mermaidCode: mermaidCode, textColor: textColor, backgroundColor: backgroundColor)
+        // 检测是否为 Gantt 图表（需要更宽的渲染空间）
+        let isGantt = mermaidCode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("gantt")
         
-        // 设置 WebView 配置（使用较大的初始尺寸，确保内容能完全渲染）
-        webView.frame = CGRect(x: 0, y: 0, width: 1000, height: 600)
+        // 构建完整的 HTML（包含 mermaid.js）
+        let fullHTML = buildFullHTML(mermaidCode: mermaidCode, textColor: textColor, backgroundColor: backgroundColor, isGantt: isGantt)
+        
+        // 设置 WebView 配置（Gantt 图表需要更宽的渲染空间以避免横坐标拥挤）
+        let webViewWidth: CGFloat = isGantt ? 1600 : 1000
+        let webViewHeight: CGFloat = isGantt ? 800 : 600
+        webView.frame = CGRect(x: 0, y: 0, width: webViewWidth, height: webViewHeight)
         webView.isOpaque = false
         webView.backgroundColor = .clear
         
@@ -357,17 +362,50 @@ class MermaidHTMLRenderer {
     
     /// 构建完整的 HTML（包含 mermaid.js）
     /// 优先使用本地资源，失败时自动降级到 CDN
-    private func buildFullHTML(mermaidCode: String, textColor: String, backgroundColor: String) -> String {
+    private func buildFullHTML(mermaidCode: String, textColor: String, backgroundColor: String, isGantt: Bool = false) -> String {
         // 使用本地资源管理器生成带降级的脚本标签
         let scriptTag = LocalResourceManager.shared.mermaidScriptTag(onLoad: "initMermaid()")
         
+        // 对于 Gantt 图表，自动优化配置以避免横坐标拥挤
+        var processedCode = mermaidCode
+        if isGantt {
+            processedCode = optimizeGanttCode(mermaidCode)
+        }
+        
         // 转义 HTML 特殊字符（简化版，与 Rust Core 一致）
-        let escapedCode = mermaidCode
+        let escapedCode = processedCode
             .replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
             .replacingOccurrences(of: "'", with: "&#39;")
+        
+        // Gantt 图表的特殊 CSS 样式，确保有足够的宽度和正确的布局
+        let ganttCSS = isGantt ? """
+                .mermaid {
+                    width: 100%;
+                    overflow-x: auto;
+                    overflow-y: visible;
+                }
+                .mermaid svg {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    min-width: 1400px !important;
+                }
+            """ : """
+                /* 非 Gantt 图表：保持自然大小，居中显示 */
+                .mermaid {
+                    display: inline-block;
+                    max-width: 100%;
+                    text-align: center;
+                }
+                .mermaid svg {
+                    display: block;
+                    margin: 0 auto;
+                    max-width: 100%;
+                    height: auto;
+                }
+            """
         
         // 生成完整的 HTML（不依赖 Rust Core，避免兼容性问题）
             return """
@@ -391,10 +429,13 @@ class MermaidHTMLRenderer {
                     align-items: center;
                     justify-content: center;
                     min-height: 100vh;
+                    width: 100%;
+                    overflow-x: auto;
                 }
                 .mermaid {
                     color: \(textColor);
                 }
+                \(ganttCSS)
             </style>
             </head>
             <body>
@@ -407,7 +448,7 @@ class MermaidHTMLRenderer {
                 function initMermaid() {
                     if (typeof mermaid !== 'undefined') {
                         console.log('Initializing Mermaid...');
-                        mermaid.initialize({ 
+                        var config = {
                             startOnLoad: true,
                             theme: 'default',
                             themeVariables: {
@@ -418,7 +459,12 @@ class MermaidHTMLRenderer {
                                 secondaryColor: '\(backgroundColor)',
                                 tertiaryColor: '\(backgroundColor)'
                             }
-                        });
+                        };
+                        
+                        // Gantt 图表已经在代码中通过指令配置，这里不需要额外配置
+                        \(isGantt ? "console.log('Gantt chart detected');" : "")
+                        
+                        mermaid.initialize(config);
                         console.log('Mermaid initialized successfully');
                     } else {
                         console.error('Mermaid is not defined');
@@ -498,6 +544,92 @@ class MermaidHTMLRenderer {
         cacheQueue.async(flags: .barrier) { [weak self] in
             self?.imageCache.removeValue(forKey: cacheKey)
         }
+    }
+    
+    /// 优化 Gantt 图表代码，自动添加配置以避免横坐标拥挤
+    /// - Parameter code: 原始 Mermaid Gantt 代码
+    /// - Returns: 优化后的代码
+    private func optimizeGanttCode(_ code: String) -> String {
+        let lines = code.components(separatedBy: .newlines)
+        var optimizedLines: [String] = []
+        var hasTickInterval = false
+        var hasAxisFormat = false
+        var dateFormatLineIndex: Int? = nil
+        var dateFormatIndent = "    " // 默认缩进（4个空格）
+        
+        // 检查是否已有相关配置，并获取 dateFormat 行的缩进
+        for (index, line) in lines.enumerated() {
+            let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            
+            if trimmedLine.contains("tickinterval") {
+                hasTickInterval = true
+            }
+            if trimmedLine.contains("axisformat") {
+                hasAxisFormat = true
+            }
+            if trimmedLine.contains("dateformat") {
+                dateFormatLineIndex = index
+                // 提取 dateFormat 行的缩进
+                let leadingSpaces = line.prefix(while: { $0 == " " || $0 == "\t" })
+                if !leadingSpaces.isEmpty {
+                    dateFormatIndent = String(leadingSpaces)
+                }
+            }
+        }
+        
+        // 如果用户已经配置了这些选项，不需要优化
+        if hasTickInterval && hasAxisFormat {
+            return code
+        }
+        
+        // 构建优化后的代码
+        for (index, line) in lines.enumerated() {
+            optimizedLines.append(line)
+            
+            // 在 dateFormat 行之后添加优化配置（如果用户没有指定）
+            if let dateFormatIndex = dateFormatLineIndex, index == dateFormatIndex {
+                if !hasTickInterval {
+                    // 添加 tickInterval，每7天显示一个刻度，避免拥挤
+                    optimizedLines.append("\(dateFormatIndent)tickInterval 7d")
+                }
+                if !hasAxisFormat {
+                    // 添加 axisFormat，使用简洁的日期格式（月-日）
+                    optimizedLines.append("\(dateFormatIndent)axisFormat %m-%d")
+                }
+            }
+        }
+        
+        // 如果代码中没有 dateFormat，在 gantt 或 title 行之后添加所有配置
+        if dateFormatLineIndex == nil {
+            var insertIndex = 0
+            var foundIndent = "    " // 默认缩进
+            
+            for (index, line) in optimizedLines.enumerated() {
+                let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if trimmedLine.hasPrefix("gantt") || trimmedLine.hasPrefix("title") {
+                    insertIndex = index + 1
+                    // 提取该行的缩进，用于后续配置行
+                    let leadingSpaces = line.prefix(while: { $0 == " " || $0 == "\t" })
+                    if !leadingSpaces.isEmpty {
+                        foundIndent = String(leadingSpaces)
+                    }
+                    break
+                }
+            }
+            
+            // 在合适的位置插入配置
+            if insertIndex > 0 {
+                if !hasTickInterval {
+                    optimizedLines.insert("\(foundIndent)tickInterval 7d", at: insertIndex)
+                    insertIndex += 1
+                }
+                if !hasAxisFormat {
+                    optimizedLines.insert("\(foundIndent)axisFormat %m-%d", at: insertIndex)
+                }
+            }
+        }
+        
+        return optimizedLines.joined(separator: "\n")
     }
 }
 
