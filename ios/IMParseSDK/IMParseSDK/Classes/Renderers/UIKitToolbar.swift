@@ -54,8 +54,6 @@ class UIKitToolbar: UIView {
     
     private func setupToolbar() {
         let buttonSize = theme.toolbarButtonSize
-        let buttonSpacing = theme.toolbarButtonSpacing
-        let containerPadding = theme.toolbarPadding
         backgroundColor = UIColor.clear
         
         var buttons: [UIButton] = []
@@ -166,6 +164,8 @@ class MermaidViewModeSwitcher: UIView {
     private let codeButton: UIButton!
     private let indicatorView: UIView!
     private let theme: UIKitTheme
+    private let previewText: String
+    private let codeText: String
     
     var onModeChanged: ((Bool) -> Void)? // true = 预览模式, false = 代码模式
     
@@ -176,8 +176,10 @@ class MermaidViewModeSwitcher: UIView {
         }
     }
     
-    init(theme: UIKitTheme, frame: CGRect = .zero) {
+    init(theme: UIKitTheme, previewText: String, codeText: String, frame: CGRect = .zero) {
         self.theme = theme
+        self.previewText = previewText
+        self.codeText = codeText
         previewButton = UIButton(type: .system)
         codeButton = UIButton(type: .system)
         indicatorView = UIView()
@@ -187,22 +189,21 @@ class MermaidViewModeSwitcher: UIView {
     }
     
     required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented. Use init(theme:) instead.")
+        fatalError("init(coder:) has not been implemented. Use init(theme:previewText:codeText:) instead.")
     }
     
     private func setupSwitcher() {
-        backgroundColor = UIColor.systemGray6
-        layer.cornerRadius = 6
-        
+        // 根据高度计算字体大小，取整
+        let fontSize = Int(theme.toolbarButtonSize * 0.5)
         // 预览按钮
-        previewButton.setTitle("预览", for: .normal)
-        previewButton.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        previewButton.setTitle(previewText, for: .normal)
+        previewButton.titleLabel?.font = UIFont.systemFont(ofSize: CGFloat(fontSize), weight: .medium)
         previewButton.addTarget(self, action: #selector(previewTapped), for: .touchUpInside)
         previewButton.backgroundColor = .clear
 
         // 代码按钮
-        codeButton.setTitle("代码", for: .normal)
-        codeButton.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        codeButton.setTitle(codeText, for: .normal)
+        codeButton.titleLabel?.font = UIFont.systemFont(ofSize: CGFloat(fontSize), weight: .medium)
         codeButton.addTarget(self, action: #selector(codeTapped), for: .touchUpInside)
         codeButton.backgroundColor = .clear
 

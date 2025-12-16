@@ -75,6 +75,16 @@ class MessageDataGenerator {
     private static func generateMarkdownTemplates() -> [String] {
         return [
             """
+            ```mermaid
+            graph TD
+                A[开始] --> B{判断条件}
+                B -->|是| C[执行操作1]
+                B -->|否| D[执行操作2]
+                C --> E[结束]
+                D --> E
+            ```
+            """,
+            """
             ## 表格测试
             
             | 列1 | 列2 | 列3 | 列4 |

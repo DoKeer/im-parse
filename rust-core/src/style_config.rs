@@ -172,6 +172,18 @@ pub struct StyleConfig {
     /// Mermaid 切换器按钮间距（px）
     #[serde(default = "default_toolbar_switcher_button_spacing")]
     pub toolbar_switcher_button_spacing: f32,
+    
+    /// 表格标题文案
+    #[serde(default = "default_table_title")]
+    pub table_title: String,
+    
+    /// 工具栏预览按钮文案
+    #[serde(default = "default_toolbar_preview_text")]
+    pub toolbar_preview_text: String,
+    
+    /// 工具栏代码按钮文案
+    #[serde(default = "default_toolbar_code_text")]
+    pub toolbar_code_text: String,
 }
 
 impl Default for StyleConfig {
@@ -219,6 +231,9 @@ impl Default for StyleConfig {
             toolbar_switcher_height: default_toolbar_switcher_height(),
             toolbar_switcher_button_width: default_toolbar_switcher_button_width(),
             toolbar_switcher_button_spacing: default_toolbar_switcher_button_spacing(),
+            table_title: default_table_title(),
+            toolbar_preview_text: default_toolbar_preview_text(),
+            toolbar_code_text: default_toolbar_code_text(),
         }
     }
 }
@@ -275,6 +290,9 @@ fn default_toolbar_button_spacing() -> f32 { 8.0 }
 fn default_toolbar_switcher_height() -> f32 { 32.0 }
 fn default_toolbar_switcher_button_width() -> f32 { 60.0 }
 fn default_toolbar_switcher_button_spacing() -> f32 { 4.0 }
+fn default_table_title() -> String { "表格".to_string() }
+fn default_toolbar_preview_text() -> String { "预览".to_string() }
+fn default_toolbar_code_text() -> String { "代码".to_string() }
 
 impl StyleConfig {
     /// 创建深色模式配置

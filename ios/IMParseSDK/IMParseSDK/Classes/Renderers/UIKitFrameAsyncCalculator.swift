@@ -240,7 +240,6 @@ public class UIKitFrameAsyncCalculator {
             
             let padding = context.theme.codeBlockPadding
             let maxCodeWidth = context.theme.codeBlockMaxWidth
-            let minCodeWidth = context.theme.codeBlockMinWidth
             
             let font = context.theme.codeFont
             let attrString = NSAttributedString(string: cNode.content, attributes: [.font: font])

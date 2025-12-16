@@ -81,6 +81,24 @@ public protocol UIKitToolbarActionDelegate: AnyObject {
     func showFullscreen(_ content: String, type: String, image: UIImage?)
 }
 
+/// 文案自定义代理协议（用于自定义表格标题、工具栏按钮文案等）
+public protocol UIKitTextLocalizationDelegate: AnyObject {
+    /// 获取表格标题文案
+    /// - Parameter defaultText: 配置中的默认文案
+    /// - Returns: 自定义文案，如果返回 nil 则使用默认文案
+    func tableTitle(defaultText: String) -> String?
+    
+    /// 获取工具栏预览按钮文案
+    /// - Parameter defaultText: 配置中的默认文案
+    /// - Returns: 自定义文案，如果返回 nil 则使用默认文案
+    func toolbarPreviewText(defaultText: String) -> String?
+    
+    /// 获取工具栏代码按钮文案
+    /// - Parameter defaultText: 配置中的默认文案
+    /// - Returns: 自定义文案，如果返回 nil 则使用默认文案
+    func toolbarCodeText(defaultText: String) -> String?
+}
+
 /// UIKit 渲染上下文
 /// 包含渲染过程中的所有状态和回调
 public struct UIKitRenderContext {
@@ -110,6 +128,9 @@ public struct UIKitRenderContext {
     // 工具栏操作代理（可选，用于数学公式、Mermaid、表格的工具栏按钮）
     public weak var toolbarActionDelegate: UIKitToolbarActionDelegate?
     
+    // 文案自定义代理（可选，用于自定义表格标题、工具栏按钮文案等）
+    public weak var textLocalizationDelegate: UIKitTextLocalizationDelegate?
+    
     // 布局高度变化回调（用于通知 cell 高度变化）
     // 回调参数：新的 NodeLayout（包含更新后的节点布局信息）
     public var onNodeLayoutChanged: ((any Codable) -> Void)?
@@ -128,6 +149,7 @@ public struct UIKitRenderContext {
                 formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil,
                 inlineImageLoaderDelegate: UIKitInlineImageLoaderDelegate? = nil,
                 toolbarActionDelegate: UIKitToolbarActionDelegate? = nil,
+                textLocalizationDelegate: UIKitTextLocalizationDelegate? = nil,
                 onNodeLayoutChanged: ((any Codable) -> Void)? = nil) {
         self.theme = theme
         self.width = width
@@ -143,7 +165,37 @@ public struct UIKitRenderContext {
         self.imageLoaderDelegate = imageLoaderDelegate
         self.inlineImageLoaderDelegate = inlineImageLoaderDelegate
         self.toolbarActionDelegate = toolbarActionDelegate
+        self.textLocalizationDelegate = textLocalizationDelegate
         self.onNodeLayoutChanged = onNodeLayoutChanged
+    }
+    
+    // MARK: - 文案获取辅助方法
+    
+    /// 获取表格标题文案（优先使用代理，否则使用配置中的默认值）
+    public func getTableTitle() -> String {
+        let defaultText = theme.tableTitle
+        if let customText = textLocalizationDelegate?.tableTitle(defaultText: defaultText) {
+            return customText
+        }
+        return defaultText
+    }
+    
+    /// 获取工具栏预览按钮文案（优先使用代理，否则使用配置中的默认值）
+    public func getToolbarPreviewText() -> String {
+        let defaultText = theme.toolbarPreviewText
+        if let customText = textLocalizationDelegate?.toolbarPreviewText(defaultText: defaultText) {
+            return customText
+        }
+        return defaultText
+    }
+    
+    /// 获取工具栏代码按钮文案（优先使用代理，否则使用配置中的默认值）
+    public func getToolbarCodeText() -> String {
+        let defaultText = theme.toolbarCodeText
+        if let customText = textLocalizationDelegate?.toolbarCodeText(defaultText: defaultText) {
+            return customText
+        }
+        return defaultText
     }
 }
 

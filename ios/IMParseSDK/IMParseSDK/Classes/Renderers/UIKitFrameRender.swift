@@ -668,7 +668,7 @@ public class UIKitFrameRender {
             
             // 添加"表格"标题文字（左侧）
             let titleLabel = UILabel()
-            titleLabel.text = "表格"
+            titleLabel.text = context.getTableTitle()
             titleLabel.font = .systemFont(ofSize: 16, weight: .medium)
             titleLabel.textColor = context.theme.textColor
             titleLabel.textAlignment = .left
@@ -1131,7 +1131,11 @@ public class UIKitFrameRender {
         let topAreaHeight: CGFloat = max(toolbarHeight, switcherHeight) + toolbarPadding * 2
         
         // 添加预览/代码切换器（左侧）
-        let modeSwitcher = MermaidViewModeSwitcher(theme: context.theme)
+        let modeSwitcher = MermaidViewModeSwitcher(
+            theme: context.theme,
+            previewText: context.getToolbarPreviewText(),
+            codeText: context.getToolbarCodeText()
+        )
         modeSwitcher.frame = CGRect(
             x: padding,
             y: toolbarPadding,

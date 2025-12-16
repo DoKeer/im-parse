@@ -116,6 +116,14 @@ public struct UIKitTheme {
     /// Mermaid 切换器按钮间距
     public var toolbarSwitcherButtonSpacing: CGFloat
     
+    // 文案配置
+    /// 表格标题文案
+    public var tableTitle: String
+    /// 工具栏预览按钮文案
+    public var toolbarPreviewText: String
+    /// 工具栏代码按钮文案
+    public var toolbarCodeText: String
+    
     // MARK: - 初始化
     
     /// 从 StyleConfig 创建 UIKitTheme
@@ -165,6 +173,9 @@ public struct UIKitTheme {
         self.toolbarSwitcherHeight = CGFloat(config.toolbarSwitcherHeight)
         self.toolbarSwitcherButtonWidth = CGFloat(config.toolbarSwitcherButtonWidth)
         self.toolbarSwitcherButtonSpacing = CGFloat(config.toolbarSwitcherButtonSpacing)
+        self.tableTitle = config.tableTitle
+        self.toolbarPreviewText = config.toolbarPreviewText
+        self.toolbarCodeText = config.toolbarCodeText
     }
     
     /// 默认主题（从 StyleConfig.default() 创建）
@@ -216,7 +227,10 @@ public struct UIKitTheme {
             toolbarButtonSpacing: 8,
             toolbarSwitcherHeight: 32,
             toolbarSwitcherButtonWidth: 60,
-            toolbarSwitcherButtonSpacing: 4
+            toolbarSwitcherButtonSpacing: 4,
+            tableTitle: "表格",
+            toolbarPreviewText: "预览",
+            toolbarCodeText: "代码"
         )
         return UIKitTheme(from: fallbackConfig)
     }

@@ -53,6 +53,9 @@ public struct StyleConfig: Codable {
     public var toolbarSwitcherHeight: Float
     public var toolbarSwitcherButtonWidth: Float
     public var toolbarSwitcherButtonSpacing: Float
+    public var tableTitle: String
+    public var toolbarPreviewText: String
+    public var toolbarCodeText: String
     
     public init(fontSize: Float,
                 codeFontSize: Float,
@@ -95,7 +98,10 @@ public struct StyleConfig: Codable {
                 toolbarButtonSpacing: Float,
                 toolbarSwitcherHeight: Float,
                 toolbarSwitcherButtonWidth: Float,
-                toolbarSwitcherButtonSpacing: Float) {
+                toolbarSwitcherButtonSpacing: Float,
+                tableTitle: String,
+                toolbarPreviewText: String,
+                toolbarCodeText: String) {
         self.fontSize = fontSize
         self.codeFontSize = codeFontSize
         self.textColor = textColor
@@ -138,6 +144,9 @@ public struct StyleConfig: Codable {
         self.toolbarSwitcherHeight = toolbarSwitcherHeight
         self.toolbarSwitcherButtonWidth = toolbarSwitcherButtonWidth
         self.toolbarSwitcherButtonSpacing = toolbarSwitcherButtonSpacing
+        self.tableTitle = tableTitle
+        self.toolbarPreviewText = toolbarPreviewText
+        self.toolbarCodeText = toolbarCodeText
     }
     
     enum CodingKeys: String, CodingKey {
@@ -183,6 +192,9 @@ public struct StyleConfig: Codable {
         case toolbarSwitcherHeight = "toolbar_switcher_height"
         case toolbarSwitcherButtonWidth = "toolbar_switcher_button_width"
         case toolbarSwitcherButtonSpacing = "toolbar_switcher_button_spacing"
+        case tableTitle = "table_title"
+        case toolbarPreviewText = "toolbar_preview_text"
+        case toolbarCodeText = "toolbar_code_text"
     }
 }
 
