@@ -917,7 +917,7 @@ public class UIKitFrameRender {
         let toolbarHeight = context.theme.toolbarHeight
         let toolbarWidth = context.theme.toolbarWidth
         let toolbarPadding = context.theme.toolbarPadding
-        let contentPadding = context.theme.codeBlockPadding
+        let contentPadding = context.theme.toolbarPadding
         
         // 添加工具栏（如果有代理，只对块级公式显示）
         if context.toolbarActionDelegate != nil {

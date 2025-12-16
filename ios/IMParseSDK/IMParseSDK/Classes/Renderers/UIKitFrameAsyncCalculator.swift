@@ -487,7 +487,7 @@ public class UIKitFrameAsyncCalculator {
         }
         
         // 块级公式：需要工具栏和padding
-        let padding = context.theme.codeBlockPadding
+        let padding = context.theme.toolbarPadding
         let toolbarPadding = context.theme.toolbarPadding
         let toolbarHeight: CGFloat = context.toolbarActionDelegate != nil ? context.theme.toolbarHeight + toolbarPadding * 2 : 0 // 工具栏高度 + 间距
         
@@ -631,7 +631,7 @@ public class UIKitFrameAsyncCalculator {
     /// - Returns: 总高度（包含 padding 和 toolbar）
     /// - Note: 此方法用于 Render 中检查实际高度，确保与预计算高度一致
     public static func calculateMathTotalHeight(displayHeight: CGFloat, context: UIKitRenderContext) -> CGFloat {
-        let contentPadding = context.theme.codeBlockPadding
+        let contentPadding = context.theme.toolbarPadding
         let toolbarPadding = context.theme.toolbarPadding
         // 工具栏区域高度：如果有代理，则包含工具栏高度和上下间距
         // 与 estimateMathSize 中的计算逻辑保持一致
