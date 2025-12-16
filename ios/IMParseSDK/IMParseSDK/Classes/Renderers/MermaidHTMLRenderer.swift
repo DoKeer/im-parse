@@ -15,7 +15,10 @@ import ObjectiveC
 class MermaidHTMLRenderer {
     static let shared = MermaidHTMLRenderer()
     
-    // 图片缓存
+    // 可选的缓存代理（优先使用，避免内存占用）
+    public weak var formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate?
+    
+    // 图片缓存（仅在没有 delegate 时使用，作为后备方案）
     private var imageCache: [String: UIImage] = [:]
     private let cacheQueue = DispatchQueue(label: "mermaid.html.cache", attributes: .concurrent)
     
@@ -45,17 +48,30 @@ class MermaidHTMLRenderer {
     ///   - mermaidCode: Mermaid 语法代码
     ///   - textColor: 文本颜色（十六进制，如 "#000000"）
     ///   - backgroundColor: 背景颜色（十六进制，如 "#ffffff"）
+    ///   - formulaSizeCacheDelegate: 可选的缓存代理（如果提供，将优先使用）
     ///   - completion: 完成回调，返回渲染的图片
     func render(
         mermaidCode: String,
         textColor: String = "#000000",
         backgroundColor: String = "#ffffff",
+        formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil,
         completion: @escaping (UIImage?) -> Void
     ) {
         // 生成缓存键
         let cacheKey = generateCacheKey(mermaidCode: mermaidCode, textColor: textColor, backgroundColor: backgroundColor)
         
-        // 先检查缓存
+        // 优先使用传入的 delegate，否则使用实例的 delegate
+        let cacheDelegate = formulaSizeCacheDelegate ?? self.formulaSizeCacheDelegate
+        
+        // 先检查缓存（优先使用 delegate）
+        if let cachedImage = cacheDelegate?.getFormulaImage(for: cacheKey) {
+            DispatchQueue.main.async {
+                completion(cachedImage)
+            }
+            return
+        }
+        
+        // 如果没有 delegate，检查内部缓存（向后兼容）
         cacheQueue.async { [weak self] in
             if let cachedImage = self?.imageCache[cacheKey] {
                 DispatchQueue.main.async {
@@ -83,6 +99,7 @@ class MermaidHTMLRenderer {
                     textColor: textColor,
                     backgroundColor: backgroundColor,
                     cacheKey: cacheKey,
+                    cacheDelegate: cacheDelegate,
                     completion: completion
                 )
             }
@@ -95,6 +112,7 @@ class MermaidHTMLRenderer {
         textColor: String,
         backgroundColor: String,
         cacheKey: String,
+        cacheDelegate: UIKitFormulaSizeCacheDelegate?,
         completion: @escaping (UIImage?) -> Void
     ) {
         // 确保在主线程
@@ -176,8 +194,13 @@ class MermaidHTMLRenderer {
                             webView.frame = CGRect(x: 0, y: 0, width: 800, height: 400)
                             self.captureWebView(webView, contentRect: nil) { image in
                                 if let image = image {
-                                    self.cacheQueue.async(flags: .barrier) {
-                                        self.imageCache[cacheKey] = image
+                                    // 优先使用 delegate 缓存
+                                    cacheDelegate?.saveFormulaImage(image, for: cacheKey)
+                                    // 如果没有 delegate，使用内部缓存（向后兼容）
+                                    if cacheDelegate == nil {
+                                        self.cacheQueue.async(flags: .barrier) {
+                                            self.imageCache[cacheKey] = image
+                                        }
                                     }
                                 }
                                 self.returnWebViewToPool(webView)
@@ -214,10 +237,14 @@ class MermaidHTMLRenderer {
                                 
                                 // 使用精确的内容区域直接截图（不调整 WebView 尺寸）
                                 self.captureWebView(webView, contentRect: contentRect) { image in
-                                    // 缓存图片
+                                    // 缓存图片（优先使用 delegate）
                                     if let image = image {
-                                        self.cacheQueue.async(flags: .barrier) {
-                                            self.imageCache[cacheKey] = image
+                                        cacheDelegate?.saveFormulaImage(image, for: cacheKey)
+                                        // 如果没有 delegate，使用内部缓存（向后兼容）
+                                        if cacheDelegate == nil {
+                                            self.cacheQueue.async(flags: .barrier) {
+                                                self.imageCache[cacheKey] = image
+                                            }
                                         }
                                     }
                                     
@@ -232,8 +259,13 @@ class MermaidHTMLRenderer {
                             webView.frame = CGRect(x: 0, y: 0, width: 800, height: 400)
                             self.captureWebView(webView, contentRect: nil) { image in
                                 if let image = image {
-                                    self.cacheQueue.async(flags: .barrier) {
-                                        self.imageCache[cacheKey] = image
+                                    // 优先使用 delegate 缓存
+                                    cacheDelegate?.saveFormulaImage(image, for: cacheKey)
+                                    // 如果没有 delegate，使用内部缓存（向后兼容）
+                                    if cacheDelegate == nil {
+                                        self.cacheQueue.async(flags: .barrier) {
+                                            self.imageCache[cacheKey] = image
+                                        }
                                     }
                                 }
                                 self.returnWebViewToPool(webView)

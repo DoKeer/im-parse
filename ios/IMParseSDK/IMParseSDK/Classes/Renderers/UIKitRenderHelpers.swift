@@ -301,6 +301,32 @@ internal class MathTextAttachment: NSTextAttachment {
         // 行内公式的初始尺寸
         let lineHeight = font.lineHeight
         
+        // 生成缓存键（与 renderInlineMath 保持一致）
+        let textColor = context.currentTextColor ?? context.theme.textColor
+        let components = textColor.cgColor.components ?? [0, 0, 0, 1]
+        let colorHex = String(format: "#%02X%02X%02X",
+                              Int(components[0] * 255),
+                              Int(components[1] * 255),
+                              Int(components[2] * 255))
+        let fontSize = font.pointSize
+        let cacheKey = MathHTMLRenderer.generateInlineMathCacheKey(
+            mathContent: mathNode.content,
+            textColor: colorHex,
+            fontSize: fontSize,
+            lineHeight: lineHeight
+        )
+        
+        // 先检查缓存，如果命中则直接使用，不需要计算文本尺寸
+        if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey) {
+            // 缓存命中，使用缓存的图片
+            self.image = cachedImage
+            self.cachedImage = cachedImage
+            // 调整 bounds 以适应图片尺寸
+            updateBoundsForImage(cachedImage)
+            return
+        }
+        
+        // 缓存未命中，需要计算占位图片尺寸
         // 计算占位图片的宽度：根据公式文本的实际宽度动态计算
         // 使用临时attributedString计算文本宽度，确保能完整显示公式
         let tempAttrString = NSAttributedString(
@@ -325,35 +351,11 @@ internal class MathTextAttachment: NSTextAttachment {
         // 设置初始 bounds（会在 attachmentBounds 方法中动态调整）
         self.bounds = CGRect(origin: .zero, size: attachmentSize)
         
-        // 生成包含尺寸信息的缓存key（行内公式需要包含目标尺寸）
-        let textColor = context.currentTextColor ?? context.theme.textColor
-        let components = textColor.cgColor.components ?? [0, 0, 0, 1]
-        let colorHex = String(format: "#%02X%02X%02X",
-                              Int(components[0] * 255),
-                              Int(components[1] * 255),
-                              Int(components[2] * 255))
-        let fontSize = font.pointSize
-        let cacheKey = MathHTMLRenderer.generateMathCacheKey(
-            mathContent: mathNode.content,
-            display: mathNode.display,
-            textColor: colorHex,
-            fontSize: fontSize,
-            targetSize: mathNode.display ? nil : attachmentSize
-        )
-        
-        if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey) {
-            // 缓存命中，使用缓存的图片
-            self.image = cachedImage
-            self.cachedImage = cachedImage
-            // 调整 bounds 以适应图片尺寸
-            updateBoundsForImage(cachedImage)
-        } else {
-            // 创建占位图片（显示公式原文）
-            createPlaceholderImage(size: attachmentSize)
-            // 异步加载公式图片（如果有缓存代理）
-            if context.formulaSizeCacheDelegate != nil {
-                loadMathImageAsync(cacheKey: cacheKey, targetSize: attachmentSize)
-            }
+        // 创建占位图片（显示公式原文）
+        createPlaceholderImage(size: attachmentSize)
+        // 异步加载公式图片（如果有缓存代理）
+        if context.formulaSizeCacheDelegate != nil {
+            loadMathImageAsync(cacheKey: cacheKey, targetSize: attachmentSize)
         }
     }
     
@@ -423,11 +425,12 @@ internal class MathTextAttachment: NSTextAttachment {
         let lineHeight = font.lineHeight
         
         // 使用共享的渲染方法
-        MathHTMLRenderer.renderInlineMath(
+        MathHTMLRenderer.shared.renderInlineMath(
             mathContent: mathNode.content,
             textColor: textColor,
             fontSize: fontSize,
-            lineHeight: lineHeight
+            lineHeight: lineHeight,
+            formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
         ) { [weak self] scaledImage, scaledSize in
             guard let self = self else { return }
             
@@ -439,10 +442,6 @@ internal class MathTextAttachment: NSTextAttachment {
             self.image = scaledImage
             self.cachedImage = scaledImage
             self.updateBoundsForImage(scaledImage)
-            
-            // 保存到缓存（使用包含尺寸的key）
-            self.context.formulaSizeCacheDelegate?.saveFormulaImage(scaledImage, for: cacheKey)
-            self.context.formulaSizeCacheDelegate?.setCachedSize(scaledSize, for: cacheKey)
             
             self.isLoading = false
             

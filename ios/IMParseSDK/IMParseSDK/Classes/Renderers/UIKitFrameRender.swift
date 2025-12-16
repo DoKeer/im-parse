@@ -1038,7 +1038,8 @@ public class UIKitFrameRender {
             html: html,
             display: node.display,
             textColor: colorHex,
-            fontSize: fontSize
+            fontSize: fontSize,
+            formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
         ) { [weak containerView] image in
             DispatchQueue.main.async {
                 guard let containerView = containerView else { return }
@@ -1047,10 +1048,8 @@ public class UIKitFrameRender {
                 containerView.viewWithTag(9001)?.removeFromSuperview()
                 
                 if let image = image {
-                    // 保存图片和尺寸到缓存
-                    context.formulaSizeCacheDelegate?.saveFormulaImage(image, for: cacheKey)
-                    context.formulaSizeCacheDelegate?.setCachedSize(image.size, for: cacheKey)
-                    
+                    // 缓存已经放在MathHTMLRenderer层处理
+
                     // 创建 ImageView 显示图片
                     let imageView = UIImageView()
                     imageView.image = image
@@ -1291,7 +1290,8 @@ public class UIKitFrameRender {
         MermaidHTMLRenderer.shared.render(
             mermaidCode: node.content,
             textColor: textColorHex,
-            backgroundColor: backgroundColorHex
+            backgroundColor: backgroundColorHex,
+            formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
         ) { [weak previewView] image in
             DispatchQueue.main.async {
                 guard let previewView = previewView else { return }
@@ -1300,10 +1300,8 @@ public class UIKitFrameRender {
                 previewView.viewWithTag(9002)?.removeFromSuperview()
                 
                 if let image = image {
-                    // 保存图片和尺寸到缓存
-                    context.formulaSizeCacheDelegate?.saveFormulaImage(image, for: cacheKey)
-                    context.formulaSizeCacheDelegate?.setCachedSize(image.size, for: cacheKey)
-                    
+                    // 缓存已经放在MathHTMLRenderer层处理
+
                     // 创建 ImageView 显示图片
                     let imageView = UIImageView()
                     imageView.image = image

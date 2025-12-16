@@ -1532,7 +1532,8 @@ public class UIKitAutoLayoutRender {
             html: html,
             display: node.display,
             textColor: colorHex,
-            fontSize: fontSize
+            fontSize: fontSize,
+            formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
         ) { image in
             DispatchQueue.main.async {
                 activityIndicator.stopAnimating()
@@ -1540,16 +1541,11 @@ public class UIKitAutoLayoutRender {
                 
                 if let image = image {
                     imageView.image = image
-                    
-                    // 保存图片到 Kingfisher 缓存
-                    context.formulaSizeCacheDelegate?.saveFormulaImage(image, for: cacheKey)
-                    
+                    // 缓存已经放在MathHTMLRenderer层处理
+          
                     // 获取图片的实际尺寸
                     let imageSize = image.size
-                    
-                    // 保存尺寸到缓存（从图片中获取）
-                    context.formulaSizeCacheDelegate?.setCachedSize(imageSize, for: cacheKey)
-                    
+            
                     // 在 Auto Layout 模式下，图片加载完成后需要触发布局更新
                     // 让 Auto Layout 重新计算高度
                     containerView.setNeedsLayout()
@@ -1648,7 +1644,8 @@ public class UIKitAutoLayoutRender {
         MermaidHTMLRenderer.shared.render(
             mermaidCode: node.content,
             textColor: textColorHex,
-            backgroundColor: backgroundColorHex
+            backgroundColor: backgroundColorHex,
+            formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
         ) { image in
             DispatchQueue.main.async {
                 activityIndicator.stopAnimating()
@@ -1656,16 +1653,11 @@ public class UIKitAutoLayoutRender {
                 
                 if let image = image {
                     imageView.image = image
-                    
-                    // 保存图片到 Kingfisher 缓存
-                    context.formulaSizeCacheDelegate?.saveFormulaImage(image, for: cacheKey)
-                    
+                    // 缓存已经放在MathHTMLRenderer层处理
+
                     // 获取图片的实际尺寸
                     let imageSize = image.size
-                    
-                    // 保存尺寸到缓存（从图片中获取）
-                    context.formulaSizeCacheDelegate?.setCachedSize(imageSize, for: cacheKey)
-                    
+          
                     // 在 Auto Layout 模式下，图片加载完成后需要触发布局更新
                     // 让 Auto Layout 重新计算高度
                     containerView.setNeedsLayout()

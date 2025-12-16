@@ -14,7 +14,10 @@ import WebKit
 public class MathHTMLRenderer {
     public static let shared = MathHTMLRenderer()
     
-    // 图片缓存
+    // 可选的缓存代理（优先使用，避免内存占用）
+    public weak var formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate?
+    
+    // 图片缓存（仅在没有 delegate 时使用，作为后备方案）
     private var imageCache: [String: UIImage] = [:]
     private let cacheQueue = DispatchQueue(label: "math.html.cache", attributes: .concurrent)
     
@@ -52,18 +55,31 @@ public class MathHTMLRenderer {
     ///   - display: 是否为块级显示
     ///   - textColor: 文本颜色（十六进制，如 "#000000"）
     ///   - fontSize: 字体大小（px）
+    ///   - formulaSizeCacheDelegate: 可选的缓存代理（如果提供，将优先使用）
     ///   - completion: 完成回调，返回渲染的图片
     func render(
         html: String,
         display: Bool,
         textColor: String = "#000000",
         fontSize: CGFloat = 16,
+        formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil,
         completion: @escaping (UIImage?) -> Void
     ) {
         // 生成缓存键
         let cacheKey = generateCacheKey(html: html, display: display, textColor: textColor, fontSize: fontSize)
         
-        // 先检查缓存
+        // 优先使用传入的 delegate，否则使用实例的 delegate
+        let cacheDelegate = formulaSizeCacheDelegate ?? self.formulaSizeCacheDelegate
+        
+        // 先检查缓存（优先使用 delegate）
+        if let cachedImage = cacheDelegate?.getFormulaImage(for: cacheKey) {
+            DispatchQueue.main.async {
+                completion(cachedImage)
+            }
+            return
+        }
+        
+        // 如果没有 delegate，检查内部缓存（向后兼容）
         cacheQueue.async { [weak self] in
             if let cachedImage = self?.imageCache[cacheKey] {
                 DispatchQueue.main.async {
@@ -90,8 +106,140 @@ public class MathHTMLRenderer {
                     textColor: textColor,
                     fontSize: fontSize,
                     cacheKey: cacheKey,
+                    cacheDelegate: cacheDelegate,
                     completion: completion
                 )
+            }
+        }
+    }
+    
+    /// 渲染行内数学公式并调整尺寸以适应行高
+    /// 这是一个共享的工具方法，用于统一处理行内数学公式的渲染逻辑
+    /// - Parameters:
+    ///   - mathContent: 数学公式内容（LaTeX 格式）
+    ///   - textColor: 文本颜色
+    ///   - fontSize: 字体大小
+    ///   - lineHeight: 行高（用于调整图片尺寸）
+    ///   - formulaSizeCacheDelegate: 可选的缓存代理（如果提供，将优先使用）
+    ///   - completion: 完成回调，返回调整后的图片和尺寸
+    func renderInlineMath(
+        mathContent: String,
+        textColor: UIColor,
+        fontSize: CGFloat,
+        lineHeight: CGFloat,
+        formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil,
+        completion: @escaping (UIImage?, CGSize) -> Void
+    ) {
+        // 优先使用传入的 delegate，否则使用实例的 delegate
+        let cacheDelegate = formulaSizeCacheDelegate ?? self.formulaSizeCacheDelegate
+        
+        // 转换颜色为十六进制（用于生成缓存键）
+        let components = textColor.cgColor.components ?? [0, 0, 0, 1]
+        let colorHex = String(format: "#%02X%02X%02X",
+                              Int(components[0] * 255),
+                              Int(components[1] * 255),
+                              Int(components[2] * 255))
+        
+        // 生成缓存键（行内公式需要包含 lineHeight，因为不同行高会有不同的缩放尺寸）
+        // 先获取原始 HTML 以生成基础缓存键
+        let result = IMParseCore.mathToHTML(mathContent, display: false)
+        guard result.success, let html = result.astJSON else {
+            DispatchQueue.main.async {
+                completion(nil, .zero)
+            }
+            return
+        }
+        
+        // 生成包含 lineHeight 的缓存键
+        let cacheKey = MathHTMLRenderer.generateInlineMathCacheKey(
+            mathContent: mathContent,
+            textColor: colorHex,
+            fontSize: fontSize,
+            lineHeight: lineHeight
+        )
+        
+        // 先检查缓存（优先使用 delegate）
+        if let cachedImage = cacheDelegate?.getFormulaImage(for: cacheKey) {
+            // 从缓存的图片中获取尺寸
+            let cachedSize = cachedImage.size
+            DispatchQueue.main.async {
+                completion(cachedImage, cachedSize)
+            }
+            return
+        }
+        
+        // 如果没有 delegate，检查内部缓存（向后兼容）
+        // 注意：内部缓存可能不包含 lineHeight 信息，所以这里只作为后备
+        let baseCacheKey = generateCacheKey(html: html, display: false, textColor: colorHex, fontSize: fontSize)
+        cacheQueue.async { [weak self] in
+            if let cachedImage = self?.imageCache[baseCacheKey] {
+                // 内部缓存中的图片是原始尺寸，需要缩放
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let targetHeight = lineHeight
+                    let scale = targetHeight / cachedImage.size.height
+                    let scaledWidth = cachedImage.size.width * scale
+                    let scaledSize = CGSize(width: scaledWidth, height: targetHeight)
+                    
+                    // 缩放图片
+                    let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                    let scaledImage = renderer.image { context in
+                        context.cgContext.interpolationQuality = .high
+                        cachedImage.draw(in: CGRect(origin: .zero, size: scaledSize))
+                    }
+                    
+                    // 保存缩放后的图片到缓存（如果有 delegate）
+                    cacheDelegate?.saveFormulaImage(scaledImage, for: cacheKey)
+                    
+                    DispatchQueue.main.async {
+                        completion(scaledImage, scaledSize)
+                    }
+                }
+                return
+            }
+            
+            // 缓存未命中，进行渲染
+            DispatchQueue.main.async {
+                self?.render(
+                    html: html,
+                    display: false,
+                    textColor: colorHex,
+                    fontSize: fontSize,
+                    formulaSizeCacheDelegate: cacheDelegate
+                ) { image in
+                    guard let image = image else {
+                        DispatchQueue.main.async {
+                            completion(nil, .zero)
+                        }
+                        return
+                    }
+                    
+                    // 在后台线程调整图片尺寸以适应行高（避免主线程卡顿）
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        let targetHeight = lineHeight
+                        let scale = targetHeight / image.size.height
+                        let scaledWidth = image.size.width * scale
+                        let scaledSize = CGSize(width: scaledWidth, height: targetHeight)
+                        
+                        // 缩放图片，UIGraphicsImageRenderer会自动处理屏幕scale
+                        // 使用目标尺寸（点数），renderer会自动生成对应scale的像素图片
+                        // UIGraphicsImageRenderer 是线程安全的，可以在后台线程使用
+                        let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                        let scaledImage = renderer.image { context in
+                            // 设置高质量插值以保持清晰度
+                            context.cgContext.interpolationQuality = .high
+                            // 绘制到目标尺寸
+                            image.draw(in: CGRect(origin: .zero, size: scaledSize))
+                        }
+                        
+                        // 保存缩放后的图片到缓存（如果有 delegate）
+                        cacheDelegate?.saveFormulaImage(scaledImage, for: cacheKey)
+                        
+                        // completion 回调在主线程执行（用于更新 UI）
+                        DispatchQueue.main.async {
+                            completion(scaledImage, scaledSize)
+                        }
+                    }
+                }
             }
         }
     }
@@ -103,6 +251,7 @@ public class MathHTMLRenderer {
         textColor: String,
         fontSize: CGFloat,
         cacheKey: String,
+        cacheDelegate: UIKitFormulaSizeCacheDelegate?,
         completion: @escaping (UIImage?) -> Void
     ) {
         // 确保在主线程
@@ -201,8 +350,13 @@ public class MathHTMLRenderer {
                         webView.frame = CGRect(x: 0, y: 0, width: 400, height: display ? 100 : 50)
                         self.captureWebView(webView, contentRect: nil) { image in
                             if let image = image {
-                                self.cacheQueue.async(flags: .barrier) {
-                                    self.imageCache[cacheKey] = image
+                                // 优先使用 delegate 缓存
+                                cacheDelegate?.saveFormulaImage(image, for: cacheKey)
+                                // 如果没有 delegate，使用内部缓存（向后兼容）
+                                if cacheDelegate == nil {
+                                    self.cacheQueue.async(flags: .barrier) {
+                                        self.imageCache[cacheKey] = image
+                                    }
                                 }
                             }
                             self.returnWebViewToPool(webView)
@@ -242,10 +396,14 @@ public class MathHTMLRenderer {
                             
                             // 使用精确的内容区域直接截图（不调整 WebView 尺寸）
                             self.captureWebView(webView, contentRect: contentRect) { image in
-                                // 缓存图片
+                                // 缓存图片（优先使用 delegate）
                                 if let image = image {
-                                    self.cacheQueue.async(flags: .barrier) {
-                                        self.imageCache[cacheKey] = image
+                                    cacheDelegate?.saveFormulaImage(image, for: cacheKey)
+                                    // 如果没有 delegate，使用内部缓存（向后兼容）
+                                    if cacheDelegate == nil {
+                                        self.cacheQueue.async(flags: .barrier) {
+                                            self.imageCache[cacheKey] = image
+                                        }
                                     }
                                 }
                                 
@@ -260,8 +418,13 @@ public class MathHTMLRenderer {
                         webView.frame = CGRect(x: 0, y: 0, width: 400, height: display ? 100 : 50)
                         self.captureWebView(webView, contentRect: nil) { image in
                             if let image = image {
-                                self.cacheQueue.async(flags: .barrier) {
-                                    self.imageCache[cacheKey] = image
+                                // 优先使用 delegate 缓存
+                                cacheDelegate?.saveFormulaImage(image, for: cacheKey)
+                                // 如果没有 delegate，使用内部缓存（向后兼容）
+                                if cacheDelegate == nil {
+                                    self.cacheQueue.async(flags: .barrier) {
+                                        self.imageCache[cacheKey] = image
+                                    }
                                 }
                             }
                             self.returnWebViewToPool(webView)
@@ -460,75 +623,22 @@ public class MathHTMLRenderer {
         }
     }
     
-    /// 渲染行内数学公式并调整尺寸以适应行高
-    /// 这是一个共享的工具方法，用于统一处理行内数学公式的渲染逻辑
+    /// 生成行内数学公式的缓存键（使用 lineHeight）
+    /// 行内公式的缓存键格式：math:{contentHash}:false:{colorHex}:{fontSize}:{lineHeight}
     /// - Parameters:
     ///   - mathContent: 数学公式内容（LaTeX 格式）
-    ///   - textColor: 文本颜色
+    ///   - textColor: 文本颜色（十六进制，如 "#000000"）
     ///   - fontSize: 字体大小
     ///   - lineHeight: 行高（用于调整图片尺寸）
-    ///   - completion: 完成回调，返回调整后的图片和尺寸
-    static func renderInlineMath(
+    /// - Returns: 缓存键
+    static func generateInlineMathCacheKey(
         mathContent: String,
-        textColor: UIColor,
+        textColor: String,
         fontSize: CGFloat,
-        lineHeight: CGFloat,
-        completion: @escaping (UIImage?, CGSize) -> Void
-    ) {
-        // 在后台线程处理
-        DispatchQueue.global(qos: .userInitiated).async {
-            // 从 rust-core 获取 HTML
-            let result = IMParseCore.mathToHTML(mathContent, display: false)
-            
-            guard result.success, let html = result.astJSON else {
-                DispatchQueue.main.async {
-                    completion(nil, .zero)
-                }
-                return
-            }
-            
-            // 转换颜色为十六进制
-            let components = textColor.cgColor.components ?? [0, 0, 0, 1]
-            let colorHex = String(format: "#%02X%02X%02X",
-                                  Int(components[0] * 255),
-                                  Int(components[1] * 255),
-                                  Int(components[2] * 255))
-            
-            // 使用 MathHTMLRenderer 渲染
-            MathHTMLRenderer.shared.render(
-                html: html,
-                display: false,
-                textColor: colorHex,
-                fontSize: fontSize
-            ) { image in
-                guard let image = image else {
-                    DispatchQueue.main.async {
-                        completion(nil, .zero)
-                    }
-                    return
-                }
-                
-                // 在主线程调整图片尺寸以适应行高
-                DispatchQueue.main.async {
-                    let targetHeight = lineHeight
-                    let scale = targetHeight / image.size.height
-                    let scaledWidth = image.size.width * scale
-                    let scaledSize = CGSize(width: scaledWidth, height: targetHeight)
-                    
-                    // 缩放图片，UIGraphicsImageRenderer会自动处理屏幕scale
-                    // 使用目标尺寸（点数），renderer会自动生成对应scale的像素图片
-                    let renderer = UIGraphicsImageRenderer(size: scaledSize)
-                    let scaledImage = renderer.image { context in
-                        // 设置高质量插值以保持清晰度
-                        context.cgContext.interpolationQuality = .high
-                        // 绘制到目标尺寸
-                        image.draw(in: CGRect(origin: .zero, size: scaledSize))
-                    }
-                    
-                    completion(scaledImage, scaledSize)
-                }
-            }
-        }
+        lineHeight: CGFloat
+    ) -> String {
+        let contentHash = mathContent.hashValue
+        return "math:\(contentHash):false:\(textColor):\(Int(fontSize)):\(Int(lineHeight))"
     }
     
     /// 清除缓存

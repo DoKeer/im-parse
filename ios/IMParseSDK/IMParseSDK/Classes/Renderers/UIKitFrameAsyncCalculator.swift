@@ -531,7 +531,8 @@ public class UIKitFrameAsyncCalculator {
                 html: html,
                 display: node.display,
                 textColor: colorHex,
-                fontSize: fontSize
+                fontSize: fontSize,
+                formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
             ) { _ in
                 // 空回调，只用于触发渲染和缓存，不执行任何操作
                 // 图片会自动缓存到 MathHTMLRenderer 的 imageCache 中
@@ -603,7 +604,8 @@ public class UIKitFrameAsyncCalculator {
             MermaidHTMLRenderer.shared.render(
                 mermaidCode: node.content,
                 textColor: textColorHex,
-                backgroundColor: backgroundColorHex
+                backgroundColor: backgroundColorHex,
+                formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
             ) { _ in
                 // 空回调，只用于触发渲染和缓存，不执行任何操作
                 // 图片会自动缓存到 MermaidHTMLRenderer 的 imageCache 中
