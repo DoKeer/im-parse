@@ -25,7 +25,6 @@ class UIKitFrameMessageListViewController: UIViewController {
         
         setupTableView()
         setupCache()
-        loadMessages()
     }
     
     private func setupCache() {
@@ -58,16 +57,9 @@ class UIKitFrameMessageListViewController: UIViewController {
     }
     
     private func loadMessages() {
-        // 在主线程获取屏幕宽度，避免 iOS 26.0 的弃用警告
-        let screenWidth: CGFloat
-        if #available(iOS 13.0, *), let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-            screenWidth = windowScene.screen.bounds.width
-        } else {
-            screenWidth = UIScreen.main.bounds.width
-        }
         // Cell layout: 16 (left) + 16 (right) for container, inside: 16 (left) + 16 (right) for content
         // Total horizontal padding = 32 + 32 = 64
-        let contentWidth = screenWidth - 64
+        let contentWidth = self.contentWidth
         
         // 在后台线程生成消息
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -85,6 +77,15 @@ class UIKitFrameMessageListViewController: UIViewController {
                 self?.messages = parsedMessages
                 self?.tableView.reloadData()
             }
+        }
+    }
+    
+    private var contentWidth:CGFloat = 0
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if abs(contentWidth - self.view.frame.width) > 64 {
+            contentWidth = self.view.frame.width - 64
+            loadMessages()
         }
     }
 }
