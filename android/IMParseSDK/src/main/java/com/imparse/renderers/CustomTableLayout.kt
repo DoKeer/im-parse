@@ -104,12 +104,9 @@ class CustomTableLayout(
     
     /**
      * 创建单元格视图
+     * 直接返回 TextView，移除 FrameLayout 包装，确保 TextView 能正确 reflow
      */
-    private fun createCellView(cell: TableCellNode): View {
-        // 使用FrameLayout作为容器
-        val cellContainer = android.widget.FrameLayout(context)
-        cellContainer.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-        
+    private fun createCellView(cell: TableCellNode): TextView {
         val textView = TextView(context)
         
         // 设置内边距
@@ -149,18 +146,20 @@ class CustomTableLayout(
         textView.setTextColor(renderContext.theme.textColor)
         textView.movementMethod = android.text.method.LinkMovementMethod.getInstance()
         
+        // 设置 LayoutParams：宽度由父容器控制（weight=0），高度自适应
+        // 这样 LinearLayout 会正确管理宽度，TextView 能正确 reflow
+        val layoutParams = LinearLayout.LayoutParams(
+            0, // 宽度由父容器在 onMeasure 中指定
+            ViewGroup.LayoutParams.WRAP_CONTENT // 高度自适应
+        )
+        textView.layoutParams = layoutParams
+        
         // 异步渲染行内数学公式
         if (mathNodes.isNotEmpty()) {
             renderInlineMathNodes(textView, spannable, mathNodes, renderContext)
         }
         
-        // TextView 填充整个容器
-        val textParams = android.widget.FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        )
-        cellContainer.addView(textView, textParams)
-        return cellContainer
+        return textView
     }
     
     /**
@@ -345,25 +344,29 @@ class CustomTableLayout(
             val rowContainer = rowView as LinearLayout
             var maxRowHeight = 0
             
-            // 第一次测量：计算每行的最大高度
+            // 测量每个单元格：使用 EXACT width 和 UNSPECIFIED height
+            // TextView 会根据宽度自动 reflow，计算正确的高度
             for ((cellIndex, cellView) in rowContainer.getChildren().withIndex()) {
                 if (cellIndex < columnWidths.size) {
                     val cellWidth = columnWidths[cellIndex]
                     val cellWidthSpec = MeasureSpec.makeMeasureSpec(cellWidth, MeasureSpec.EXACTLY)
                     val cellHeightSpec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
                     
+                    // 直接测量 TextView，它会根据宽度正确 reflow
                     cellView.measure(cellWidthSpec, cellHeightSpec)
                     maxRowHeight = maxOf(maxRowHeight, cellView.measuredHeight)
                 }
             }
             
-            // 第二次测量：统一行高，确保所有单元格高度一致
+            // 统一行高：所有单元格使用相同的行高（取最大值）
+            // 这样确保同一行的所有单元格高度一致
             for ((cellIndex, cellView) in rowContainer.getChildren().withIndex()) {
                 if (cellIndex < columnWidths.size) {
                     val cellWidth = columnWidths[cellIndex]
                     val cellWidthSpec = MeasureSpec.makeMeasureSpec(cellWidth, MeasureSpec.EXACTLY)
                     val cellHeightSpec = MeasureSpec.makeMeasureSpec(maxRowHeight, MeasureSpec.EXACTLY)
                     
+                    // 第二次测量：使用 EXACT height，确保所有单元格高度一致
                     cellView.measure(cellWidthSpec, cellHeightSpec)
                 }
             }
@@ -394,15 +397,22 @@ class CustomTableLayout(
         
         for ((rowIndex, rowView) in rowViews.withIndex()) {
             val rowContainer = rowView as LinearLayout
-            var currentX = 0
             
-            // 布局该行的所有单元格
+            // 先布局行容器（LinearLayout 会自动布局它的子 View）
+            rowContainer.layout(0, currentY, measuredWidth, currentY + rowContainer.measuredHeight)
+            
+            // 由于我们手动控制了列宽，需要重新布局单元格以匹配 columnWidths
+            // 同时布局垂直分隔线
+            var currentX = 0
             var dividerIndex = rowIndex * maxOf(0, columnWidths.size - 1)
+            
             for ((cellIndex, cellView) in rowContainer.getChildren().withIndex()) {
                 if (cellIndex < columnWidths.size) {
                     val cellWidth = columnWidths[cellIndex]
                     val cellHeight = rowContainer.measuredHeight
                     
+                    // 重新布局单元格以匹配计算的列宽
+                    // 注意：坐标是相对于 rowContainer 的
                     cellView.layout(
                         currentX,
                         0,
@@ -417,6 +427,7 @@ class CustomTableLayout(
                             MeasureSpec.makeMeasureSpec(borderWidth, MeasureSpec.EXACTLY),
                             MeasureSpec.makeMeasureSpec(cellHeight, MeasureSpec.EXACTLY)
                         )
+                        // 垂直分隔线的坐标是相对于 CustomTableLayout 的
                         divider.layout(
                             currentX + cellWidth,
                             currentY,
@@ -430,8 +441,6 @@ class CustomTableLayout(
                 }
             }
             
-            // 布局行容器
-            rowContainer.layout(0, currentY, measuredWidth, currentY + rowContainer.measuredHeight)
             currentY += rowContainer.measuredHeight
             
             // 布局水平分隔线（除了最后一行）
