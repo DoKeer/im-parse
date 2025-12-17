@@ -2,16 +2,17 @@ package com.imparse.renderers
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas
+import android.graphics.BitmapFactory
 import android.os.Handler
 import android.os.Looper
+import android.util.Base64
 import android.util.Log
 import android.view.View
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.imparse.core.IMParseCore
 import java.util.concurrent.ConcurrentHashMap
-import androidx.core.graphics.createBitmap
 
 /**
  * Mermaid 图表 HTML 渲染器
@@ -45,6 +46,18 @@ class AndroidMermaidHTMLRenderer private constructor() {
         }
         
         /**
+         * 从 assets 读取 html2canvas JS 内容（如果存在）
+         */
+        private fun loadHtml2CanvasJS(context: Context): String {
+            return try {
+                context.assets.open("html2canvas.min.js").bufferedReader().use { it.readText() }
+            } catch (e: Exception) {
+                Log.d(TAG, "html2canvas.min.js not found in assets, will use CDN")
+                "" // 返回空字符串，将使用 CDN
+            }
+        }
+        
+        /**
          * 生成 Mermaid 图表缓存键
          * @param mermaidCode Mermaid 代码
          * @param textColor 文本颜色（十六进制，如 "#000000"）
@@ -62,6 +75,17 @@ class AndroidMermaidHTMLRenderer private constructor() {
     
     // WebView 池（复用 WebView 以减少资源占用）
     private val webViewPool = AndroidWebViewPool.getInstance()
+    
+    // 渲染任务信息
+    private data class RenderTask(
+        val webView: WebView,
+        val container: android.view.ViewGroup,
+        val cacheKey: String,
+        val completion: (Bitmap?) -> Unit
+    )
+    
+    // 用于存储当前渲染任务的信息（key: WebView hashCode, value: RenderTask）
+    private val pendingTasks = ConcurrentHashMap<Int, RenderTask>()
     
     /**
      * 渲染 Mermaid 图表为图片
@@ -116,7 +140,19 @@ class AndroidMermaidHTMLRenderer private constructor() {
         // 从池中获取或创建 WebView
         val webView = webViewPool.getOrCreateWebView(context)
         
-        // 构建完整的 HTML（包含 mermaid.js）
+        // 存储任务信息（使用 WebView 的 hashCode 作为 key）
+        val webViewKey = webView.hashCode()
+        
+        // 先创建容器（稍后会被添加到视图层次结构）
+        val container = android.widget.FrameLayout(context)
+        
+        // 存储任务信息
+        pendingTasks[webViewKey] = RenderTask(webView, container, cacheKey, completion)
+        
+        // 添加 JavaScript Bridge
+        webView.addJavascriptInterface(CaptureBridge(webViewKey), "AndroidBridge")
+        
+        // 构建完整的 HTML（包含 mermaid.js 和 html2canvas）
         val fullHTML = buildFullHTML(context, mermaidCode, textColor, backgroundColor)
         
         // 获取屏幕尺寸
@@ -130,8 +166,7 @@ class AndroidMermaidHTMLRenderer private constructor() {
         val height = 2000
         
         // WebView 必须被添加到视图层次结构中才能渲染
-        // 创建一个隐藏的容器来放置 WebView
-        val container = android.widget.FrameLayout(context)
+        // 使用已创建的容器
         container.layoutParams = android.widget.FrameLayout.LayoutParams(
             width,
             height
@@ -243,104 +278,20 @@ class AndroidMermaidHTMLRenderer private constructor() {
                 if (isProcessing) return
                 isProcessing = true
                 
-                // 等待 mermaid.js 加载和渲染完成
+                // 等待 mermaid.js 和 html2canvas 加载和渲染完成
                 waitForMermaidReady(webView, maxAttempts = 20) { ready ->
                     if (!ready) {
                         Log.w(TAG, "Mermaid.js failed to load (timeout)")
-                        // 清理容器
-                        try {
-                            val parent = container.parent as? android.view.ViewGroup
-                            parent?.removeView(container)
-                        } catch (ex: Exception) {
-                            Log.e(TAG, "Error removing container", ex)
+                        // 清理容器和任务
+                        val task = pendingTasks.remove(webViewKey)
+                        if (task != null) {
+                            cleanupAndComplete(task.webView, task.container, null, task.completion)
                         }
-                        webViewPool.returnWebView(webView)
-                        completion(null)
                         return@waitForMermaidReady
                     }
                     
-                    // Mermaid 已就绪，获取图表的精确边界
-                    webView.evaluateJavascript("""
-                        (function() {
-                            const mermaidElement = document.querySelector('.mermaid');
-                            if (mermaidElement) {
-                                const rect = mermaidElement.getBoundingClientRect();
-                                return {
-                                    width: Math.ceil(rect.width),
-                                    height: Math.ceil(rect.height)
-                                };
-                            }
-                            const body = document.body;
-                            const rect = body.getBoundingClientRect();
-                            return {
-                                width: Math.max(Math.ceil(rect.width), 400),
-                                height: Math.max(Math.ceil(rect.height), 300)
-                            };
-                        })();
-                    """.trimIndent()) { result ->
-                        try {
-                            val sizeDict = parseJavaScriptResult(result)
-                            val width = sizeDict["width"]?.toFloatOrNull() ?: 800f
-                            val height = sizeDict["height"]?.toFloatOrNull() ?: 400f
-                            
-                            // 获取内容在 WebView 中的精确位置和尺寸
-                            webView.evaluateJavascript("""
-                                (function() {
-                                    const mermaidElement = document.querySelector('.mermaid');
-                                    if (mermaidElement) {
-                                        const rect = mermaidElement.getBoundingClientRect();
-                                        return {
-                                            x: Math.max(0, Math.floor(rect.left)),
-                                            y: Math.max(0, Math.floor(rect.top)),
-                                            width: Math.ceil(rect.width),
-                                            height: Math.ceil(rect.height)
-                                        };
-                                    }
-                                    return { x: 0, y: 0, width: ${width}, height: ${height} };
-                                })();
-                            """.trimIndent()) { positionResult ->
-                                try {
-                                    val positionDict = parseJavaScriptResult(positionResult)
-                                    val x = positionDict["x"]?.toFloatOrNull() ?: 0f
-                                    val y = positionDict["y"]?.toFloatOrNull() ?: 0f
-                                    val w = positionDict["width"]?.toFloatOrNull() ?: width
-                                    val h = positionDict["height"]?.toFloatOrNull() ?: height
-                                    
-                                    // 使用精确的内容区域截图
-                                    captureWebView(webView, container, x.toInt(), y.toInt(), w.toInt(), h.toInt()) { image ->
-                                        // 缓存图片
-                                        if (image != null) {
-                                            imageCache[cacheKey] = image
-                                        }
-                                        
-                                        // 将 WebView 返回池中
-                                        webViewPool.returnWebView(webView)
-                                        
-                                        completion(image)
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Error parsing position result", e)
-                                    captureWebView(webView, container, 0, 0, width.toInt(), height.toInt()) { image ->
-                                        if (image != null) {
-                                            imageCache[cacheKey] = image
-                                        }
-                                        webViewPool.returnWebView(webView)
-                                        completion(image)
-                                    }
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error parsing size result", e)
-                            // 使用默认尺寸
-                            captureWebView(webView, container, 0, 0, 800, 400) { image ->
-                                if (image != null) {
-                                    imageCache[cacheKey] = image
-                                }
-                                webViewPool.returnWebView(webView)
-                                completion(image)
-                            }
-                        }
-                    }
+                    // Mermaid 已就绪，使用 html2canvas 进行精确截图
+                    captureWithHtml2Canvas(webViewKey)
                 }
             }
         }
@@ -350,7 +301,7 @@ class AndroidMermaidHTMLRenderer private constructor() {
     }
     
     /**
-     * 构建完整的 HTML（包含内联的 mermaid.js）
+     * 构建完整的 HTML（包含内联的 mermaid.js 和 html2canvas）
      */
     private fun buildFullHTML(context: Context, mermaidCode: String, textColor: String, backgroundColor: String): String {
         // 转义 HTML 特殊字符
@@ -363,6 +314,40 @@ class AndroidMermaidHTMLRenderer private constructor() {
         
         // 从 assets 加载 Mermaid JS 并内联
         val mermaidJS = loadMermaidJS(context)
+        val html2CanvasJS = loadHtml2CanvasJS(context)
+        
+        // 检测是否为 Gantt 图表
+        val isGantt = mermaidCode.trim().lowercase().startsWith("gantt")
+        
+        // Gantt 图表的特殊 CSS 样式
+        val ganttCSS = if (isGantt) {
+            """
+                .mermaid {
+                    width: 100%;
+                    overflow-x: auto;
+                    overflow-y: visible;
+                }
+                .mermaid svg {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    min-width: 1400px !important;
+                }
+            """.trimIndent()
+        } else {
+            """
+                .mermaid {
+                    display: inline-block;
+                    max-width: 100%;
+                    text-align: center;
+                }
+                .mermaid svg {
+                    display: block;
+                    margin: 0 auto;
+                    max-width: 100%;
+                    height: auto;
+                }
+            """.trimIndent()
+        }
         
         return """
             <!DOCTYPE html>
@@ -371,6 +356,7 @@ class AndroidMermaidHTMLRenderer private constructor() {
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 ${if (mermaidJS.isNotEmpty()) "<script>$mermaidJS</script>" else "<script src=\"file:///android_asset/mermaid.min.js\"></script>"}
+                ${if (html2CanvasJS.isNotEmpty()) "<script>$html2CanvasJS</script>" else "<script src=\"https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js\"></script>"}
                 <style>
                     * {
                         margin: 0;
@@ -386,14 +372,17 @@ class AndroidMermaidHTMLRenderer private constructor() {
                         align-items: center;
                         justify-content: center;
                         min-height: 100vh;
+                        width: 100%;
+                        overflow-x: auto;
                     }
                     .mermaid {
                         color: $textColor;
                     }
+                    $ganttCSS
                 </style>
             </head>
             <body>
-            <div class="mermaid">
+            <div id="mermaid-container" class="mermaid">
                 $escapedCode
             </div>
             <script>
@@ -432,63 +421,164 @@ class AndroidMermaidHTMLRenderer private constructor() {
     }
     
     /**
-     * 截图 WebView - 简化版本，直接返回整个 WebView 的截图
+     * 使用 html2canvas 进行精确截图（生产级方案）
+     * @param webViewKey WebView 的 hashCode（用于查找任务）
      */
-    private fun captureWebView(
-        webView: WebView,
-        container: android.view.ViewGroup,
-        x: Int,
-        y: Int,
-        width: Int,
-        height: Int,
-        completion: (Bitmap?) -> Unit
-    ) {
-        // 简单延迟后截图
+    private fun captureWithHtml2Canvas(webViewKey: Int) {
+        val task = pendingTasks[webViewKey] ?: run {
+            Log.e(TAG, "Task not found for webViewKey: $webViewKey")
+            return
+        }
+        
+        // 等待一小段时间确保渲染完成
         Handler(Looper.getMainLooper()).postDelayed({
-            try {
-                val webViewWidth = webView.width
-                val webViewHeight = webView.height
-                
-                if (webViewWidth <= 0 || webViewHeight <= 0) {
-                    Log.w(TAG, "WebView has invalid size: ${webViewWidth}x${webViewHeight}")
-                    completion(null)
-                    return@postDelayed
-                }
-                
-                // 强制布局和绘制（保持 INVISIBLE 状态）
-                container.requestLayout()
-                container.invalidate()
-                webView.requestLayout()
-                webView.invalidate()
-                
-                // 等待布局完成
-                webView.post {
-                    // 直接截取整个 WebView（INVISIBLE 状态也可以绘制）
-                    val fullBitmap = createBitmap(webViewWidth, webViewHeight)
-                    val fullCanvas = Canvas(fullBitmap)
-                    webView.draw(fullCanvas)
-                    
-                    Log.d(TAG, "Captured full WebView, size: ${fullBitmap.width}x${fullBitmap.height}")
-                    
-                    // 清理：从父视图中移除容器
-                    try {
-                        val parent = container.parent as? android.view.ViewGroup
-                        parent?.removeView(container)
-                    } catch (ex: Exception) {
-                        Log.e(TAG, "Error removing container", ex)
+            // 执行 JavaScript 进行截图
+            task.webView.evaluateJavascript("""
+                (function() {
+                    // 检查 AndroidBridge 是否可用
+                    if (typeof AndroidBridge === 'undefined') {
+                        console.error('AndroidBridge is not available');
+                        return JSON.stringify({ error: 'AndroidBridge not available' });
                     }
                     
-                    // 将 WebView 返回池中
-                    webViewPool.returnWebView(webView)
+                    // 检查 html2canvas 是否已加载
+                    if (typeof html2canvas === 'undefined') {
+                        console.warn('html2canvas not loaded yet, retrying...');
+                        setTimeout(function() {
+                            window.captureMermaid();
+                        }, 500);
+                        return JSON.stringify({ error: 'html2canvas not loaded' });
+                    }
                     
-                    // 返回截图
-                    completion(fullBitmap)
+                    const mermaidElement = document.querySelector('#mermaid-container');
+                    if (!mermaidElement) {
+                        AndroidBridge.onCaptureError('Element not found: #mermaid-container');
+                        return JSON.stringify({ error: 'Element not found' });
+                    }
+                    
+                    const rect = mermaidElement.getBoundingClientRect();
+                    if (rect.width === 0 || rect.height === 0) {
+                        AndroidBridge.onCaptureError('Element has zero size');
+                        return JSON.stringify({ error: 'Zero size' });
+                    }
+                    
+                    // 使用 html2canvas 截图
+                    html2canvas(mermaidElement, {
+                        backgroundColor: null,
+                        scale: window.devicePixelRatio || 2,
+                        useCORS: true,
+                        logging: false,
+                        width: rect.width,
+                        height: rect.height,
+                        windowWidth: rect.width,
+                        windowHeight: rect.height
+                    }).then(function(canvas) {
+                        const dataUrl = canvas.toDataURL("image/png");
+                        console.log('Capture success, dataUrl length:', dataUrl.length);
+                        if (dataUrl && dataUrl.length > 100) {
+                            AndroidBridge.onCaptureSuccess(dataUrl);
+                        } else {
+                            AndroidBridge.onCaptureError('Invalid dataUrl');
+                        }
+                    }).catch(function(error) {
+                        console.error('html2canvas error:', error);
+                        AndroidBridge.onCaptureError('html2canvas error: ' + (error.message || String(error)));
+                    });
+                    
+                    return JSON.stringify({ status: 'capturing' });
+                })();
+            """.trimIndent(), null)
+        }, 300) // 延迟 300ms 确保渲染完成
+    }
+    
+    /**
+     * JavaScript Bridge 用于接收截图结果
+     */
+    inner class CaptureBridge(private val webViewKey: Int) {
+        @JavascriptInterface
+        fun onCaptureSuccess(dataUrl: String) {
+            Log.d(TAG, "onCaptureSuccess called: dataUrl length=${dataUrl.length}")
+            Handler(Looper.getMainLooper()).post {
+                try {
+                    val task = pendingTasks.remove(webViewKey)
+                    if (task == null) {
+                        Log.w(TAG, "No task found for webViewKey: $webViewKey")
+                        return@post
+                    }
+                    
+                    if (dataUrl.isEmpty() || !dataUrl.startsWith("data:image")) {
+                        Log.e(TAG, "Invalid dataUrl format")
+                        cleanupAndComplete(task.webView, task.container, null, task.completion)
+                        return@post
+                    }
+                    
+                    val base64 = dataUrl.substringAfter("base64,")
+                    if (base64.isEmpty()) {
+                        Log.e(TAG, "Empty base64 data")
+                        cleanupAndComplete(task.webView, task.container, null, task.completion)
+                        return@post
+                    }
+                    
+                    val bytes = Base64.decode(base64, Base64.DEFAULT)
+                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    
+                    if (bitmap == null) {
+                        Log.e(TAG, "Failed to decode bitmap")
+                        cleanupAndComplete(task.webView, task.container, null, task.completion)
+                        return@post
+                    }
+                    
+                    Log.d(TAG, "Bitmap decoded successfully: ${bitmap.width}x${bitmap.height}")
+                    
+                    // 缓存图片
+                    imageCache[task.cacheKey] = bitmap
+                    
+                    // 清理并返回结果
+                    cleanupAndComplete(task.webView, task.container, bitmap, task.completion)
+                } catch (e: Exception) {
+                    Log.e(TAG, "onCaptureSuccess error", e)
+                    val task = pendingTasks.remove(webViewKey)
+                    task?.let {
+                        cleanupAndComplete(it.webView, it.container, null, it.completion)
+                    }
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Snapshot error", e)
-                completion(null)
             }
-        }, 500) // 延迟 500ms 确保渲染完成
+        }
+        
+        @JavascriptInterface
+        fun onCaptureError(msg: String) {
+            Log.e(TAG, "onCaptureError: $msg")
+            Handler(Looper.getMainLooper()).post {
+                val task = pendingTasks.remove(webViewKey)
+                task?.let {
+                    cleanupAndComplete(it.webView, it.container, null, it.completion)
+                }
+            }
+        }
+    }
+    
+    /**
+     * 清理资源并返回结果
+     */
+    private fun cleanupAndComplete(
+        webView: WebView,
+        container: android.view.ViewGroup,
+        bitmap: Bitmap?,
+        completion: (Bitmap?) -> Unit
+    ) {
+        // 清理：从父视图中移除容器
+        try {
+            val parent = container.parent as? android.view.ViewGroup
+            parent?.removeView(container)
+        } catch (ex: Exception) {
+            Log.e(TAG, "Error removing container", ex)
+        }
+        
+        // 将 WebView 返回池中
+        webViewPool.returnWebView(webView)
+        
+        // 返回结果
+        completion(bitmap)
     }
     
     /**

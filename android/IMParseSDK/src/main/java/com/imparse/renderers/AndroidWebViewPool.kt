@@ -65,14 +65,12 @@ class AndroidWebViewPool private constructor() {
         val webView = WebView(context)
         
         // 配置 WebView
-        val settings = webView.settings
-        settings.javaScriptEnabled = true
-        settings.domStorageEnabled = true
-        settings.loadWithOverviewMode = true
-        settings.useWideViewPort = true
-        settings.builtInZoomControls = false
-        settings.displayZoomControls = false
-        
+        webView.settings.javaScriptEnabled = true
+        webView.settings.domStorageEnabled = true
+        webView.settings.loadWithOverviewMode = true
+        webView.settings.useWideViewPort = true
+        webView.settings.builtInZoomControls = false
+        webView.settings.displayZoomControls = false
         // 设置背景透明
         webView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
         

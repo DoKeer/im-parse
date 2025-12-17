@@ -13,7 +13,7 @@ import androidx.core.content.ContextCompat
  * Android 工具栏组件
  * 用于数学公式、Mermaid、表格的工具栏按钮
  */
-class AndroidToolbar(context: Context) : LinearLayout(context) {
+class AndroidToolbar(context: Context) : FrameLayout(context) {
     
     private var copyButton: ImageButton? = null
     private var downloadButton: ImageButton? = null
@@ -23,79 +23,120 @@ class AndroidToolbar(context: Context) : LinearLayout(context) {
     var onDownload: (() -> Unit)? = null
     var onFullscreen: (() -> Unit)? = null
     
+    private val buttonSize: Int
+    private val buttonSpacing: Int
+    private val containerPadding: Int
+    
     init {
-        orientation = HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(
-            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, resources.displayMetrics).toInt(),
-            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, resources.displayMetrics).toInt(),
-            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, resources.displayMetrics).toInt(),
-            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, resources.displayMetrics).toInt()
-        )
+        // 透明背景，不需要圆角
+        setBackgroundColor(Color.TRANSPARENT)
         
-        // 设置背景
-        background = android.graphics.drawable.GradientDrawable().apply {
-            setColor(Color.WHITE)
-            cornerRadius = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 6f, resources.displayMetrics)
-            setStroke(
-                TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 1f, resources.displayMetrics).toInt(),
-                Color.parseColor("#E0E0E0")
-            )
-        }
+        buttonSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 32f, resources.displayMetrics).toInt()
+        buttonSpacing = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 4f, resources.displayMetrics).toInt()
+        containerPadding = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, resources.displayMetrics).toInt()
         
-        // 创建按钮
-        // 使用系统图标，如果没有则使用文本
-        copyButton = createButton(android.R.drawable.ic_menu_share, "复制")
-        downloadButton = createButton(android.R.drawable.ic_menu_save, "下载")
-        fullscreenButton = createButton(android.R.drawable.ic_menu_view, "全屏")
+        // 创建按钮 - 使用Material Design图标或Unicode符号
+        copyButton = createButton("📋", "复制")
+        downloadButton = createButton("⬇", "下载")
+        fullscreenButton = createButton("⛶", "全屏")
         
         addView(copyButton)
         addView(downloadButton)
         addView(fullscreenButton)
     }
     
-    private fun createButton(iconRes: Int, contentDescription: String): ImageButton {
-        val button = ImageButton(context)
-        try {
-            button.setImageResource(iconRes)
-        } catch (e: Exception) {
-            // 如果图标不存在，使用文本
-            button.setImageDrawable(null)
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        
+        val width = right - left
+        val height = bottom - top
+        val centerY = height / 2
+        
+        // 收集所有按钮（从右往左排列）
+        val buttons = mutableListOf<ImageButton>()
+        fullscreenButton?.let { buttons.add(it) }
+        downloadButton?.let { buttons.add(it) }
+        copyButton?.let { buttons.add(it) }
+        
+        // 从右往左布局按钮
+        var currentX = width - containerPadding
+        for (button in buttons) {
+            currentX -= buttonSize
+            button.layout(
+                currentX,
+                centerY - buttonSize / 2,
+                currentX + buttonSize,
+                centerY + buttonSize / 2
+            )
+            currentX -= buttonSpacing
         }
+    }
+    
+    private fun createButton(iconText: String, contentDescription: String): ImageButton {
+        val button = ImageButton(context)
+        // 使用TextView作为图标容器，显示Unicode符号
+        val textView = TextView(context)
+        textView.text = iconText
+        textView.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 18f, resources.displayMetrics)
+        textView.gravity = Gravity.CENTER
+        textView.setTextColor(Color.parseColor("#666666"))
+        
+        // 创建Drawable
+        val drawable = android.graphics.drawable.BitmapDrawable(
+            resources,
+            createBitmapFromTextView(textView, buttonSize, buttonSize)
+        )
+        button.setImageDrawable(drawable)
+        
         button.contentDescription = contentDescription
         button.scaleType = ImageView.ScaleType.CENTER_INSIDE
-        button.background = android.graphics.drawable.GradientDrawable().apply {
-            setColor(Color.TRANSPARENT)
-            cornerRadius = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 4f, resources.displayMetrics)
-        }
+        // 透明背景，不需要圆角
+        button.setBackgroundColor(Color.TRANSPARENT)
         
-        val buttonSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 32f, resources.displayMetrics).toInt()
-        val buttonMargin = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 4f, resources.displayMetrics).toInt()
-        
-        val params = LayoutParams(buttonSize, buttonSize)
-        params.setMargins(buttonMargin, 0, buttonMargin, 0)
+        val params = FrameLayout.LayoutParams(buttonSize, buttonSize)
         button.layoutParams = params
         
-        when (iconRes) {
-            android.R.drawable.ic_menu_share -> {
+        when (iconText) {
+            "📋" -> {
                 button.setOnClickListener { onCopy?.invoke() }
             }
-            android.R.drawable.ic_menu_save -> {
+            "⬇" -> {
                 button.setOnClickListener { onDownload?.invoke() }
             }
-            android.R.drawable.ic_menu_view -> {
+            "⛶" -> {
                 button.setOnClickListener { onFullscreen?.invoke() }
             }
         }
         
         return button
     }
+    
+    private fun createBitmapFromTextView(textView: TextView, width: Int, height: Int): android.graphics.Bitmap {
+        textView.measure(
+            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
+        )
+        textView.layout(0, 0, width, height)
+        
+        val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        textView.draw(canvas)
+        return bitmap
+    }
 }
 
 /**
  * Mermaid 预览/代码切换器
  */
-class MermaidViewModeSwitcher(context: Context) : LinearLayout(context) {
+class MermaidViewModeSwitcher(
+    context: Context,
+    previewText: String = "预览",
+    codeText: String = "代码",
+    buttonWidth: Int? = null,
+    buttonSpacing: Int? = null,
+    padding: Int? = null,
+    switcherHeight: Int? = null
+) : FrameLayout(context) {
     
     private var previewButton: Button? = null
     private var codeButton: Button? = null
@@ -110,81 +151,124 @@ class MermaidViewModeSwitcher(context: Context) : LinearLayout(context) {
             onModeChanged?.invoke(value)
         }
     
+    private val buttonWidthDp = buttonWidth ?: TypedValue.applyDimension(
+        TypedValue.COMPLEX_UNIT_DIP, 60f, resources.displayMetrics
+    ).toInt()
+    
+    private val buttonSpacingDp = buttonSpacing ?: TypedValue.applyDimension(
+        TypedValue.COMPLEX_UNIT_DIP, 4f, resources.displayMetrics
+    ).toInt()
+    
+    private val paddingDp = padding ?: TypedValue.applyDimension(
+        TypedValue.COMPLEX_UNIT_DIP, 8f, resources.displayMetrics
+    ).toInt()
+    
+    private val switcherHeightDp = switcherHeight ?: TypedValue.applyDimension(
+        TypedValue.COMPLEX_UNIT_DIP, 32f, resources.displayMetrics
+    ).toInt()
+    
     init {
-        orientation = HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
+        // 透明背景，不需要圆角
+        setBackgroundColor(Color.TRANSPARENT)
         
-        val padding = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 4f, resources.displayMetrics).toInt()
-        setPadding(padding, padding, padding, padding)
-        
-        // 设置背景
-        background = android.graphics.drawable.GradientDrawable().apply {
-            setColor(Color.parseColor("#F5F5F5"))
-            cornerRadius = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 6f, resources.displayMetrics)
-        }
+        // 计算字体大小（根据切换器高度）
+        val fontSize = (switcherHeightDp * 0.5).toInt()
         
         // 预览按钮
         previewButton = Button(context)
-        previewButton?.text = "预览"
-        previewButton?.textSize = 14f
+        previewButton?.text = previewText
+        previewButton?.textSize = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP, fontSize.toFloat(), resources.displayMetrics
+        )
         previewButton?.setTypeface(null, android.graphics.Typeface.BOLD)
         previewButton?.setBackgroundColor(Color.TRANSPARENT)
-        previewButton?.setTextColor(Color.BLACK)
-        
-        val buttonParams = LayoutParams(
-            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 60f, resources.displayMetrics).toInt(),
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-        previewButton?.layoutParams = buttonParams
+        previewButton?.setTextColor(Color.parseColor("#666666"))
         previewButton?.setOnClickListener { isPreviewMode = true }
+        previewButton?.setPadding(0, 0, 0, 0)
+        previewButton?.setAllCaps(false)
+        addView(previewButton)
         
         // 代码按钮
         codeButton = Button(context)
-        codeButton?.text = "代码"
-        codeButton?.textSize = 14f
+        codeButton?.text = codeText
+        codeButton?.textSize = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP, fontSize.toFloat(), resources.displayMetrics
+        )
         codeButton?.setTypeface(null, android.graphics.Typeface.BOLD)
         codeButton?.setBackgroundColor(Color.TRANSPARENT)
-        codeButton?.setTextColor(Color.BLACK)
-        
-        codeButton?.layoutParams = buttonParams
+        codeButton?.setTextColor(Color.parseColor("#666666"))
         codeButton?.setOnClickListener { isPreviewMode = false }
+        codeButton?.setPadding(0, 0, 0, 0)
+        codeButton?.setAllCaps(false)
+        addView(codeButton)
         
         // 指示器
         indicatorView = View(context)
         indicatorView?.setBackgroundColor(Color.parseColor("#2196F3"))
-        
-        val indicatorParams = LayoutParams(
-            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 60f, resources.displayMetrics).toInt(),
-            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 2f, resources.displayMetrics).toInt()
-        )
-        indicatorView?.layoutParams = indicatorParams
-        
-        addView(previewButton)
-        addView(codeButton)
         addView(indicatorView)
         
         updateMode()
     }
     
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        
+        val height = bottom - top
+        val buttonHeight = height - paddingDp * 2
+        
+        // 布局预览按钮
+        previewButton?.layout(
+            paddingDp,
+            paddingDp,
+            paddingDp + buttonWidthDp,
+            paddingDp + buttonHeight
+        )
+        
+        // 布局代码按钮
+        codeButton?.layout(
+            paddingDp + buttonWidthDp + buttonSpacingDp,
+            paddingDp,
+            paddingDp + buttonWidthDp * 2 + buttonSpacingDp,
+            paddingDp + buttonHeight
+        )
+        
+        // 布局指示器（在底部）
+        val indicatorHeight = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, 2f, resources.displayMetrics
+        ).toInt()
+        val indicatorY = height - indicatorHeight - 2
+        
+        if (isPreviewMode) {
+            indicatorView?.layout(
+                paddingDp,
+                indicatorY,
+                paddingDp + buttonWidthDp,
+                indicatorY + indicatorHeight
+            )
+        } else {
+            indicatorView?.layout(
+                paddingDp + buttonWidthDp + buttonSpacingDp,
+                indicatorY,
+                paddingDp + buttonWidthDp * 2 + buttonSpacingDp,
+                indicatorY + indicatorHeight
+            )
+        }
+    }
+    
     private fun updateMode() {
         if (isPreviewMode) {
-            previewButton?.setTextColor(Color.WHITE)
-            codeButton?.setTextColor(Color.BLACK)
-            // 移动指示器到预览按钮下方
-            (indicatorView?.layoutParams as? LayoutParams)?.let { params ->
-                params.leftMargin = 0
-                params.rightMargin = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 60f, resources.displayMetrics).toInt()
-            }
+            // 选中状态：使用深色文字
+            previewButton?.setTextColor(Color.parseColor("#000000"))
+            codeButton?.setTextColor(Color.parseColor("#999999"))
         } else {
-            previewButton?.setTextColor(Color.BLACK)
-            codeButton?.setTextColor(Color.WHITE)
-            // 移动指示器到代码按钮下方
-            (indicatorView?.layoutParams as? LayoutParams)?.let { params ->
-                params.leftMargin = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 60f, resources.displayMetrics).toInt()
-                params.rightMargin = 0
-            }
+            // 未选中状态
+            previewButton?.setTextColor(Color.parseColor("#999999"))
+            // 选中状态：使用深色文字
+            codeButton?.setTextColor(Color.parseColor("#000000"))
         }
-        indicatorView?.requestLayout()
+        
+        // 使用动画移动指示器
+        requestLayout()
     }
 }
 

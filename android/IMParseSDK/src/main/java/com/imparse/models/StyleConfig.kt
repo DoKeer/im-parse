@@ -116,7 +116,72 @@ data class StyleConfig(
          * 默认样式配置
          */
         fun default(): StyleConfig {
-            return StyleConfig()
+            val config = StyleConfig()
+            android.util.Log.d("StyleConfig", "StyleConfig initialized: ${config.toJSON()}")
+            return config
+        }
+        
+        /**
+         * 从 JSON 字符串创建 StyleConfig
+         */
+        fun fromJSON(jsonString: String): StyleConfig? {
+            return try {
+                val json = JSONObject(jsonString)
+                val config = StyleConfig(
+                    textColor = json.optString("textColor", null).takeIf { it.isNotEmpty() },
+                    fontSize = json.optInt("fontSize").takeIf { it != 0 },
+                    codeFontSize = json.optInt("codeFontSize").takeIf { it != 0 },
+                    backgroundColor = json.optString("backgroundColor", null).takeIf { it.isNotEmpty() },
+                    paragraphSpacing = json.optInt("paragraphSpacing").takeIf { it != 0 },
+                    codeBackgroundColor = json.optString("codeBackgroundColor", null).takeIf { it.isNotEmpty() },
+                    codeTextColor = json.optString("codeTextColor", null).takeIf { it.isNotEmpty() },
+                    linkColor = json.optString("linkColor", null).takeIf { it.isNotEmpty() },
+                    headingColors = json.optJSONArray("headingColors")?.let { array ->
+                        (0 until array.length()).mapNotNull { array.optString(it, null).takeIf { s -> s.isNotEmpty() } }
+                    },
+                    listItemSpacing = json.optInt("listItemSpacing").takeIf { it != 0 },
+                    codeBlockPadding = json.optInt("codeBlockPadding").takeIf { it != 0 },
+                    codeBlockBorderRadius = json.optInt("codeBlockBorderRadius").takeIf { it != 0 },
+                    codeBlockMaxWidth = json.optInt("codeBlockMaxWidth").takeIf { it != 0 },
+                    codeBlockMinWidth = json.optInt("codeBlockMinWidth").takeIf { it != 0 },
+                    tableCellPadding = json.optInt("tableCellPadding").takeIf { it != 0 },
+                    tableBorderColor = json.optString("tableBorderColor", null).takeIf { it.isNotEmpty() },
+                    tableHeaderBackground = json.optString("tableHeaderBackground", null).takeIf { it.isNotEmpty() },
+                    tableMaxCellWidth = json.optInt("tableMaxCellWidth").takeIf { it != 0 },
+                    tableMinCellWidth = json.optInt("tableMinCellWidth").takeIf { it != 0 },
+                    blockquoteBorderWidth = json.optInt("blockquoteBorderWidth").takeIf { it != 0 },
+                    blockquoteBorderColor = json.optString("blockquoteBorderColor", null).takeIf { it.isNotEmpty() },
+                    blockquoteTextColor = json.optString("blockquoteTextColor", null).takeIf { it.isNotEmpty() },
+                    imageBorderRadius = json.optInt("imageBorderRadius").takeIf { it != 0 },
+                    imageMargin = json.optInt("imageMargin").takeIf { it != 0 },
+                    mentionBackground = json.optString("mentionBackground", null).takeIf { it.isNotEmpty() },
+                    mentionTextColor = json.optString("mentionTextColor", null).takeIf { it.isNotEmpty() },
+                    cardBackground = json.optString("cardBackground", null).takeIf { it.isNotEmpty() },
+                    cardBorderColor = json.optString("cardBorderColor", null).takeIf { it.isNotEmpty() },
+                    cardPadding = json.optInt("cardPadding").takeIf { it != 0 },
+                    cardBorderRadius = json.optInt("cardBorderRadius").takeIf { it != 0 },
+                    hrColor = json.optString("hrColor", null).takeIf { it.isNotEmpty() },
+                    lineHeight = json.optDouble("lineHeight").takeIf { it != 0.0 },
+                    maxContentWidth = json.optInt("maxContentWidth").takeIf { it != 0 },
+                    contentPadding = json.optInt("contentPadding").takeIf { it != 0 },
+                    toolbarHeight = json.optInt("toolbarHeight").takeIf { it != 0 },
+                    toolbarWidth = json.optInt("toolbarWidth").takeIf { it != 0 },
+                    toolbarPadding = json.optInt("toolbarPadding").takeIf { it != 0 },
+                    toolbarButtonSize = json.optInt("toolbarButtonSize").takeIf { it != 0 },
+                    toolbarButtonSpacing = json.optInt("toolbarButtonSpacing").takeIf { it != 0 },
+                    toolbarSwitcherHeight = json.optInt("toolbarSwitcherHeight").takeIf { it != 0 },
+                    toolbarSwitcherButtonWidth = json.optInt("toolbarSwitcherButtonWidth").takeIf { it != 0 },
+                    toolbarSwitcherButtonSpacing = json.optInt("toolbarSwitcherButtonSpacing").takeIf { it != 0 },
+                    tableTitle = json.optString("tableTitle", null).takeIf { it.isNotEmpty() },
+                    toolbarPreviewText = json.optString("toolbarPreviewText", null).takeIf { it.isNotEmpty() },
+                    toolbarCodeText = json.optString("toolbarCodeText", null).takeIf { it.isNotEmpty() }
+                )
+                android.util.Log.d("StyleConfig", "StyleConfig fromJSON initialized: ${config.toJSON()}")
+                config
+            } catch (e: Exception) {
+                android.util.Log.e("StyleConfig", "Failed to parse StyleConfig from JSON: ${e.message}")
+                null
+            }
         }
     }
 }

@@ -24,6 +24,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".ui.MessageDetailActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.MainActivity" />
+        <activity
+            android:name=".ui.DiagramCaptureActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.MainActivity" />
     </application>
 
 </manifest>

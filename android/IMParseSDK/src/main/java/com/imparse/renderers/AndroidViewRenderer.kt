@@ -34,13 +34,16 @@ class AndroidViewRenderer {
             renderContext.theme.contentPadding
         )
         
-        for (child in ast.children) {
+        for ((index, child) in ast.children.withIndex()) {
             val childView = renderNode(child, renderContext)
             val params = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
+            // 最后一个元素不需要底部间距
+            if (index < ast.children.size - 1) {
             params.bottomMargin = renderContext.theme.paragraphSpacing
+            }
             container.addView(childView, params)
         }
         
@@ -337,6 +340,12 @@ class AndroidViewRenderer {
             setColor(context.theme.codeBackgroundColor)
             cornerRadius = radius
         }
+        containerView.clipToOutline = true
+        containerView.outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height, radius)
+            }
+        }
         
         val toolbarHeight = TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP,
@@ -419,18 +428,34 @@ class AndroidViewRenderer {
             maxLineWidth = maxOf(maxLineWidth, lineWidth)
         }
         
-        // 代码内容实际宽度（包含 padding）
-        val codeActualWidth = maxOf(
-            maxLineWidth.toInt() + context.theme.codeBlockPadding * 2,
-            context.context.resources.displayMetrics.widthPixels // 最小宽度应该填充满 scrollview 的父容器
-        )
+        val codePadding = context.theme.codeBlockPadding
+        val minCodeWidth = maxLineWidth.toInt() + codePadding * 2
         
         textView.layoutParams = LinearLayout.LayoutParams(
-            codeActualWidth,
+            minCodeWidth,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        
+        codeContentView.layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
         codeContentView.addView(textView)
         scrollView.addView(codeContentView)
+        
+        // 监听布局变化，更新代码宽度（最小宽度应该填充满父容器）
+        containerView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            val containerWidth = containerView.width
+            if (containerWidth > 0) {
+                val newCodeWidth = maxOf(
+                    minCodeWidth,
+                    containerWidth // 最小宽度应该填充满父容器
+                )
+                codeContentView.layoutParams.width = newCodeWidth
+                textView.layoutParams.width = newCodeWidth
+                codeContentView.requestLayout()
+            }
+        }
         
         // 添加点击手势
         if (context.onCodeBlockTap != null) {
@@ -484,6 +509,19 @@ class AndroidViewRenderer {
         val imageView = ImageView(context.context)
         imageView.scaleType = ImageView.ScaleType.CENTER_CROP
         imageView.adjustViewBounds = true
+        
+        // 设置圆角
+        val radius = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            context.theme.codeBlockBorderRadius.toFloat(),
+            context.context.resources.displayMetrics
+        )
+        imageView.clipToOutline = true
+        imageView.outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height, radius)
+            }
+        }
         
         // 设置尺寸
         if (node.width != null && node.height != null) {
@@ -600,12 +638,69 @@ class AndroidViewRenderer {
         // 创建主容器
         val containerView = android.widget.FrameLayout(context.context)
         
-        val toolbarHeight = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 48f, context.context.resources.displayMetrics).toInt()
-        val toolbarWidth = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 120f, context.context.resources.displayMetrics).toInt()
-        val padding = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, context.context.resources.displayMetrics).toInt()
+        // 设置表格整体圆角
+        val radius = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            context.theme.codeBlockBorderRadius.toFloat(),
+            context.context.resources.displayMetrics
+        )
+        containerView.background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(android.graphics.Color.TRANSPARENT)
+            cornerRadius = radius
+            setStroke(
+                TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 1f, context.context.resources.displayMetrics).toInt(),
+                context.theme.tableBorderColor
+            )
+        }
+        containerView.clipToOutline = true
+        containerView.outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height, radius)
+            }
+        }
         
-        // 添加工具栏（如果有代理）
+        val toolbarHeight = context.theme.toolbarHeight?.let {
+            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), context.context.resources.displayMetrics).toInt()
+        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 48f, context.context.resources.displayMetrics).toInt()
+        
+        val toolbarWidth = context.theme.toolbarWidth?.let {
+            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), context.context.resources.displayMetrics).toInt()
+        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 120f, context.context.resources.displayMetrics).toInt()
+        
+        val toolbarPadding = context.theme.toolbarPadding?.let {
+            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), context.context.resources.displayMetrics).toInt()
+        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, context.context.resources.displayMetrics).toInt()
+        
+        // 标题栏高度
+        val headerBarHeight: Int = if (context.toolbarActionDelegate != null) toolbarHeight else 0
+        
+        // 创建标题栏（如果有toolbar）
         if (context.toolbarActionDelegate != null) {
+            val headerBar = android.widget.FrameLayout(context.context)
+            headerBar.setBackgroundColor(context.theme.tableHeaderBackground)
+            headerBar.layoutParams = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                headerBarHeight
+            )
+            
+            // 添加"表格"标题文字（左侧）
+            val titleLeftPadding = context.theme.tableCellPadding
+            val tableTitle = context.theme.tableTitle ?: "表格"
+            val titleLabel = TextView(context.context)
+            titleLabel.text = tableTitle
+            titleLabel.textSize = 16f
+            titleLabel.setTypeface(null, android.graphics.Typeface.BOLD)
+            titleLabel.setTextColor(context.theme.textColor)
+            titleLabel.gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            titleLabel.setPadding(titleLeftPadding, 0, 0, 0)
+            val titleParams = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            titleParams.gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            headerBar.addView(titleLabel, titleParams)
+            
+            // 添加工具栏（右侧）
             val toolbar = AndroidToolbar(context.context)
             
             // 将表格内容转换为字符串（用于复制）
@@ -615,7 +710,6 @@ class AndroidViewRenderer {
                 context.toolbarActionDelegate?.copyContent(tableContent, "table")
             }
             toolbar.onDownload = {
-                // 表格下载：可以生成图片或导出为CSV
                 context.toolbarActionDelegate?.downloadContent(tableContent, "table", null)
             }
             toolbar.onFullscreen = {
@@ -624,57 +718,44 @@ class AndroidViewRenderer {
             
             val toolbarParams = android.widget.FrameLayout.LayoutParams(
                 toolbarWidth,
-                toolbarHeight
+                toolbarHeight - toolbarPadding * 2
             )
-            toolbarParams.gravity = android.view.Gravity.TOP or android.view.Gravity.END
-            toolbarParams.setMargins(0, padding, padding, 0)
-            containerView.addView(toolbar, toolbarParams)
+            toolbarParams.gravity = android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+            toolbarParams.setMargins(0, 0, toolbarPadding, 0)
+            headerBar.addView(toolbar, toolbarParams)
+            containerView.addView(headerBar)
         }
         
-        // 创建横向滚动容器
+        // 创建横向滚动容器（在标题栏下方）
         val scrollView = android.widget.HorizontalScrollView(context.context)
-        scrollView.isFillViewport = false
+        scrollView.isFillViewport = true
+        scrollView.setHorizontalScrollBarEnabled(true)
+        scrollView.isHorizontalFadingEdgeEnabled = true
         
-        val tableContentY = if (context.toolbarActionDelegate != null) toolbarHeight + padding * 2 else 0
         val scrollParams = android.widget.FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         )
-        scrollParams.setMargins(0, tableContentY, 0, 0)
+        scrollParams.setMargins(0, headerBarHeight, 0, 0)
         containerView.addView(scrollView, scrollParams)
         
-        val tableLayout = TableLayout(context.context)
-        tableLayout.isStretchAllColumns = false
-        tableLayout.isShrinkAllColumns = false
-        
-        // 设置表格边框
-        val borderWidth = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP, 1f,
-            context.context.resources.displayMetrics
-        ).toInt()
-        
-        val borderDrawable = android.graphics.drawable.GradientDrawable()
-        borderDrawable.setStroke(borderWidth, context.theme.tableBorderColor)
-        borderDrawable.setColor(android.graphics.Color.TRANSPARENT)
-        tableLayout.background = borderDrawable
-        
-        for ((rowIndex, row) in node.rows.withIndex()) {
-            val tableRow = renderTableRow(row, context, rowIndex == 0)
-            tableLayout.addView(tableRow)
+        // 创建表格内容容器（放在 ScrollView 中）
+        val tableContentView = android.widget.FrameLayout(context.context)
+        tableContentView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        tableContentView.layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        scrollView.addView(tableContentView)
             
-            // 为每一行添加底部分割线（最后一行除外）
-            if (rowIndex < node.rows.size - 1) {
-                val divider = View(context.context)
-                divider.setBackgroundColor(context.theme.tableBorderColor)
-                val dividerParams = TableLayout.LayoutParams(
+        // 使用自定义表格布局
+        val tableLayout = CustomTableLayout(context.context, node, context)
+        tableLayout.layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    borderWidth
+            ViewGroup.LayoutParams.WRAP_CONTENT
                 )
-                tableLayout.addView(divider, dividerParams)
-            }
-        }
+        tableContentView.addView(tableLayout)
         
-        scrollView.addView(tableLayout)
         return containerView
     }
     
@@ -904,11 +985,50 @@ class AndroidViewRenderer {
             setColor(context.theme.codeBackgroundColor)
             cornerRadius = radius
         }
+        containerView.clipToOutline = true
+        containerView.outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height, radius)
+            }
+        }
         
-        val cacheKey = "math:${node.content}:${node.display}"
-        val toolbarHeight = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 48f, context.context.resources.displayMetrics).toInt()
-        val toolbarWidth = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 120f, context.context.resources.displayMetrics).toInt()
-        val padding = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, context.context.resources.displayMetrics).toInt()
+        // 生成缓存键
+        val textColor = context.theme.textColor
+        val colorHex = String.format(
+            "#%02X%02X%02X",
+            android.graphics.Color.red(textColor),
+            android.graphics.Color.green(textColor),
+            android.graphics.Color.blue(textColor)
+        )
+        val fontSize = if (node.display) 16.0f else 14.0f
+        val cacheKey = AndroidMathHTMLRenderer.generateMathCacheKey(
+            node.content,
+            node.display,
+            colorHex,
+            fontSize,
+            null
+        )
+        
+        val toolbarHeight = context.theme.toolbarHeight?.let {
+            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), context.context.resources.displayMetrics).toInt()
+        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 48f, context.context.resources.displayMetrics).toInt()
+        
+        val toolbarWidth = context.theme.toolbarWidth?.let {
+            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), context.context.resources.displayMetrics).toInt()
+        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 120f, context.context.resources.displayMetrics).toInt()
+        
+        val toolbarPadding = context.theme.toolbarPadding?.let {
+            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), context.context.resources.displayMetrics).toInt()
+        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, context.context.resources.displayMetrics).toInt()
+        
+        val contentPadding = context.theme.codeBlockPadding
+        
+        // 计算图片区域（工具栏在顶部，图片在下方，不挤占图片高度）
+        val imageAreaY: Int = if (context.toolbarActionDelegate != null) {
+            toolbarHeight + toolbarPadding * 2
+        } else {
+            contentPadding
+        }
         
         // 添加工具栏（如果有代理）
         if (context.toolbarActionDelegate != null) {
@@ -930,7 +1050,7 @@ class AndroidViewRenderer {
                 toolbarHeight
             )
             toolbarParams.gravity = android.view.Gravity.TOP or android.view.Gravity.END
-            toolbarParams.setMargins(0, padding, padding, 0)
+            toolbarParams.setMargins(0, toolbarPadding, toolbarPadding, 0)
             containerView.addView(toolbar, toolbarParams)
         }
         
@@ -942,12 +1062,25 @@ class AndroidViewRenderer {
             imageView.setImageBitmap(cachedImage)
             imageView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
             imageView.adjustViewBounds = true
-            val imageY = if (context.toolbarActionDelegate != null) toolbarHeight + padding * 2 else padding
+            
+            // 计算图片在可用空间内的实际显示尺寸（保持宽高比）
+            val availableWidth = containerView.width - contentPadding * 2
+            val availableHeight = containerView.height - imageAreaY - contentPadding
+            
+            val imageSize = android.graphics.PointF(cachedImage.width.toFloat(), cachedImage.height.toFloat())
+            val imageAspectRatio = imageSize.x / imageSize.y
+            val displayWidth = minOf(availableWidth.toFloat(), imageSize.x)
+            val displayHeight = minOf(availableHeight.toFloat(), displayWidth / imageAspectRatio)
+            
+            // 居中显示
+            val imageX = contentPadding + (availableWidth - displayWidth.toInt()) / 2
+            val imageY = imageAreaY + (availableHeight - displayHeight.toInt()) / 2
+            
             val params = android.widget.FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
+                displayWidth.toInt(),
+                displayHeight.toInt()
             )
-            params.setMargins(4, imageY, 4, 4)
+            params.setMargins(imageX, imageY, 0, 0)
             containerView.addView(imageView, params)
             
             // 添加点击手势
@@ -998,24 +1131,15 @@ class AndroidViewRenderer {
             return containerView
         }
         
-        // 转换颜色为十六进制
-        val textColor = context.theme.textColor
-        val colorHex = String.format(
-            "#%02X%02X%02X",
-            android.graphics.Color.red(textColor),
-            android.graphics.Color.green(textColor),
-            android.graphics.Color.blue(textColor)
-        )
-        
         val imageView = android.widget.ImageView(context.context)
         imageView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
         imageView.adjustViewBounds = true
-        val imageY = if (context.toolbarActionDelegate != null) toolbarHeight + padding * 2 else 4
+        imageView.visibility = View.INVISIBLE // 初始隐藏，渲染完成后显示
         val imageParams = android.widget.FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
-        imageParams.setMargins(4, imageY, 4, 4)
+        imageParams.setMargins(contentPadding, imageAreaY, contentPadding, contentPadding)
         containerView.addView(imageView, imageParams)
         
         val progressBar = android.widget.ProgressBar(context.context)
@@ -1034,8 +1158,6 @@ class AndroidViewRenderer {
             }
         }
         
-        val fontSize = if (node.display) 16f else 14f
-        
         // 使用 MathHTMLRenderer 渲染
         AndroidMathHTMLRenderer.getInstance().render(
             context = context.context,
@@ -1048,21 +1170,33 @@ class AndroidViewRenderer {
                 progressBar.visibility = View.GONE
                 
                 if (image != null) {
+                    // 计算图片在可用空间内的实际显示尺寸（保持宽高比）
+                    val availableWidth = containerView.width - contentPadding * 2
+                    val availableHeight = containerView.height - imageAreaY - contentPadding
+                    
+                    val imageSize = android.graphics.PointF(image.width.toFloat(), image.height.toFloat())
+                    val imageAspectRatio = imageSize.x / imageSize.y
+                    val displayWidth = minOf(availableWidth.toFloat(), imageSize.x)
+                    val displayHeight = minOf(availableHeight.toFloat(), displayWidth / imageAspectRatio)
+                    
+                    // 居中显示
+                    val imageX = contentPadding + (availableWidth - displayWidth.toInt()) / 2
+                    val imageY = imageAreaY + (availableHeight - displayHeight.toInt()) / 2
+                    
+                    imageView.layoutParams.width = displayWidth.toInt()
+                    imageView.layoutParams.height = displayHeight.toInt()
+                    (imageView.layoutParams as android.widget.FrameLayout.LayoutParams).setMargins(imageX, imageY, 0, 0)
                     imageView.setImageBitmap(image)
+                    imageView.visibility = View.VISIBLE
                     
                     // 保存图片到缓存
                     context.formulaSizeCacheDelegate?.saveFormulaImage(image, cacheKey)
                     
-                    // 获取图片的实际尺寸
-                    val imageSize = android.graphics.PointF(image.width.toFloat(), image.height.toFloat())
-                    
                     // 保存尺寸到缓存
                     context.formulaSizeCacheDelegate?.setCachedSize(imageSize, cacheKey)
                     
-                    // 计算实际需要的总高度（图片高度 + padding + 工具栏高度）
-                    val padding = context.theme.codeBlockPadding
-                    val toolbarHeightForCalc = if (context.toolbarActionDelegate != null) toolbarHeight + padding * 2 else 0
-                    val actualHeight = imageSize.y + padding * 2 + toolbarHeightForCalc
+                    // 计算实际需要的总高度（使用统一的计算方法）
+                    val actualHeight = displayHeight + contentPadding + imageAreaY
                     
                     // 如果实际高度与当前高度不同，触发高度刷新回调
                     val currentHeight = containerView.height.toFloat()
@@ -1078,12 +1212,11 @@ class AndroidViewRenderer {
                     label.textSize = context.theme.codeFontSize
                     label.setTextColor(context.theme.codeTextColor)
                     label.maxLines = Int.MAX_VALUE
-                    val padding = context.theme.codeBlockPadding
                     val labelParams = android.widget.FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT
                     )
-                    labelParams.setMargins(padding, padding, padding, padding)
+                    labelParams.setMargins(contentPadding, imageAreaY, contentPadding, contentPadding)
                     containerView.addView(label, labelParams)
                 }
             }
@@ -1110,22 +1243,61 @@ class AndroidViewRenderer {
             setColor(context.theme.codeBackgroundColor)
             cornerRadius = radius
         }
+        containerView.clipToOutline = true
+        containerView.outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height, radius)
+            }
+        }
         
         val padding = context.theme.codeBlockPadding
-        val cacheKey = "mermaid:${node.content}"
-        val toolbarHeight = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 48f, context.context.resources.displayMetrics).toInt()
-        val toolbarWidth = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 120f, context.context.resources.displayMetrics).toInt()
-        val switcherHeight = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 32f, context.context.resources.displayMetrics).toInt()
-        val topAreaHeight = maxOf(toolbarHeight, switcherHeight) + TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 16f, context.context.resources.displayMetrics).toInt()
+        val cacheKey = AndroidMermaidHTMLRenderer.generateCacheKey(node.content, "#000000", "#ffffff")
+        
+        val toolbarHeight = context.theme.toolbarHeight?.let {
+            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), context.context.resources.displayMetrics).toInt()
+        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 48f, context.context.resources.displayMetrics).toInt()
+        
+        val toolbarWidth = context.theme.toolbarWidth?.let {
+            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), context.context.resources.displayMetrics).toInt()
+        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 120f, context.context.resources.displayMetrics).toInt()
+        
+        val toolbarPadding = context.theme.toolbarPadding?.let {
+            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), context.context.resources.displayMetrics).toInt()
+        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, context.context.resources.displayMetrics).toInt()
+        
+        val switcherHeight = context.theme.toolbarSwitcherHeight?.let {
+            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), context.context.resources.displayMetrics).toInt()
+        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 32f, context.context.resources.displayMetrics).toInt()
+        
+        val switcherButtonWidth = context.theme.toolbarSwitcherButtonWidth?.let {
+            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), context.context.resources.displayMetrics).toInt()
+        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 60f, context.context.resources.displayMetrics).toInt()
+        
+        val switcherButtonSpacing = context.theme.toolbarSwitcherButtonSpacing?.let {
+            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), context.context.resources.displayMetrics).toInt()
+        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 4f, context.context.resources.displayMetrics).toInt()
+        
+        val switcherWidth = switcherButtonWidth * 2 + switcherButtonSpacing + toolbarPadding * 2
+        val topAreaHeight = maxOf(toolbarHeight, switcherHeight)
         
         // 添加预览/代码切换器（左侧）
-        val modeSwitcher = MermaidViewModeSwitcher(context.context)
+        val previewText = context.theme.toolbarPreviewText ?: "预览"
+        val codeText = context.theme.toolbarCodeText ?: "代码"
+        val modeSwitcher = MermaidViewModeSwitcher(
+            context.context,
+            previewText = previewText,
+            codeText = codeText,
+            buttonWidth = switcherButtonWidth,
+            buttonSpacing = switcherButtonSpacing,
+            padding = toolbarPadding,
+            switcherHeight = switcherHeight
+        )
         val switcherParams = android.widget.FrameLayout.LayoutParams(
-            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 128f, context.context.resources.displayMetrics).toInt(),
+            switcherWidth,
             switcherHeight
         )
         switcherParams.gravity = android.view.Gravity.TOP or android.view.Gravity.START
-        switcherParams.setMargins(padding, TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, context.context.resources.displayMetrics).toInt(), 0, 0)
+        switcherParams.setMargins(padding, (topAreaHeight - switcherHeight) / 2, 0, 0)
         containerView.addView(modeSwitcher, switcherParams)
         
         // 添加工具栏（右侧，如果有代理）
@@ -1148,7 +1320,7 @@ class AndroidViewRenderer {
                 toolbarHeight
             )
             toolbarParams.gravity = android.view.Gravity.TOP or android.view.Gravity.END
-            toolbarParams.setMargins(0, TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, context.context.resources.displayMetrics).toInt(), padding, 0)
+            toolbarParams.setMargins(0, (topAreaHeight - toolbarHeight) / 2, padding, 0)
             containerView.addView(toolbar, toolbarParams)
         }
         
