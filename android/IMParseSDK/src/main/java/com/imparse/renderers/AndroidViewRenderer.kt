@@ -740,18 +740,19 @@ class AndroidViewRenderer {
         containerView.addView(scrollView, scrollParams)
         
         // 创建表格内容容器（放在 ScrollView 中）
+        // 使用 WRAP_CONTENT 允许表格宽度超过容器，支持横向滚动
         val tableContentView = android.widget.FrameLayout(context.context)
         tableContentView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
         tableContentView.layoutParams = ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
+            ViewGroup.LayoutParams.WRAP_CONTENT, // 允许超出容器宽度
+            ViewGroup.LayoutParams.WRAP_CONTENT
         )
         scrollView.addView(tableContentView)
             
         // 使用自定义表格布局
         val tableLayout = CustomTableLayout(context.context, node, context)
         tableLayout.layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT, // 允许超出容器宽度
             ViewGroup.LayoutParams.WRAP_CONTENT
                 )
         tableContentView.addView(tableLayout)

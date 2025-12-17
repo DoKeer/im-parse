@@ -439,8 +439,8 @@ class AndroidMermaidHTMLRenderer private constructor() {
                     if (typeof AndroidBridge === 'undefined') {
                         console.error('AndroidBridge is not available');
                         return JSON.stringify({ error: 'AndroidBridge not available' });
-                    }
-                    
+                }
+                
                     // 检查 html2canvas 是否已加载
                     if (typeof html2canvas === 'undefined') {
                         console.warn('html2canvas not loaded yet, retrying...');
@@ -525,17 +525,17 @@ class AndroidMermaidHTMLRenderer private constructor() {
                     if (bitmap == null) {
                         Log.e(TAG, "Failed to decode bitmap")
                         cleanupAndComplete(task.webView, task.container, null, task.completion)
-                        return@post
-                    }
+                            return@post
+                        }
                     
                     Log.d(TAG, "Bitmap decoded successfully: ${bitmap.width}x${bitmap.height}")
                     
                     // 缓存图片
                     imageCache[task.cacheKey] = bitmap
-                    
-                    // 清理并返回结果
+                        
+                        // 清理并返回结果
                     cleanupAndComplete(task.webView, task.container, bitmap, task.completion)
-                } catch (e: Exception) {
+                    } catch (e: Exception) {
                     Log.e(TAG, "onCaptureSuccess error", e)
                     val task = pendingTasks.remove(webViewKey)
                     task?.let {
@@ -552,7 +552,7 @@ class AndroidMermaidHTMLRenderer private constructor() {
                 val task = pendingTasks.remove(webViewKey)
                 task?.let {
                     cleanupAndComplete(it.webView, it.container, null, it.completion)
-                }
+            }
             }
         }
     }

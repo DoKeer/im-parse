@@ -97,7 +97,7 @@ object MessageDataGenerator {
                   section 阶段2
                   任务3           :a3, 2024-02-01, 30d
             ```
-            """,
+            """.trimIndent(),
             """
             ## 表格测试
             
@@ -113,7 +113,7 @@ object MessageDataGenerator {
             | 左 | 中 | 右 |
             | 左对齐文本 | 居中文本 | 右对齐文本 |
                    
-            """,
+            """.trimIndent(),
             """
             ```javascript
             // JavaScript 代码示例
@@ -132,7 +132,7 @@ object MessageDataGenerator {
                 }
             };
             ```
-            """,
+            """.trimIndent(),
             """
             **粗体中的*斜体***和*斜体中的**粗体***
             """.trimIndent(),
