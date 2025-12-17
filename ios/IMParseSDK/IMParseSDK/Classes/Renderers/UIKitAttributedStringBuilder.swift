@@ -132,10 +132,62 @@ public class UIKitAttributedStringBuilder {
             return attributedString
             
         case .math(let mathNode):
-            // 行内数学公式：使用 MathTextAttachment
+            // 行内数学公式：先检查缓存，如果有图片才创建 MathTextAttachment
             if !mathNode.display {
-                let mathAttachment = MathTextAttachment(mathNode: mathNode, context: context)
-                return NSAttributedString(attachment: mathAttachment)
+                let font = context.currentFont ?? context.theme.font
+                let lineHeight = font.lineHeight
+                
+                // 生成缓存键
+                let textColor = context.currentTextColor ?? context.theme.textColor
+                let components = textColor.cgColor.components ?? [0, 0, 0, 1]
+                let colorHex = String(format: "#%02X%02X%02X",
+                                      Int(components[0] * 255),
+                                      Int(components[1] * 255),
+                                      Int(components[2] * 255))
+                let fontSize = font.pointSize
+                let cacheKey = generateMathCacheKey(
+                    mathContent: mathNode.content,
+                    textColor: colorHex,
+                    fontSize: fontSize
+                )
+                
+                // 先检查缓存，如果命中则创建 MathTextAttachment
+                if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey) {
+                    let mathAttachment = MathTextAttachment(mathNode: mathNode, image: cachedImage, font: font)
+                    return NSAttributedString(attachment: mathAttachment)
+                }
+                
+                // 缓存未命中，返回原文富文本
+                let color = context.currentTextColor ?? context.theme.textColor
+                let attrString = NSAttributedString(
+                    string: mathNode.content,
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: color
+                    ]
+                )
+                
+                // 触发异步加载（参考块级公式的逻辑）
+                if context.formulaSizeCacheDelegate != nil {
+                    // 在后台线程异步加载
+                    // 注意：需要捕获必要的变量，避免在闭包中访问 context（可能已被释放）
+                    let mathContent = mathNode.content
+                    let formulaSizeCacheDelegate = context.formulaSizeCacheDelegate
+                    let onNodeLayoutChanged = context.onNodeLayoutChanged
+                    Task {
+                        if let _ = await MathHTMLRenderer.renderInlineMath(
+                            mathContent: mathContent,
+                            textColor: textColor,
+                            fontSize: fontSize,
+                            lineHeight: lineHeight,
+                            formulaSizeCacheDelegate: formulaSizeCacheDelegate
+                        ) {
+                            onNodeLayoutChanged?(mathNode)
+                        }
+                    }
+                }
+                
+                return attrString
             } else {
                 // 块级数学公式不应该在这里处理，应该在混合布局中单独处理
                 return NSAttributedString()

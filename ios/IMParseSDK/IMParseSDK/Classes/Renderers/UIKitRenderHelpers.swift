@@ -284,171 +284,42 @@ internal class MentionStatusImageAttachment: NSTextAttachment {
 // MARK: - 行内数学公式文本附件
 
 /// 行内数学公式文本附件，用于在 NSAttributedString 中嵌入行内数学公式
+/// 注意：此附件只接受已加载的图片，不负责异步加载
 internal class MathTextAttachment: NSTextAttachment {
     let mathNode: MathNode
-    let context: UIKitRenderContext
-    private var cachedImage: UIImage?
-    private var isLoading = false
     private let font: UIFont // 保存字体，用于计算 attachmentBounds
     
-    init(mathNode: MathNode, context: UIKitRenderContext) {
+    /// 初始化行内数学公式附件
+    /// - Parameters:
+    ///   - mathNode: 数学公式节点
+    ///   - image: 已加载的公式图片（必须提供）
+    ///   - font: 当前字体（用于计算 bounds）
+    init(mathNode: MathNode, image: UIImage, font: UIFont) {
         self.mathNode = mathNode
-        self.context = context
-        // 保存当前字体，用于后续计算 attachmentBounds
-        self.font = context.currentFont ?? context.theme.font
+        self.font = font
         super.init(data: nil, ofType: nil)
         
-        // 行内公式的初始尺寸
-        let lineHeight = font.lineHeight
+        // 设置图片
+        self.image = image
         
-        // 生成缓存键（与 renderInlineMath 保持一致）
-        let textColor = context.currentTextColor ?? context.theme.textColor
-        let components = textColor.cgColor.components ?? [0, 0, 0, 1]
-        let colorHex = String(format: "#%02X%02X%02X",
-                              Int(components[0] * 255),
-                              Int(components[1] * 255),
-                              Int(components[2] * 255))
-        let fontSize = font.pointSize
-        let cacheKey = MathHTMLRenderer.generateInlineMathCacheKey(
-            mathContent: mathNode.content,
-            textColor: colorHex,
-            fontSize: fontSize,
-            lineHeight: lineHeight
-        )
-        
-        // 先检查缓存，如果命中则直接使用，不需要计算文本尺寸
-        if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey) {
-            // 缓存命中，使用缓存的图片
-            self.image = cachedImage
-            self.cachedImage = cachedImage
-            // 调整 bounds 以适应图片尺寸
-            updateBoundsForImage(cachedImage)
-            return
-        }
-        
-        // 缓存未命中，需要计算占位图片尺寸
-        // 计算占位图片的宽度：根据公式文本的实际宽度动态计算
-        // 使用临时attributedString计算文本宽度，确保能完整显示公式
-        let tempAttrString = NSAttributedString(
-            string: mathNode.content,
-            attributes: [
-                .font: UIFont.systemFont(ofSize: font.pointSize * 0.8)
-            ]
-        )
-        let textWidth = tempAttrString.boundingRect(
-            with: CGSize(width: .greatestFiniteMagnitude, height: lineHeight),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            context: nil
-        ).width
-        
-        // 占位图片宽度：至少是行高的1.5倍，但不超过文本宽度的2倍，最大不超过500pt
-        let minWidth = lineHeight * 1.5
-        let maxWidth = min(textWidth * 2, 500)
-        let placeholderWidth = max(minWidth, min(maxWidth, textWidth + 20)) // 加20pt padding
-        
-        let attachmentSize = CGSize(width: placeholderWidth, height: lineHeight)
-        
-        // 设置初始 bounds（会在 attachmentBounds 方法中动态调整）
-        self.bounds = CGRect(origin: .zero, size: attachmentSize)
-        
-        // 创建占位图片（显示公式原文）
-        createPlaceholderImage(size: attachmentSize)
-        // 异步加载公式图片（如果有缓存代理）
-        if context.formulaSizeCacheDelegate != nil {
-            loadMathImageAsync(cacheKey: cacheKey, targetSize: attachmentSize)
-        }
+        // 计算垂直居中的 bounds
+        let imageSize = image.size
+        let yOffset = (font.capHeight - imageSize.height) / 2
+        self.bounds = CGRect(origin: CGPoint(x: 0, y: yOffset), size: imageSize)
     }
     
     /// 动态计算 attachment 的 bounds，确保与文本垂直居中
     override func attachmentBounds(for textContainer: NSTextContainer?, proposedLineFragment lineFrag: CGRect, glyphPosition position: CGPoint, characterIndex charIndex: Int) -> CGRect {
-        // 获取图片的实际尺寸（如果已加载）
-        let imageSize = self.image?.size ?? bounds.size
+        // 获取图片的实际尺寸
+        guard let imageSize = self.image?.size else {
+            return bounds
+        }
         
         // 计算垂直居中的偏移量
         let yOffset = (font.capHeight - imageSize.height) / 2
         
         // 返回调整后的 bounds
         return CGRect(origin: CGPoint(x: 0, y: yOffset), size: imageSize)
-    }
-    
-    /// 更新 bounds 以适应图片尺寸
-    private func updateBoundsForImage(_ image: UIImage) {
-        let imageSize = image.size
-        let baselineOffset = (font.capHeight - imageSize.height) / 2
-        self.bounds = CGRect(origin: CGPoint(x: 0, y: baselineOffset), size: imageSize)
-    }
-    
-    /// 创建占位图片（使用文本渲染）
-    private func createPlaceholderImage(size: CGSize) {
-        let color = context.currentTextColor ?? context.theme.textColor
-        
-        let renderer = UIGraphicsImageRenderer(size: size)
-        self.image = renderer.image { context in
-            // 绘制文本占位符
-            let placeholderFont = UIFont.systemFont(ofSize: font.pointSize * 0.8)
-            let attrString = NSAttributedString(
-                string: mathNode.content,
-                attributes: [
-                    .font: placeholderFont,
-                    .foregroundColor: color.withAlphaComponent(0.6)
-                ]
-            )
-            
-            // 计算文本尺寸，允许换行
-            let textSize = attrString.boundingRect(
-                with: CGSize(width: size.width, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                context: nil
-            ).size
-            
-            // 如果文本宽度超过图片宽度，需要换行显示
-            let textRect = CGRect(
-                x: 0,
-                y: max(0, (size.height - min(textSize.height, size.height)) / 2),
-                width: size.width,
-                height: min(textSize.height, size.height)
-            )
-            
-            // 绘制文本（支持多行）
-            attrString.draw(in: textRect)
-        }
-    }
-    
-    /// 异步加载数学公式图片
-    private func loadMathImageAsync(cacheKey: String, targetSize: CGSize) {
-        guard !isLoading else { return }
-        
-        isLoading = true
-        
-        let textColor = context.currentTextColor ?? context.theme.textColor
-        let fontSize = font.pointSize
-        let lineHeight = font.lineHeight
-        
-        // 使用共享的渲染方法
-        MathHTMLRenderer.shared.renderInlineMath(
-            mathContent: mathNode.content,
-            textColor: textColor,
-            fontSize: fontSize,
-            lineHeight: lineHeight,
-            formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
-        ) { [weak self] scaledImage, scaledSize in
-            guard let self = self else { return }
-            
-            guard let scaledImage = scaledImage else {
-                self.isLoading = false
-                return
-            }
-            
-            self.image = scaledImage
-            self.cachedImage = scaledImage
-            self.updateBoundsForImage(scaledImage)
-            
-            self.isLoading = false
-            
-            // 行内公式图片加载完成后，需要触发上层重新计算布局
-            // 由于行内公式在段落中，无法单独更新，这里不做任何处理
-            // 上层可以在下次滚动或刷新时重新计算布局
-        }
     }
     
     required init?(coder: NSCoder) {

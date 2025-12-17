@@ -17,14 +17,55 @@ class UIKitFrameMessageListViewController: UIViewController {
     // 使用 Kingfisher 的图片缓存来缓存数学公式和 Mermaid 图表的图片
     // 不再需要高度反馈系统，直接使用预计算的高度
     
+    // 全局共享的渲染上下文
+    private var sharedRenderContext: UIKitRenderContext!
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
         title = "UIKit Frame 消息列表"
         view.backgroundColor = .systemBackground
         
+        setupSharedRenderContext()
         setupTableView()
         setupCache()
+    }
+    
+    /// 初始化全局共享的渲染上下文
+    private func setupSharedRenderContext() {
+        sharedRenderContext = UIKitRenderContext(
+            theme: UIKitTheme.default,
+            width: 0, // 宽度会在使用时更新
+            onLinkTap: { url in
+                // URL 打开浏览器
+                UIApplication.shared.open(url)
+            },
+            onImageTap: { [weak self] imageNode in
+                // 图片弹出图片预览页面
+                guard let self = self else { return }
+                MessageTableViewCell.showImagePreview(imageNode: imageNode, from: self)
+            },
+            onMentionTap: { mentionNode in
+                // Mention 打印 log
+                print("Mention 被点击: @\(mentionNode.name)")
+            },
+            onCodeBlockTap: { codeBlockNode in
+                // 代码块点击：打印 log
+                print("代码块被点击，内容长度: \(codeBlockNode.content.count) 字符")
+            },
+            onMathTap: { mathNode in
+                // 数学公式点击：打印 log
+                print("数学公式被点击: \(mathNode.display ? "块级" : "行内") - \(mathNode.content)")
+            },
+            onMermaidTap: { mermaidNode in
+                // Mermaid 图表点击：打印 log
+                print("Mermaid 图表被点击，内容长度: \(mermaidNode.content.count) 字符")
+            },
+            imageLoaderDelegate: self,
+            formulaSizeCacheDelegate: self,
+            inlineImageLoaderDelegate: self,
+            toolbarActionDelegate: self
+        )
     }
     
     private func setupCache() {
@@ -134,11 +175,16 @@ extension UIKitFrameMessageListViewController: UITableViewDataSource {
             }
         }
         
+        // 更新共享的渲染上下文中的动态部分
+        sharedRenderContext.width = contentWidth
+        sharedRenderContext.onNodeLayoutChanged = onNodeLayoutChanged
+        
         cell.configure(
             with: message,
             indexPath: indexPath,
             width: contentWidth,
             viewController: self,
+            context: sharedRenderContext,
             onNodeLayoutChanged: onNodeLayoutChanged
         )
         return cell
@@ -237,7 +283,7 @@ class MessageTableViewCell: UITableViewCell {
         ])
     }
     
-    func configure(with message: Message, indexPath: IndexPath, width: CGFloat, viewController: UIViewController? = nil, onNodeLayoutChanged: ((any Codable) -> Void)? = nil) {
+    func configure(with message: Message, indexPath: IndexPath, width: CGFloat, viewController: UIViewController? = nil, context: UIKitRenderContext, onNodeLayoutChanged: ((any Codable) -> Void)? = nil) {
         self.message = message
         self.viewController = viewController
         
@@ -258,16 +304,7 @@ class MessageTableViewCell: UITableViewCell {
         let longPressGesture = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
         containerView.addGestureRecognizer(longPressGesture)
         
-        // 创建渲染上下文（包含所有点击事件处理）
-        guard let context = createRenderContext(
-            width: width,
-            viewController: viewController,
-            message: message,
-            indexPath: indexPath,
-            onNodeLayoutChanged: onNodeLayoutChanged
-        ) else {
-            return
-        }
+        // 使用全局共享的渲染上下文（动态部分已在调用处更新）
         
         // 优先使用预计算的布局
         if let layout = message.layout {
@@ -347,53 +384,9 @@ class MessageTableViewCell: UITableViewCell {
         ])
     }
     
-    /// 创建渲染上下文，包含所有点击事件处理
-    private func createRenderContext(
-        width: CGFloat,
-        viewController: UIViewController?,
-        message: Message,
-        indexPath: IndexPath,
-        onNodeLayoutChanged: ((any Codable) -> Void)?
-    ) -> UIKitRenderContext? {
-        
-        return UIKitRenderContext(
-            theme: UIKitTheme.default,
-            width: width,
-            onLinkTap: { url in
-                // URL 打开浏览器
-                UIApplication.shared.open(url)
-            },
-            onImageTap: { [weak viewController] imageNode in
-                // 图片弹出图片预览页面
-                guard let viewController = viewController else { return }
-                MessageTableViewCell.showImagePreview(imageNode: imageNode, from: viewController)
-            },
-            onMentionTap: { mentionNode in
-                // Mention 打印 log
-                print("Mention 被点击: @\(mentionNode.name)")
-            },
-            onCodeBlockTap: { codeBlockNode in
-                // 代码块点击：打印 log
-                print("代码块被点击，内容长度: \(codeBlockNode.content.count) 字符")
-            },
-            onMathTap: { mathNode in
-                // 数学公式点击：打印 log
-                print("数学公式被点击: \(mathNode.display ? "块级" : "行内") - \(mathNode.content)")
-            },
-            onMermaidTap: { mermaidNode in
-                // Mermaid 图表点击：打印 log
-                print("Mermaid 图表被点击，内容长度: \(mermaidNode.content.count) 字符")
-            },
-            imageLoaderDelegate: viewController as? UIKitImageLoaderDelegate,
-            formulaSizeCacheDelegate: viewController as? UIKitFormulaSizeCacheDelegate,
-            inlineImageLoaderDelegate: viewController as? UIKitInlineImageLoaderDelegate,
-            toolbarActionDelegate: viewController as? UIKitToolbarActionDelegate,
-            onNodeLayoutChanged: onNodeLayoutChanged
-        )
-    }
     
     /// 显示图片预览
-    private static func showImagePreview(imageNode: ImageNode, from viewController: UIViewController) {
+    static func showImagePreview(imageNode: ImageNode, from viewController: UIViewController) {
         guard let url = URL(string: imageNode.url) else {
             let alert = UIAlertController(
                 title: "错误",
@@ -599,8 +592,8 @@ extension UIKitFrameMessageListViewController: UIKitFormulaSizeCacheDelegate {
             semaphore.signal()
         }
         
-        // 等待异步结果，最多等待 0.1 秒
-        _ = semaphore.wait(timeout: .now() + 0.1)
+        // 等待异步结果，最多等待 0.01 秒
+        _ = semaphore.wait(timeout: .now() + .milliseconds(10))
         return diskImage
     }
     

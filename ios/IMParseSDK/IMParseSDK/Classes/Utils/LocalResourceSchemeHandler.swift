@@ -37,6 +37,14 @@ class LocalResourceSchemeHandler: NSObject, WKURLSchemeHandler {
         "woff2", "woff", "ttf", "otf", "eot"
     ]
     
+    /// 内存缓存：文件名 -> 文件数据
+    /// 避免每次都从 Bundle 读取文件，提高性能
+    private var resourceCache: [String: Data] = [:]
+    private let cacheQueue = DispatchQueue(label: "local.resource.cache", attributes: .concurrent)
+    
+    /// 是否启用详细日志（生产环境可以关闭）
+    private let verboseLogging = false
+    
     /// 处理 URL Scheme 请求
     func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
         guard let url = urlSchemeTask.request.url else {
@@ -95,19 +103,41 @@ class LocalResourceSchemeHandler: NSObject, WKURLSchemeHandler {
         let isFontFile = fontExtensions.contains(fileExtension)
         let isCriticalResource = criticalResources.contains(finalFileName)
         
-        // 从 Bundle 加载文件
-        guard let bundle = Bundle(for: type(of: self)).url(forResource: finalFileName, withExtension: nil),
-              let data = try? Data(contentsOf: bundle) else {
-            // 字体文件缺失时静默失败，让浏览器从 CDN 加载（CSS 会自动处理）
-            // 关键资源缺失时打印警告
-            if isCriticalResource {
-                print("LocalResourceSchemeHandler: ⚠️ Critical resource not found: \(finalFileName) (will fallback to CDN)")
-            } else if !isFontFile {
-                // 非字体文件也打印（可能是其他资源）
-                print("LocalResourceSchemeHandler: Resource not found: \(finalFileName) (will fallback to CDN)")
+        // 先从内存缓存读取
+        var data: Data?
+        cacheQueue.sync {
+            data = resourceCache[finalFileName]
+        }
+        
+        // 如果缓存未命中，从 Bundle 加载
+        if data == nil {
+            guard let bundle = Bundle(for: type(of: self)).url(forResource: finalFileName, withExtension: nil),
+                  let loadedData = try? Data(contentsOf: bundle) else {
+                // 字体文件缺失时静默失败，让浏览器从 CDN 加载（CSS 会自动处理）
+                // 关键资源缺失时打印警告
+                if isCriticalResource {
+                    print("LocalResourceSchemeHandler: ⚠️ Critical resource not found: \(finalFileName) (will fallback to CDN)")
+                } else if !isFontFile {
+                    // 非字体文件也打印（可能是其他资源）
+                    print("LocalResourceSchemeHandler: Resource not found: \(finalFileName) (will fallback to CDN)")
+                }
+                // 字体文件静默失败，不打印日志
+                
+                urlSchemeTask.didFailWithError(NSError(domain: "LocalResourceSchemeHandler", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to load resource: \(finalFileName)"]))
+                return
             }
-            // 字体文件静默失败，不打印日志
             
+            data = loadedData
+            
+            // 保存到内存缓存（只缓存关键资源，字体文件不缓存以节省内存）
+            if isCriticalResource || !isFontFile {
+                cacheQueue.async(flags: .barrier) { [weak self] in
+                    self?.resourceCache[finalFileName] = loadedData
+                }
+            }
+        }
+        
+        guard let finalData = data else {
             urlSchemeTask.didFailWithError(NSError(domain: "LocalResourceSchemeHandler", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to load resource: \(finalFileName)"]))
             return
         }
@@ -119,21 +149,31 @@ class LocalResourceSchemeHandler: NSObject, WKURLSchemeHandler {
         let response = URLResponse(
             url: url,
             mimeType: mimeType,
-            expectedContentLength: data.count,
+            expectedContentLength: finalData.count,
             textEncodingName: "utf-8"
         )
         
         // 返回数据
         urlSchemeTask.didReceive(response)
-        urlSchemeTask.didReceive(data)
+        urlSchemeTask.didReceive(finalData)
         urlSchemeTask.didFinish()
         
-        print("LocalResourceSchemeHandler: Successfully loaded \(finalFileName) (\(data.count) bytes) from path: \(path)")
+        // 只在启用详细日志时打印
+        if verboseLogging {
+            print("LocalResourceSchemeHandler: Successfully loaded \(finalFileName) (\(finalData.count) bytes) from path: \(path)")
+        }
     }
     
     /// 停止 URL Scheme 请求
     func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
         // 请求被取消，无需处理
+    }
+    
+    /// 清除资源缓存（在内存警告时调用）
+    func clearCache() {
+        cacheQueue.async(flags: .barrier) { [weak self] in
+            self?.resourceCache.removeAll()
+        }
     }
     
     /// 根据文件扩展名确定 MIME 类型

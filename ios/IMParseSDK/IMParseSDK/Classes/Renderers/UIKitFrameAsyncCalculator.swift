@@ -316,7 +316,7 @@ public class UIKitFrameAsyncCalculator {
                     semaphore.signal()
                 }
                 
-                let timeout = DispatchTime.now() + .milliseconds(1000)
+                let timeout = DispatchTime.now() + .milliseconds(10)
                 if semaphore.wait(timeout: timeout) == .success, let image = loadedImage {
                     // 成功获取缓存的图片，使用图片的实际尺寸
                     cachedImageSize = image.size
@@ -498,12 +498,10 @@ public class UIKitFrameAsyncCalculator {
                               Int(components[1] * 255),
                               Int(components[2] * 255))
         let fontSize = node.display ? 16.0 : 14.0
-        let cacheKey = MathHTMLRenderer.generateMathCacheKey(
+        let cacheKey = generateMathCacheKey(
             mathContent: node.content,
-            display: node.display,
             textColor: colorHex,
-            fontSize: fontSize,
-            targetSize: nil // 块级公式不使用目标尺寸
+            fontSize: fontSize
         )
         
         // 优先从缓存获取尺寸
@@ -519,17 +517,9 @@ public class UIKitFrameAsyncCalculator {
             return CGSize(width: width, height: totalHeight)
         }
         
-        // 触发异步渲染，但不触发回调，只生成和缓存图片
-        MathHTMLRenderer.shared.render(
-            mathContent: node.content,
-            display: node.display,
-            textColor: colorHex,
-            fontSize: fontSize,
-            formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
-        ) { _ in
-            // 空回调，只用于触发渲染和缓存，不执行任何操作
-            // 图片会自动缓存到 MathHTMLRenderer 的 imageCache 中
-        }
+        // 注意：不再在布局计算时预渲染，避免并发创建过多 WebView
+        // 渲染会在实际显示时触发（UIKitFrameRender 中），此时可以更好地控制并发
+        // 预渲染会导致多个任务并发执行，每个都获取 WebView，导致不断创建新 WebView
         
         // 返回原始文本内容的尺寸（作为估算值）
         let contentWidth = width - padding * 2
@@ -573,7 +563,7 @@ public class UIKitFrameAsyncCalculator {
         )
         
         // 使用统一的 cacheKey 生成方法
-        let cacheKey = MermaidHTMLRenderer.generateCacheKey(
+        let cacheKey = generateMermaidCacheKey(
             mermaidCode: node.content,
             textColor: textColorHex,
             backgroundColor: backgroundColorHex
@@ -588,21 +578,9 @@ public class UIKitFrameAsyncCalculator {
             return CGSize(width: width, height: totalHeight)
         }
         
-        // 没有缓存时，触发异步渲染（不触发回调），只让图片生成和缓存，提高性能
-        // 这样当实际 render 时，图片可能已经缓存好了
-        let validationResult = IMParseCore.mermaidToHTML(node.content, textColor: textColorHex, backgroundColor: backgroundColorHex)
-        if validationResult.success {
-            // 触发异步渲染，但不触发回调，只生成和缓存图片
-            MermaidHTMLRenderer.shared.render(
-                mermaidCode: node.content,
-                textColor: textColorHex,
-                backgroundColor: backgroundColorHex,
-                formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
-            ) { _ in
-                // 空回调，只用于触发渲染和缓存，不执行任何操作
-                // 图片会自动缓存到 MermaidHTMLRenderer 的 imageCache 中
-            }
-        }
+        // 注意：不再在布局计算时预渲染，避免并发创建过多 WebView
+        // 渲染会在实际显示时触发（UIKitFrameRender 中），此时可以更好地控制并发
+        // 预渲染会导致多个任务并发执行，每个都获取 WebView，导致不断创建新 WebView
         
         // 返回原始文本内容的尺寸（作为估算值）
         let contentWidth = width - padding * 2
@@ -805,7 +783,7 @@ public class UIKitFrameAsyncCalculator {
                         semaphore.signal()
                     }
                     
-                    let timeout = DispatchTime.now() + .milliseconds(100)
+                    let timeout = DispatchTime.now() + .milliseconds(10)
                     if semaphore.wait(timeout: timeout) == .success, let image = statusImage {
                         // 成功获取状态图片，添加一个空格和图片附件
                         mutableAttrString.append(NSAttributedString(string: " "))
@@ -836,10 +814,41 @@ public class UIKitFrameAsyncCalculator {
                     mutableAttrString.append(emojiString)
                 }
             } else if let mathNode = group.mathNode {
-                // 行内数学公式：使用 MathTextAttachment
-                let mathAttachment = MathTextAttachment(mathNode: mathNode, context: context)
-                let attachmentString = NSAttributedString(attachment: mathAttachment)
-                mutableAttrString.append(attachmentString)
+                // 行内数学公式：先检查缓存，如果有图片才创建 MathTextAttachment
+                let font = context.currentFont ?? context.theme.font
+                let lineHeight = font.lineHeight
+                
+                // 生成缓存键
+                let textColor = context.currentTextColor ?? context.theme.textColor
+                let components = textColor.cgColor.components ?? [0, 0, 0, 1]
+                let colorHex = String(format: "#%02X%02X%02X",
+                                      Int(components[0] * 255),
+                                      Int(components[1] * 255),
+                                      Int(components[2] * 255))
+                let fontSize = font.pointSize
+                let cacheKey = generateMathCacheKey(
+                    mathContent: mathNode.content,
+                    textColor: colorHex,
+                    fontSize: fontSize,
+                )
+                
+                // 先检查缓存，如果命中则创建 MathTextAttachment
+                if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey) {
+                    let mathAttachment = MathTextAttachment(mathNode: mathNode, image: cachedImage, font: font)
+                    let attachmentString = NSAttributedString(attachment: mathAttachment)
+                    mutableAttrString.append(attachmentString)
+                } else {
+                    // 缓存未命中，使用原文
+                    let color = context.currentTextColor ?? context.theme.textColor
+                    let mathString = NSAttributedString(
+                        string: mathNode.content,
+                        attributes: [
+                            .font: font,
+                            .foregroundColor: color
+                        ]
+                    )
+                    mutableAttrString.append(mathString)
+                }
             }
         }
         
@@ -1003,7 +1012,7 @@ public class UIKitFrameAsyncCalculator {
                         semaphore.signal()
                     }
                     
-                    let timeout = DispatchTime.now() + .milliseconds(100)
+                    let timeout = DispatchTime.now() + .milliseconds(10)
                     if semaphore.wait(timeout: timeout) == .success, let image = statusImage {
                         // 成功获取状态图片，添加一个空格和图片附件
                         mutableAttrString.append(NSAttributedString(string: " "))
@@ -1596,7 +1605,7 @@ public class UIKitFrameAsyncCalculator {
                         semaphore.signal()
                     }
                     
-                    let timeout = DispatchTime.now() + .milliseconds(100)
+                    let timeout = DispatchTime.now() + .milliseconds(10)
                     if semaphore.wait(timeout: timeout) == .success, let image = statusImage {
                         // 成功获取状态图片，添加一个空格和图片附件
                         mutableAttrString.append(NSAttributedString(string: " "))

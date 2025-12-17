@@ -28,7 +28,12 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
     core.source_files = 'IMParseSDK/Classes/Core/**/*.{h,m,swift}', 
                         'IMParseSDK/Classes/Models/ASTNodes.swift',
                         'IMParseSDK/Classes/Models/StyleConfig.swift',
-                        'IMParseSDK/IMParseSDK.h'
+                        'IMParseSDK/IMParseSDK.h',
+                        'IMParseSDK/Classes/Utils/LocalResourceSchemeHandler.swift',
+                        'IMParseSDK/Classes/Utils/SharedWebViewPool.swift',
+                        'IMParseSDK/Classes/Utils/MathWebViewPool.swift',
+                        'IMParseSDK/Classes/Utils/MermaidWebViewPool.swift'
+
     core.public_header_files = 'IMParseSDK/IMParseSDK.h', 'IMParseSDK/Classes/Core/**/*.h'
     core.frameworks = 'Foundation'
     
@@ -71,8 +76,6 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
     autolayout.source_files = 'IMParseSDK/Classes/Renderers/UIKitAutoLayoutRender.swift',
                               'IMParseSDK/Classes/Renderers/MathHTMLRenderer.swift',
                               'IMParseSDK/Classes/Renderers/MermaidHTMLRenderer.swift',
-                              'IMParseSDK/Classes/Utils/LocalResourceSchemeHandler.swift',
-                              'IMParseSDK/Classes/Utils/SharedWebViewPool.swift',
                               'IMParseSDK/Classes/Renderers/UIKitAttributedStringBuilder.swift',
                               'IMParseSDK/Classes/Renderers/UIKitRenderContext.swift',
                               'IMParseSDK/Classes/Renderers/UIKitTheme.swift',
@@ -95,8 +98,6 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
                          'IMParseSDK/Classes/Renderers/UIKitFrameRender.swift',
                          'IMParseSDK/Classes/Renderers/MathHTMLRenderer.swift',
                          'IMParseSDK/Classes/Renderers/MermaidHTMLRenderer.swift',
-                         'IMParseSDK/Classes/Utils/LocalResourceSchemeHandler.swift',
-                         'IMParseSDK/Classes/Utils/SharedWebViewPool.swift',
                          'IMParseSDK/Classes/Renderers/UIKitAttributedStringBuilder.swift',
                          'IMParseSDK/Classes/Renderers/UIKitRenderContext.swift',
                          'IMParseSDK/Classes/Renderers/UIKitTheme.swift',
@@ -119,8 +120,6 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
                            'IMParseSDK/Classes/Renderers/SwiftUIRenderContext.swift',
                            'IMParseSDK/Classes/Renderers/MathHTMLRenderer.swift',
                            'IMParseSDK/Classes/Renderers/MermaidHTMLRenderer.swift',
-                           'IMParseSDK/Classes/Utils/LocalResourceSchemeHandler.swift',
-                           'IMParseSDK/Classes/Utils/SharedWebViewPool.swift',
                            'IMParseSDK/Classes/Renderers/UIKitToolbar.swift'
     
     # 添加资源文件（Mermaid.js 和 KaTeX CSS）

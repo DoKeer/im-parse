@@ -9,20 +9,38 @@
 import UIKit
 import WebKit
 
+
+// MARK: - 行内数学公式渲染工具方法
+
+/// 生成包含尺寸信息的缓存key
+/// - Parameters:
+///   - mathContent: 数学公式内容
+///   - display: 是否为块级显示
+///   - textColor: 文本颜色（十六进制）
+///   - fontSize: 字体大小
+///   - targetSize: 目标尺寸（可选，用于行内公式）
+/// - Returns: 缓存key
+public func generateMathCacheKey(
+    mathContent: String,
+    textColor: String,
+    fontSize: CGFloat
+) -> String {
+    let contentHash = mathContent.hashValue
+    // 块级公式：使用原始尺寸
+    return "math:\(contentHash):\(textColor):\(Int(fontSize))"
+}
+
 /// 数学公式 HTML 渲染器
 /// 使用独立的 WKWebView 将 HTML 渲染为图片，支持 KaTeX CSS
-public class MathHTMLRenderer {
+@MainActor
+public struct MathHTMLRenderer {
     public static let shared = MathHTMLRenderer()
     
     // 可选的缓存代理（优先使用，避免内存占用）
     public weak var formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate?
-    
-    // 图片缓存（仅在没有 delegate 时使用，作为后备方案）
-    private var imageCache: [String: UIImage] = [:]
-    private let cacheQueue = DispatchQueue(label: "math.html.cache", attributes: .concurrent)
-    
+        
     // 使用共享的 WebView 池（与 MermaidHTMLRenderer 共享，减少资源占用）
-    private let webViewPool = SharedWebViewPool.shared
+    @MainActor private let webViewPool = SharedWebViewPool.shared
     
     // KaTeX CSS（优先从本地加载，降级到 CDN）
     static let katexCSSURL = "https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"
@@ -30,25 +48,7 @@ public class MathHTMLRenderer {
     
     // 本地资源管理器
     private let resourceManager = LocalResourceManager.shared
-    
-    private init() {
-        // 监听内存警告，清理缓存
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleMemoryWarning),
-            name: UIApplication.didReceiveMemoryWarningNotification,
-            object: nil
-        )
-    }
-    
-    deinit {
-        NotificationCenter.default.removeObserver(self)
-    }
-    
-    @objc private func handleMemoryWarning() {
-        clearCache()
-    }
-    
+
     /// 渲染 HTML 为图片
     /// - Parameters:
     ///   - html: KaTeX 生成的 HTML 内容
@@ -58,72 +58,48 @@ public class MathHTMLRenderer {
     ///   - mathContent: 可选的原始数学公式内容（LaTeX 格式），如果提供则用于生成缓存键，确保与其他地方一致
     ///   - formulaSizeCacheDelegate: 可选的缓存代理（如果提供，将优先使用）
     ///   - completion: 完成回调，返回渲染的图片
-    func render(
+    static func render(
         mathContent: String,
         display: Bool,
         textColor: String = "#000000",
         fontSize: CGFloat = 16,
-        formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil,
-        completion: @escaping (UIImage?) -> Void
-    ) {
+        formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil) async -> UIImage? {
         // 生成缓存键：优先使用 mathContent（如果提供），确保与其他地方一致
-        let cacheKey = MathHTMLRenderer.generateMathCacheKey(
+        let cacheKey = generateMathCacheKey(
             mathContent: mathContent,
-            display: display,
             textColor: textColor,
             fontSize: fontSize
         )
         
         // 优先使用传入的 delegate，否则使用实例的 delegate
-        let cacheDelegate = formulaSizeCacheDelegate ?? self.formulaSizeCacheDelegate
+        let cacheDelegate = formulaSizeCacheDelegate
         
         // 先检查缓存（优先使用 delegate）
         if let cachedImage = cacheDelegate?.getFormulaImage(for: cacheKey) {
-            DispatchQueue.main.async {
-                completion(cachedImage)
-            }
-            return
+            return cachedImage
         }
         // 异步渲染公式图片
         let result = IMParseCore.mathToHTML(mathContent, display: display)
         guard result.success, let html = result.astJSON else {
-            DispatchQueue.main.async {
-                completion(nil)
-            }
-            return
+            return nil
         }
-        // 如果没有 delegate，检查内部缓存（向后兼容）
-        cacheQueue.async { [weak self] in
-            if let cachedImage = self?.imageCache[cacheKey] {
-                DispatchQueue.main.async {
-                    completion(cachedImage)
-                }
-                return
-            }
-            
-            // 缓存未命中，验证 HTML 是否有效（检查是否包含 KaTeX 相关类）
-            if html.isEmpty || (!html.contains("katex") && !html.contains("math-container")) {
-                // HTML 无效或不包含数学公式内容
-                print("MathHTMLRenderer: Invalid HTML content")
-                DispatchQueue.main.async {
-                    completion(nil)
-                }
-                return
-            }
-            
+        
+        // 缓存未命中，验证 HTML 是否有效（检查是否包含 KaTeX 相关类）
+        if html.isEmpty || (!html.contains("katex") && !html.contains("math-container")) {
+            // HTML 无效或不包含数学公式内容
+            print("MathHTMLRenderer: Invalid HTML content")
+            return nil
+        }
+        
             // HTML 有效，进行渲染（必须在主线程）
-            DispatchQueue.main.async {
-                self?.renderHTML(
-                    html: html,
-                    display: display,
-                    textColor: textColor,
-                    fontSize: fontSize,
-                    cacheKey: cacheKey,
-                    cacheDelegate: cacheDelegate,
-                    completion: completion
-                )
-            }
-        }
+        return await MathHTMLRenderer.shared.renderHTML(
+                html: html,
+                display: display,
+                textColor: textColor,
+                fontSize: fontSize,
+                cacheKey: cacheKey,
+                cacheDelegate: cacheDelegate
+            )
     }
     
     /// 渲染行内数学公式并调整尺寸以适应行高
@@ -135,16 +111,15 @@ public class MathHTMLRenderer {
     ///   - lineHeight: 行高（用于调整图片尺寸）
     ///   - formulaSizeCacheDelegate: 可选的缓存代理（如果提供，将优先使用）
     ///   - completion: 完成回调，返回调整后的图片和尺寸
-    func renderInlineMath(
+    static func renderInlineMath(
         mathContent: String,
         textColor: UIColor,
         fontSize: CGFloat,
         lineHeight: CGFloat,
-        formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil,
-        completion: @escaping (UIImage?, CGSize) -> Void
-    ) {
+        formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil
+    ) async -> UIImage? {
         // 优先使用传入的 delegate，否则使用实例的 delegate
-        let cacheDelegate = formulaSizeCacheDelegate ?? self.formulaSizeCacheDelegate
+        let cacheDelegate = formulaSizeCacheDelegate
         
         // 转换颜色为十六进制（用于生成缓存键）
         let components = textColor.cgColor.components ?? [0, 0, 0, 1]
@@ -157,119 +132,76 @@ public class MathHTMLRenderer {
         // 先获取原始 HTML 以生成基础缓存键
         let result = IMParseCore.mathToHTML(mathContent, display: false)
         guard result.success, let html = result.astJSON else {
-            DispatchQueue.main.async {
-                completion(nil, .zero)
-            }
-            return
+            return nil
         }
         
         // 生成包含 lineHeight 的缓存键
-        let cacheKey = MathHTMLRenderer.generateInlineMathCacheKey(
+        let cacheKey = generateMathCacheKey(
             mathContent: mathContent,
             textColor: colorHex,
-            fontSize: fontSize,
-            lineHeight: lineHeight
+            fontSize: fontSize
         )
         
         // 先检查缓存（优先使用 delegate）
         if let cachedImage = cacheDelegate?.getFormulaImage(for: cacheKey) {
             // 从缓存的图片中获取尺寸
-            let cachedSize = cachedImage.size
-            DispatchQueue.main.async {
-                completion(cachedImage, cachedSize)
-            }
-            return
+            return cachedImage
+        }
+        // 缓存未命中，直接调用 renderHTML 进行渲染（避免重复的缓存检查）
+        
+        guard let image = await MathHTMLRenderer.shared.renderHTML(
+            html: html,
+            display: false,
+            textColor: colorHex,
+            fontSize: fontSize,
+            cacheKey: cacheKey,
+            cacheDelegate: cacheDelegate
+        ) else {
+            return nil
         }
         
-        // 如果没有 delegate，检查内部缓存（向后兼容）
-        // 注意：内部缓存可能不包含 lineHeight 信息，所以这里只作为后备
-        let baseCacheKey = generateCacheKey(html: html, display: false, textColor: colorHex, fontSize: fontSize)
-        cacheQueue.async { [weak self] in
-            if let cachedImage = self?.imageCache[baseCacheKey] {
-                // 内部缓存中的图片是原始尺寸，需要缩放
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let targetHeight = lineHeight
-                    let scale = targetHeight / cachedImage.size.height
-                    let scaledWidth = cachedImage.size.width * scale
-                    let scaledSize = CGSize(width: scaledWidth, height: targetHeight)
-                    
-                    // 缩放图片
-                    let renderer = UIGraphicsImageRenderer(size: scaledSize)
-                    let scaledImage = renderer.image { context in
-                        context.cgContext.interpolationQuality = .high
-                        cachedImage.draw(in: CGRect(origin: .zero, size: scaledSize))
-                    }
-                    
-                    // 保存缩放后的图片到缓存（如果有 delegate）
-                    cacheDelegate?.saveFormulaImage(scaledImage, for: cacheKey)
-                    
-                    DispatchQueue.main.async {
-                        completion(scaledImage, scaledSize)
-                    }
-                }
-                return
-            }
-            
-            // 缓存未命中，直接调用 renderHTML 进行渲染（避免重复的缓存检查）
-            DispatchQueue.main.async {
-                self?.renderHTML(
-                    html: html,
-                    display: false,
-                    textColor: colorHex,
-                    fontSize: fontSize,
-                    cacheKey: cacheKey,
-                    cacheDelegate: cacheDelegate
-                ) { image in
-                    guard let image = image else {
-                        DispatchQueue.main.async {
-                            completion(nil, .zero)
-                        }
-                        return
-                    }
-                    
-                    // 在后台线程调整图片尺寸以适应行高（避免主线程卡顿）
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        let targetHeight = lineHeight
-                        let scale = targetHeight / image.size.height
-                        let scaledWidth = image.size.width * scale
-                        let scaledSize = CGSize(width: scaledWidth, height: targetHeight)
-                        
-                        // 缩放图片，UIGraphicsImageRenderer会自动处理屏幕scale
-                        // 使用目标尺寸（点数），renderer会自动生成对应scale的像素图片
-                        // UIGraphicsImageRenderer 是线程安全的，可以在后台线程使用
-                        let renderer = UIGraphicsImageRenderer(size: scaledSize)
-                        let scaledImage = renderer.image { context in
-                            // 设置高质量插值以保持清晰度
-                            context.cgContext.interpolationQuality = .high
-                            // 绘制到目标尺寸
-                            image.draw(in: CGRect(origin: .zero, size: scaledSize))
-                        }
-                        
-                        // 保存缩放后的图片到缓存（如果有 delegate）
-                        cacheDelegate?.saveFormulaImage(scaledImage, for: cacheKey)
-                        
-                        // completion 回调在主线程执行（用于更新 UI）
-                        DispatchQueue.main.async {
-                            completion(scaledImage, scaledSize)
-                        }
-                    }
-                }
-            }
+        // 在后台线程调整图片尺寸以适应行高（避免主线程卡顿）
+        let targetHeight = lineHeight
+        let scale = targetHeight / image.size.height
+        let scaledWidth = image.size.width * scale
+        let scaledSize = CGSize(width: scaledWidth, height: targetHeight)
+        
+        // 缩放图片，UIGraphicsImageRenderer会自动处理屏幕scale
+        // 使用目标尺寸（点数），renderer会自动生成对应scale的像素图片
+        // UIGraphicsImageRenderer 是线程安全的，可以在后台线程使用
+        let renderer = UIGraphicsImageRenderer(size: scaledSize)
+        let scaledImage = renderer.image { context in
+            // 设置高质量插值以保持清晰度
+            context.cgContext.interpolationQuality = .high
+            // 绘制到目标尺寸
+            image.draw(in: CGRect(origin: .zero, size: scaledSize))
         }
+        
+        // 保存缩放后的图片到缓存（如果有 delegate）
+        cacheDelegate?.saveFormulaImage(scaledImage, for: cacheKey)
+        return scaledImage
+
     }
     
     /// 实际渲染 HTML（必须在主线程调用）
-    private func renderHTML(
+    @MainActor func renderHTML(
         html: String,
         display: Bool,
         textColor: String,
         fontSize: CGFloat,
         cacheKey: String,
-        cacheDelegate: UIKitFormulaSizeCacheDelegate?,
-        completion: @escaping (UIImage?) -> Void
-    ) {
+        cacheDelegate: UIKitFormulaSizeCacheDelegate?
+    ) async -> UIImage? {
         // 确保在主线程
         assert(Thread.isMainThread, "renderHTML must be called on main thread")
+        
+        // 等待渲染队列中的可用槽位（限制并发数）
+        await SharedWebViewPool.shared.waitForRenderSlot()
+        defer {
+            Task { @MainActor in
+                await SharedWebViewPool.shared.releaseRenderSlot()
+            }
+        }
         
         // 从池中获取或创建 WebView（必须在主线程）
         let webView = getOrCreateWebView()
@@ -290,169 +222,131 @@ public class MathHTMLRenderer {
         // 加载 HTML
         webView.loadHTMLString(fullHTML, baseURL: nil)
         
-        // 等待页面加载完成后截图
-        // 使用 WKNavigationDelegate 监听加载完成
-        let delegate = MathWebViewDelegate { [weak self] in
-            // WKNavigationDelegate 回调可能不在主线程，需要切换到主线程
-            DispatchQueue.main.async {
-                // 检查是否已经处理过
-                if let hasProcessed = objc_getAssociatedObject(webView, &MathAssociatedKeys.processing) as? Bool, hasProcessed {
-                    return
-                }
-                
-                // 标记为已处理
-                objc_setAssociatedObject(webView, &MathAssociatedKeys.processing, true, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-                
-                // 立即清除 delegate，防止再次触发
-                webView.navigationDelegate = nil
-                objc_setAssociatedObject(webView, &MathAssociatedKeys.delegate, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-                
-                guard let self = self else {
-                    MathHTMLRenderer.shared.returnWebViewToPool(webView)
-                    completion(nil)
-                    return
-                }
-                
-                // 等待 KaTeX CSS 加载和渲染完成
-                // iOS 14 兼容性：增加轮询检测
-                self.waitForKaTeXReady(webView: webView, maxAttempts: 10) { ready in
-                    if !ready {
-                        print("MathHTMLRenderer: KaTeX CSS failed to load (timeout or iOS 14 compatibility issue)")
-                        // 即使 CSS 未加载，也尝试渲染（可能只是样式问题）
-                    }
-                    
-                // 获取数学公式容器的精确边界（相对于视口）
-                // 注意：getBoundingClientRect() 返回的是实际渲染尺寸（包括字体、行高等）
-                // 使用 Math.ceil() 向上取整，避免因浮点数截断导致内容被裁剪
-                webView.evaluateJavaScript("""
-                    (function() {
-                        // 先查找 .katex 元素（KaTeX 生成的元素）
-                        const katexElement = document.querySelector('.katex');
-                        if (katexElement) {
-                            const rect = katexElement.getBoundingClientRect();
-                            // 使用 scrollWidth/scrollHeight 作为参考，确保不会遗漏溢出内容
-                            const scrollWidth = katexElement.scrollWidth;
-                            const scrollHeight = katexElement.scrollHeight;
-                            return {
-                                width: Math.ceil(Math.max(rect.width, scrollWidth)),
-                                height: Math.ceil(Math.max(rect.height, scrollHeight))
-                            };
-                        }
-                        // 如果没有找到 .katex，查找 .math-container
-                        const container = document.querySelector('.math-container');
-                        if (container) {
-                            const rect = container.getBoundingClientRect();
-                            const scrollWidth = container.scrollWidth;
-                            const scrollHeight = container.scrollHeight;
-                            return {
-                                width: Math.ceil(Math.max(rect.width, scrollWidth)),
-                                height: Math.ceil(Math.max(rect.height, scrollHeight))
-                            };
-                        }
-                        // 回退到 body
-                        const body = document.body;
-                        const rect = body.getBoundingClientRect();
-                        return {
-                            width: Math.max(Math.ceil(rect.width), 100),
-                            height: Math.max(Math.ceil(rect.height), 30)
-                        };
-                    })();
-                """) { result, error in
-                    if let error = error {
-                        print("MathHTMLRenderer: JavaScript error: \(error)")
-                        // 使用默认尺寸
-                        webView.frame = CGRect(x: 0, y: 0, width: 400, height: display ? 100 : 50)
-                        self.captureWebView(webView, contentRect: nil) { image in
-                            if let image = image {
-                                // 优先使用 delegate 缓存
-                                cacheDelegate?.saveFormulaImage(image, for: cacheKey)
-                                // 如果没有 delegate，使用内部缓存（向后兼容）
-                                if cacheDelegate == nil {
-                                    self.cacheQueue.async(flags: .barrier) {
-                                        self.imageCache[cacheKey] = image
-                                    }
-                                }
-                            }
-                            self.returnWebViewToPool(webView)
-                            completion(image)
-                        }
-                    } else if let sizeDict = result as? [String: CGFloat],
-                              let width = sizeDict["width"],
-                              let height = sizeDict["height"] {
-                        // 获取内容在 WebView 中的精确位置和尺寸
-                        // 同时考虑 scroll 尺寸，确保完整捕获内容
-                        webView.evaluateJavaScript("""
-                            (function() {
-                                const katexElement = document.querySelector('.katex') || document.querySelector('.math-container');
-                                if (katexElement) {
-                                    const rect = katexElement.getBoundingClientRect();
-                                    const scrollWidth = katexElement.scrollWidth;
-                                    const scrollHeight = katexElement.scrollHeight;
-                                    return {
-                                        x: Math.max(0, Math.floor(rect.left)),
-                                        y: Math.max(0, Math.floor(rect.top)),
-                                        width: Math.ceil(Math.max(rect.width, scrollWidth)),
-                                        height: Math.ceil(Math.max(rect.height, scrollHeight))
-                                    };
-                                }
-                                return { x: 0, y: 0, width: \(width), height: \(height) };
-                            })();
-                        """) { positionResult, _ in
-                            var contentRect = CGRect(x: 0, y: 0, width: width, height: height)
-                            
-                            if let positionDict = positionResult as? [String: CGFloat],
-                               let x = positionDict["x"],
-                               let y = positionDict["y"],
-                               let w = positionDict["width"],
-                               let h = positionDict["height"] {
-                                contentRect = CGRect(x: x, y: y, width: w, height: h)
-                            }
-                            
-                            // 使用精确的内容区域直接截图（不调整 WebView 尺寸）
-                            self.captureWebView(webView, contentRect: contentRect) { image in
-                                // 缓存图片（优先使用 delegate）
-                                if let image = image {
-                                    cacheDelegate?.saveFormulaImage(image, for: cacheKey)
-                                    // 如果没有 delegate，使用内部缓存（向后兼容）
-                                    if cacheDelegate == nil {
-                                        self.cacheQueue.async(flags: .barrier) {
-                                            self.imageCache[cacheKey] = image
-                                        }
-                                    }
-                                }
-                                
-                                // 将 WebView 返回池中
-                                self.returnWebViewToPool(webView)
-                                
-                                completion(image)
-                            }
-                        }
-                    } else {
-                        // 使用默认尺寸
-                        webView.frame = CGRect(x: 0, y: 0, width: 400, height: display ? 100 : 50)
-                        self.captureWebView(webView, contentRect: nil) { image in
-                            if let image = image {
-                                // 优先使用 delegate 缓存
-                                cacheDelegate?.saveFormulaImage(image, for: cacheKey)
-                                // 如果没有 delegate，使用内部缓存（向后兼容）
-                                if cacheDelegate == nil {
-                                    self.cacheQueue.async(flags: .barrier) {
-                                        self.imageCache[cacheKey] = image
-                                    }
-                                }
-                            }
-                            self.returnWebViewToPool(webView)
-                            completion(image)
-                        }
-                    }
-                }
+        // 等待页面加载完成
+        await withCheckedContinuation { continuation in
+            // 使用 WKNavigationDelegate 监听加载完成
+            let delegate = MathWebViewDelegate {
+                continuation.resume()
             }
-        }
+            
+            // 保存 delegate 引用（避免被释放）
+            objc_setAssociatedObject(webView, &MathAssociatedKeys.delegate, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            webView.navigationDelegate = delegate
         }
         
-        // 保存 delegate 引用（避免被释放）
-        objc_setAssociatedObject(webView, &MathAssociatedKeys.delegate, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-        webView.navigationDelegate = delegate
+        // 检查是否已经处理过
+        if let hasProcessed = objc_getAssociatedObject(webView, &MathAssociatedKeys.processing) as? Bool, hasProcessed {
+            return nil
+        }
+        
+        // 标记为已处理
+        objc_setAssociatedObject(webView, &MathAssociatedKeys.processing, true, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        
+        // 立即清除 delegate，防止再次触发
+        webView.navigationDelegate = nil
+        objc_setAssociatedObject(webView, &MathAssociatedKeys.delegate, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        
+        // 等待 KaTeX CSS 加载和渲染完成
+        // iOS 14 兼容性：增加轮询检测
+        let ready = await self.waitForKaTeXReady(webView: webView, maxAttempts: 10)
+        
+        if !ready {
+            print("MathHTMLRenderer: KaTeX CSS failed to load (timeout or iOS 14 compatibility issue)")
+            // 即使 CSS 未加载，也尝试渲染（可能只是样式问题）
+        }
+        
+        // 获取数学公式容器的精确边界（相对于视口）
+        // 注意：getBoundingClientRect() 返回的是实际渲染尺寸（包括字体、行高等）
+        // 使用 Math.ceil() 向上取整，避免因浮点数截断导致内容被裁剪
+        do {
+            let result = try await webView.evaluateJavaScript("""
+                (function() {
+                    // 先查找 .katex 元素（KaTeX 生成的元素）
+                    const katexElement = document.querySelector('.katex');
+                    if (katexElement) {
+                        const rect = katexElement.getBoundingClientRect();
+                        // 使用 scrollWidth/scrollHeight 作为参考，确保不会遗漏溢出内容
+                        const scrollWidth = katexElement.scrollWidth;
+                        const scrollHeight = katexElement.scrollHeight;
+                        return {
+                            width: Math.ceil(Math.max(rect.width, scrollWidth)),
+                            height: Math.ceil(Math.max(rect.height, scrollHeight))
+                        };
+                    }
+                    // 如果没有找到 .katex，查找 .math-container
+                    const container = document.querySelector('.math-container');
+                    if (container) {
+                        const rect = container.getBoundingClientRect();
+                        const scrollWidth = container.scrollWidth;
+                        const scrollHeight = container.scrollHeight;
+                        return {
+                            width: Math.ceil(Math.max(rect.width, scrollWidth)),
+                            height: Math.ceil(Math.max(rect.height, scrollHeight))
+                        };
+                    }
+                    // 回退到 body
+                    const body = document.body;
+                    const rect = body.getBoundingClientRect();
+                    return {
+                        width: Math.max(Math.ceil(rect.width), 100),
+                        height: Math.max(Math.ceil(rect.height), 30)
+                    };
+                })();
+            """)
+            
+            guard let sizeDict = result as? [String: CGFloat],
+                  let width = sizeDict["width"],
+                  let height = sizeDict["height"] else {
+                // 尺寸获取失败
+                returnWebViewToPool(webView)
+                return nil
+            }
+            
+            // 获取内容在 WebView 中的精确位置和尺寸
+            // 同时考虑 scroll 尺寸，确保完整捕获内容
+            let positionResult = try? await webView.evaluateJavaScript("""
+                (function() {
+                    const katexElement = document.querySelector('.katex') || document.querySelector('.math-container');
+                    if (katexElement) {
+                        const rect = katexElement.getBoundingClientRect();
+                        const scrollWidth = katexElement.scrollWidth;
+                        const scrollHeight = katexElement.scrollHeight;
+                        return {
+                            x: Math.max(0, Math.floor(rect.left)),
+                            y: Math.max(0, Math.floor(rect.top)),
+                            width: Math.ceil(Math.max(rect.width, scrollWidth)),
+                            height: Math.ceil(Math.max(rect.height, scrollHeight))
+                        };
+                    }
+                    return { x: 0, y: 0, width: \(width), height: \(height) };
+                })();
+            """)
+            
+            var contentRect = CGRect(x: 0, y: 0, width: width, height: height)
+            
+            if let positionDict = positionResult as? [String: CGFloat],
+               let x = positionDict["x"],
+               let y = positionDict["y"],
+               let w = positionDict["width"],
+               let h = positionDict["height"] {
+                contentRect = CGRect(x: x, y: y, width: w, height: h)
+            }
+            
+            // 使用精确的内容区域直接截图（不调整 WebView 尺寸）
+            // 缓存图片（优先使用 delegate）
+            if let image = await self.captureWebView(webView, contentRect: contentRect) {
+                cacheDelegate?.saveFormulaImage(image, for: cacheKey)
+                returnWebViewToPool(webView)
+                return image
+            }
+            
+            returnWebViewToPool(webView)
+            return nil
+        } catch {
+            print("MathHTMLRenderer: JavaScript evaluation error: \(error)")
+            returnWebViewToPool(webView)
+            return nil
+        }
     }
     
     /// 构建完整的 HTML（包含 KaTeX CSS）
@@ -514,7 +408,7 @@ public class MathHTMLRenderer {
     ///   - webView: 要截图的 WebView
     ///   - contentRect: 要截取的内容区域（相对于 WebView bounds），如果为 nil 则截取整个 WebView
     ///   - completion: 完成回调，返回裁剪后的图片
-    private func captureWebView(_ webView: WKWebView, contentRect: CGRect?, completion: @escaping (UIImage?) -> Void) {
+    @MainActor func captureWebView(_ webView: WKWebView, contentRect: CGRect?) async -> UIImage? {
         let config = WKSnapshotConfiguration()
         
         // 获取屏幕 scale，用于生成高清图片（避免模糊）
@@ -543,35 +437,30 @@ public class MathHTMLRenderer {
         // 这样可以生成高分辨率图片，避免在 Retina 屏幕上模糊
         // snapshotWidth 是生成图片的实际像素宽度
         config.snapshotWidth = NSNumber(value: Double(targetRect.width * scale))
-        
-        webView.takeSnapshot(with: config) { image, error in
-            if let error = error {
-                print("MathHTMLRenderer: Snapshot error: \(error.localizedDescription)")
-                completion(nil)
-                return
-            }
-            
+        do {
             // 验证生成的图片尺寸
-            if let image = image {
-                let expectedWidth = targetRect.width * scale
-                let expectedHeight = targetRect.height * scale
-                let actualWidth = image.size.width * image.scale
-                let actualHeight = image.size.height * image.scale
-                
-                // 如果尺寸差异较大（超过 5%），打印警告日志
-                if abs(actualWidth - expectedWidth) > expectedWidth * 0.05 ||
-                   abs(actualHeight - expectedHeight) > expectedHeight * 0.05 {
-                    print("MathHTMLRenderer: Unexpected image size - expected: \(Int(expectedWidth))×\(Int(expectedHeight)), actual: \(Int(actualWidth))×\(Int(actualHeight))")
-                }
+            let image = try await webView.takeSnapshot(with: config)
+            let expectedWidth = targetRect.width * scale
+            let expectedHeight = targetRect.height * scale
+            let actualWidth = image.size.width * image.scale
+            let actualHeight = image.size.height * image.scale
+            
+            // 如果尺寸差异较大（超过 5%），打印警告日志
+            if abs(actualWidth - expectedWidth) > expectedWidth * 0.05 ||
+               abs(actualHeight - expectedHeight) > expectedHeight * 0.05 {
+                print("MathHTMLRenderer: Unexpected image size - expected: \(Int(expectedWidth))×\(Int(expectedHeight)), actual: \(Int(actualWidth))×\(Int(actualHeight))")
             }
             
-            // 返回生成的高清图片
-            completion(image)
+            // 返回成功获取的图片
+            return image
+        } catch {
+            print("MathHTMLRenderer: Snapshot error: \(error.localizedDescription)")
+            return nil
         }
     }
     
     /// 裁剪图片到指定区域
-    private func cropImage(_ image: UIImage, to rect: CGRect) -> UIImage? {
+    @MainActor func cropImage(_ image: UIImage, to rect: CGRect) -> UIImage? {
         guard let cgImage = image.cgImage else {
             return nil
         }
@@ -593,81 +482,15 @@ public class MathHTMLRenderer {
     }
     
     /// 从池中获取或创建 WebView（必须在主线程调用）
-    private func getOrCreateWebView() -> WKWebView {
+    @MainActor func getOrCreateWebView() -> WKWebView {
         // 使用共享的 WebView 池
         return webViewPool.getOrCreateWebView()
     }
     
     /// 将 WebView 返回池中（必须在主线程调用）
-    private func returnWebViewToPool(_ webView: WKWebView) {
+    @MainActor func returnWebViewToPool(_ webView: WKWebView) {
         // 使用共享的 WebView 池
         webViewPool.returnWebView(webView)
-    }
-    
-    /// 生成缓存键
-    private func generateCacheKey(html: String, display: Bool, textColor: String, fontSize: CGFloat) -> String {
-        let hash = html.hashValue
-        return "\(hash)_\(display)_\(textColor)_\(Int(fontSize))"
-    }
-    
-    // MARK: - 行内数学公式渲染工具方法
-    
-    /// 生成包含尺寸信息的缓存key
-    /// - Parameters:
-    ///   - mathContent: 数学公式内容
-    ///   - display: 是否为块级显示
-    ///   - textColor: 文本颜色（十六进制）
-    ///   - fontSize: 字体大小
-    ///   - targetSize: 目标尺寸（可选，用于行内公式）
-    /// - Returns: 缓存key
-    static func generateMathCacheKey(
-        mathContent: String,
-        display: Bool,
-        textColor: String,
-        fontSize: CGFloat,
-        targetSize: CGSize? = nil
-    ) -> String {
-        let contentHash = mathContent.hashValue
-        if let size = targetSize {
-            // 行内公式：key包含目标尺寸
-            return "math:\(contentHash):\(display):\(textColor):\(Int(fontSize)):\(Int(size.width))x\(Int(size.height))"
-        } else {
-            // 块级公式：不包含尺寸（使用原始尺寸）
-            return "math:\(contentHash):\(display):\(textColor):\(Int(fontSize))"
-        }
-    }
-    
-    /// 生成行内数学公式的缓存键（使用 lineHeight）
-    /// 行内公式的缓存键格式：math:{contentHash}:false:{colorHex}:{fontSize}:{lineHeight}
-    /// - Parameters:
-    ///   - mathContent: 数学公式内容（LaTeX 格式）
-    ///   - textColor: 文本颜色（十六进制，如 "#000000"）
-    ///   - fontSize: 字体大小
-    ///   - lineHeight: 行高（用于调整图片尺寸）
-    /// - Returns: 缓存键
-    static func generateInlineMathCacheKey(
-        mathContent: String,
-        textColor: String,
-        fontSize: CGFloat,
-        lineHeight: CGFloat
-    ) -> String {
-        let contentHash = mathContent.hashValue
-        return "math:\(contentHash):false:\(textColor):\(Int(fontSize)):\(Int(lineHeight))"
-    }
-    
-    /// 清除缓存
-    func clearCache() {
-        cacheQueue.async(flags: .barrier) { [weak self] in
-            self?.imageCache.removeAll()
-        }
-    }
-    
-    /// 清除指定缓存
-    func clearCache(for html: String, display: Bool, textColor: String, fontSize: CGFloat) {
-        let cacheKey = generateCacheKey(html: html, display: display, textColor: textColor, fontSize: fontSize)
-        cacheQueue.async(flags: .barrier) { [weak self] in
-            self?.imageCache.removeValue(forKey: cacheKey)
-        }
     }
     
     // MARK: - HTML 工具方法
@@ -677,8 +500,8 @@ public class MathHTMLRenderer {
     ///   - webView: WebView 实例
     ///   - maxAttempts: 最大尝试次数（默认 10 次，每次 0.1 秒，共 1 秒）
     ///   - completion: 完成回调，返回是否成功加载
-    private func waitForKaTeXReady(webView: WKWebView, maxAttempts: Int, completion: @escaping (Bool) -> Void) {
-        checkKaTeXReady(webView: webView, attempt: 0, maxAttempts: maxAttempts, completion: completion)
+    @MainActor func waitForKaTeXReady(webView: WKWebView, maxAttempts: Int) async -> Bool {
+        return await checkKaTeXReady(webView: webView, attempt: 0, maxAttempts: maxAttempts)
     }
     
     /// 递归检查 KaTeX CSS 是否加载完成
@@ -687,80 +510,72 @@ public class MathHTMLRenderer {
     /// 2. **渲染时序**：didFinish 触发时，JavaScript 可能还在执行，DOM 还未完全构建
     /// 3. **布局计算**：浏览器布局引擎需要时间完成 reflow/repaint
     /// 解决方案：等待字体加载 + 检查 DOM 完整性 + 验证布局稳定性
-    private func checkKaTeXReady(webView: WKWebView, attempt: Int, maxAttempts: Int, completion: @escaping (Bool) -> Void) {
+    @MainActor func checkKaTeXReady(webView: WKWebView, attempt: Int, maxAttempts: Int) async -> Bool {
         guard attempt < maxAttempts else {
             // 超时，但不阻止渲染（使用当前状态）
             print("MathHTMLRenderer: Timeout waiting for KaTeX, proceeding with current state")
-            completion(false)
-            return
+            return false
         }
         
         // 综合检查：元素存在 + DOM 完整 + 字体加载 + 尺寸合理
-        webView.evaluateJavaScript("""
-            (function() {
-                // 1. 检查元素是否存在
-                const katexElement = document.querySelector('.katex') || document.querySelector('.math-container');
-                if (!katexElement) {
-                    return { ready: false, reason: 'element not found' };
-                }
-                
-                // 2. 检查 KaTeX 是否真正渲染完成（有实际的 DOM 子元素）
-                // KaTeX 渲染后会生成包含 .katex-html, .katex-mathml 等子元素的结构
-                const hasKaTeXStructure = katexElement.querySelector('.katex-html, .katex-mathml, span.katex, span.base') !== null;
-                const hasChildren = katexElement.children.length > 0;
-                
-                if (!hasKaTeXStructure && !hasChildren) {
-                    return { ready: false, reason: 'DOM not complete' };
-                }
-                
-                // 3. 检查尺寸是否合理（不是初始状态或异常值）
-                const rect = katexElement.getBoundingClientRect();
-                const hasValidDimensions = rect.width > 0 && rect.height > 0;
-                
-                if (!hasValidDimensions) {
-                    return { ready: false, reason: 'no dimensions' };
-                }
-                
-                // 4. 检查字体是否加载完成（关键：避免字体未加载导致尺寸错误）
-                // 使用 Font Loading API (document.fonts.ready)
-                if (document.fonts && document.fonts.ready) {
-                    // 检查特定 KaTeX 字体是否已加载
-                    // document.fonts.check() 同步检查字体
-                    const mainFontLoaded = document.fonts.check('1em KaTeX_Main-Regular') || 
-                                          document.fonts.check('16px KaTeX_Main');
-                    const mathFontLoaded = document.fonts.check('1em KaTeX_Math-Italic') || 
-                                          document.fonts.check('16px KaTeX_Math');
-                    
-                    // 如果字体检查失败，但尺寸合理（高度 > 12px），可能字体已加载或使用系统字体
-                    const fontsReady = mainFontLoaded || mathFontLoaded || rect.height > 12;
-                    
-                    if (!fontsReady) {
-                        return { 
-                            ready: false, 
-                            reason: 'fonts not loaded',
-                            width: Math.ceil(rect.width),
-                            height: Math.ceil(rect.height)
-                        };
+        do {
+            let result = try await webView.evaluateJavaScript("""
+                (function() {
+                    // 1. 检查元素是否存在
+                    const katexElement = document.querySelector('.katex') || document.querySelector('.math-container');
+                    if (!katexElement) {
+                        return { ready: false, reason: 'element not found' };
                     }
-                }
-                
-                // 5. 所有检查通过，认为就绪
-                return { 
-                    ready: true, 
-                    reason: 'fully rendered',
-                    width: Math.ceil(rect.width),
-                    height: Math.ceil(rect.height)
-                };
-            })();
-        """) { result, error in
-            if let error = error {
-                print("MathHTMLRenderer: Check ready error (attempt \(attempt + 1)/\(maxAttempts)): \(error)")
-                // 继续重试
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    self.checkKaTeXReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts, completion: completion)
-                }
-                return
-            }
+                    
+                    // 2. 检查 KaTeX 是否真正渲染完成（有实际的 DOM 子元素）
+                    // KaTeX 渲染后会生成包含 .katex-html, .katex-mathml 等子元素的结构
+                    const hasKaTeXStructure = katexElement.querySelector('.katex-html, .katex-mathml, span.katex, span.base') !== null;
+                    const hasChildren = katexElement.children.length > 0;
+                    
+                    if (!hasKaTeXStructure && !hasChildren) {
+                        return { ready: false, reason: 'DOM not complete' };
+                    }
+                    
+                    // 3. 检查尺寸是否合理（不是初始状态或异常值）
+                    const rect = katexElement.getBoundingClientRect();
+                    const hasValidDimensions = rect.width > 0 && rect.height > 0;
+                    
+                    if (!hasValidDimensions) {
+                        return { ready: false, reason: 'no dimensions' };
+                    }
+                    
+                    // 4. 检查字体是否加载完成（关键：避免字体未加载导致尺寸错误）
+                    // 使用 Font Loading API (document.fonts.ready)
+                    if (document.fonts && document.fonts.ready) {
+                        // 检查特定 KaTeX 字体是否已加载
+                        // document.fonts.check() 同步检查字体
+                        const mainFontLoaded = document.fonts.check('1em KaTeX_Main-Regular') || 
+                                              document.fonts.check('16px KaTeX_Main');
+                        const mathFontLoaded = document.fonts.check('1em KaTeX_Math-Italic') || 
+                                              document.fonts.check('16px KaTeX_Math');
+                        
+                        // 如果字体检查失败，但尺寸合理（高度 > 12px），可能字体已加载或使用系统字体
+                        const fontsReady = mainFontLoaded || mathFontLoaded || rect.height > 12;
+                        
+                        if (!fontsReady) {
+                            return { 
+                                ready: false, 
+                                reason: 'fonts not loaded',
+                                width: Math.ceil(rect.width),
+                                height: Math.ceil(rect.height)
+                            };
+                        }
+                    }
+                    
+                    // 5. 所有检查通过，认为就绪
+                    return { 
+                        ready: true, 
+                        reason: 'fully rendered',
+                        width: Math.ceil(rect.width),
+                        height: Math.ceil(rect.height)
+                    };
+                })();
+            """)
             
             if let statusDict = result as? [String: Any],
                let ready = statusDict["ready"] as? Bool,
@@ -772,27 +587,29 @@ public class MathHTMLRenderer {
                         let width = statusDict["width"] as? CGFloat ?? 0
                         let height = statusDict["height"] as? CGFloat ?? 0
                         print("MathHTMLRenderer: KaTeX ready after \(attempt + 1) attempts - \(reason) (size: \(Int(width))×\(Int(height)))")
-                        completion(true)
+                        return true
                     } else {
                         // 第一次检测到就绪，等待一小段时间后再次验证（确保布局稳定）
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            self.checkKaTeXReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts, completion: completion)
-                        }
+                        try await Task.sleep(nanoseconds: 50_000_000) // 0.05 秒
+                        return await checkKaTeXReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts)
                     }
                 } else {
                     // 未就绪，继续等待
                     // 根据原因调整等待时间：字体加载通常需要更长时间
-                    let delay: TimeInterval = reason.contains("fonts") ? 0.15 : 0.1
-                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                        self.checkKaTeXReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts, completion: completion)
-                    }
+                    let delay: UInt64 = reason.contains("fonts") ? 150_000_000 : 100_000_000 // 0.15 或 0.1 秒
+                    try await Task.sleep(nanoseconds: delay)
+                    return await checkKaTeXReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts)
                 }
             } else {
                 // 未知错误，继续重试
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    self.checkKaTeXReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts, completion: completion)
-                }
+                try await Task.sleep(nanoseconds: 100_000_000) // 0.1 秒
+                return await checkKaTeXReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts)
             }
+        } catch {
+            print("MathHTMLRenderer: Check ready error (attempt \(attempt + 1)/\(maxAttempts)): \(error)")
+            // 继续重试
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 秒
+            return await checkKaTeXReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts)
         }
     }
     

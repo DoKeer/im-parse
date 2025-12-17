@@ -75,6 +75,65 @@ object MessageDataGenerator {
     private fun generateMarkdownTemplates(): List<String> {
         return listOf(
             """
+            $$
+            \int_{0}^{\infty} e^{-x^{2}} \, dx \approx \frac{\sqrt{\pi}}{2}
+            $$
+            
+            ```mermaid
+            sequenceDiagram
+                participant A as Alice
+                participant B as Bob
+                A->>B: 发送消息
+                B-->>A: 回复消息
+            ```
+            
+            ```mermaid
+              gantt
+                  title 项目进度
+                  dateFormat  YYYY-MM-DD
+                  section 阶段1
+                  任务1           :a1, 2024-01-01, 30d
+                  任务2           :a2, 2024-01-15, 20d
+                  section 阶段2
+                  任务3           :a3, 2024-02-01, 30d
+            ```
+            """,
+            """
+            ## 表格测试
+            
+            | 列1 | 列2 | 列3 | 列4 |
+            |-----|-----|-----|-----|
+            | 数据1 | **粗体数据** | *斜体数据ABCabc* ${'$'}E = mc^2$ | `代码数据` |
+            | 数据2https://fastly.picsum.photos/id/987/300/200.jpg?hmac=lJV-MNZkUF2dOSdcuChxuE5smUQzHj6t3UFq9va9uK0https://fastly.picsum.photos/id/987/300/200.jpg?hmac=lJV-MNZkUF2dOSdcuChxuE5smUQzHj6t3UFq9va9uK0 | 文本和[链接](https://example.com) | 普通文本 | 混合格式 |
+            | 数据3 ${'$'}E = mc^2$  | 长文本内容，用于测试表格单元格中的文本换行效果 | 短文本 | 数据 |
+            | 数据4 | 左对齐 | 居中 | 右对齐 |
+            
+            | 左对齐 | 居中 | 右对齐 |
+            |:-------|:----:|------:|
+            | 左 | 中 | 右 |
+            | 左对齐文本 | 居中文本 | 右对齐文本 |
+                   
+            """,
+            """
+            ```javascript
+            // JavaScript 代码示例
+            const greet = (name) => {
+                console.log(`Hello, "/(name)"!`);
+            };
+            
+            // 使用 Promise
+            const fetchData = async () => {
+                try {
+                    const response = await fetch('https://api.example.com/data');
+                    const data = await response.json();
+                    return data;
+                } catch (error) {
+                    console.error('Error:', error);
+                }
+            };
+            ```
+            """,
+            """
             **粗体中的*斜体***和*斜体中的**粗体***
             """.trimIndent(),
             
