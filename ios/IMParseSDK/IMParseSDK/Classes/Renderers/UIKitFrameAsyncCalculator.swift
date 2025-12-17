@@ -486,10 +486,8 @@ public class UIKitFrameAsyncCalculator {
             return CGSize(width: estimatedWidth, height: lineHeight)
         }
         
-        // 块级公式：需要工具栏和padding
+        // 块级公式：只需要 padding（不再需要工具栏）
         let padding = context.theme.toolbarPadding
-        let toolbarPadding = context.theme.toolbarPadding
-        let toolbarHeight: CGFloat = context.toolbarActionDelegate != nil ? context.theme.toolbarHeight + toolbarPadding * 2 : 0 // 工具栏高度 + 间距
         
         // 生成缓存键（使用内容字符串作为key）
         // 生成包含尺寸信息的缓存key（块级公式不包含尺寸，使用原始尺寸）
@@ -512,12 +510,12 @@ public class UIKitFrameAsyncCalculator {
         if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey) {
             // 如果缓存中有尺寸，使用缓存的尺寸
             let imageHeight = cachedSize.height
-            let totalHeight = imageHeight + padding * 2 + toolbarHeight
+            let totalHeight = imageHeight + padding * 2
             return CGSize(width: width, height: totalHeight)
         } else if let cachedSize = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey)?.size {
             // 没尺寸缓存，直接用图片缓存的尺寸
             let imageHeight = cachedSize.height
-            let totalHeight = imageHeight + padding * 2 + toolbarHeight
+            let totalHeight = imageHeight + padding * 2
             return CGSize(width: width, height: totalHeight)
         }
         
@@ -545,7 +543,7 @@ public class UIKitFrameAsyncCalculator {
         ).size
         
         let contentHeight = ceil(size.height)
-        let totalHeight = contentHeight + padding * 2 + toolbarHeight
+        let totalHeight = contentHeight + padding * 2
         return CGSize(width: width, height: totalHeight)
     }
     
@@ -628,16 +626,12 @@ public class UIKitFrameAsyncCalculator {
     /// - Parameters:
     ///   - displayHeight: 图片的实际显示高度（可能被缩放）
     ///   - context: 渲染上下文
-    /// - Returns: 总高度（包含 padding 和 toolbar）
+    /// - Returns: 总高度（只包含 padding，不再包含 toolbar）
     /// - Note: 此方法用于 Render 中检查实际高度，确保与预计算高度一致
     public static func calculateMathTotalHeight(displayHeight: CGFloat, context: UIKitRenderContext) -> CGFloat {
         let contentPadding = context.theme.toolbarPadding
-        let toolbarPadding = context.theme.toolbarPadding
-        // 工具栏区域高度：如果有代理，则包含工具栏高度和上下间距
-        // 与 estimateMathSize 中的计算逻辑保持一致
-        let toolbarHeight: CGFloat = context.toolbarActionDelegate != nil ? context.theme.toolbarHeight + toolbarPadding * 2 : 0
-        // 总高度 = 显示高度 + 上下 padding + 工具栏区域高度
-        return displayHeight + contentPadding * 2 + toolbarHeight
+        // 总高度 = 显示高度 + 上下 padding（不再包含工具栏）
+        return displayHeight + contentPadding * 2
     }
     
     /// 计算 Mermaid 节点的总高度（基于实际显示尺寸）

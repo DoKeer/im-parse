@@ -8,6 +8,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toDrawable
+import androidx.core.graphics.toColorInt
+import androidx.core.graphics.createBitmap
 
 /**
  * Android 工具栏组件
@@ -79,13 +82,11 @@ class AndroidToolbar(context: Context) : FrameLayout(context) {
         textView.text = iconText
         textView.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 18f, resources.displayMetrics)
         textView.gravity = Gravity.CENTER
-        textView.setTextColor(Color.parseColor("#666666"))
+        textView.setTextColor("#666666".toColorInt())
         
         // 创建Drawable
-        val drawable = android.graphics.drawable.BitmapDrawable(
-            resources,
-            createBitmapFromTextView(textView, buttonSize, buttonSize)
-        )
+        val drawable =
+            createBitmapFromTextView(textView, buttonSize, buttonSize).toDrawable(resources)
         button.setImageDrawable(drawable)
         
         button.contentDescription = contentDescription
@@ -118,7 +119,7 @@ class AndroidToolbar(context: Context) : FrameLayout(context) {
         )
         textView.layout(0, 0, width, height)
         
-        val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+        val bitmap = createBitmap(width, height)
         val canvas = android.graphics.Canvas(bitmap)
         textView.draw(canvas)
         return bitmap
@@ -135,8 +136,11 @@ class MermaidViewModeSwitcher(
     buttonWidth: Int? = null,
     buttonSpacing: Int? = null,
     padding: Int? = null,
-    switcherHeight: Int? = null
+    switcherHeight: Int? = null,
+    textColor: Int = Color.BLACK
 ) : FrameLayout(context) {
+    
+    private val textColorValue: Int = textColor
     
     private var previewButton: Button? = null
     private var codeButton: Button? = null
@@ -167,6 +171,14 @@ class MermaidViewModeSwitcher(
         TypedValue.COMPLEX_UNIT_DIP, 32f, resources.displayMetrics
     ).toInt()
     
+    // 计算未选中状态的颜色（降低透明度）
+    private val unselectedTextColor: Int = Color.argb(
+        (Color.alpha(textColorValue) * 0.6f).toInt(),
+        Color.red(textColorValue),
+        Color.green(textColorValue),
+        Color.blue(textColorValue)
+    )
+    
     init {
         // 透明背景，不需要圆角
         setBackgroundColor(Color.TRANSPARENT)
@@ -182,7 +194,7 @@ class MermaidViewModeSwitcher(
         )
         previewButton?.setTypeface(null, android.graphics.Typeface.BOLD)
         previewButton?.setBackgroundColor(Color.TRANSPARENT)
-        previewButton?.setTextColor(Color.parseColor("#666666"))
+        previewButton?.setTextColor(unselectedTextColor)
         previewButton?.setOnClickListener { isPreviewMode = true }
         previewButton?.setPadding(0, 0, 0, 0)
         previewButton?.setAllCaps(false)
@@ -196,15 +208,15 @@ class MermaidViewModeSwitcher(
         )
         codeButton?.setTypeface(null, android.graphics.Typeface.BOLD)
         codeButton?.setBackgroundColor(Color.TRANSPARENT)
-        codeButton?.setTextColor(Color.parseColor("#666666"))
+        codeButton?.setTextColor(unselectedTextColor)
         codeButton?.setOnClickListener { isPreviewMode = false }
         codeButton?.setPadding(0, 0, 0, 0)
-        codeButton?.setAllCaps(false)
+        codeButton?.isAllCaps = false
         addView(codeButton)
         
         // 指示器
         indicatorView = View(context)
-        indicatorView?.setBackgroundColor(Color.parseColor("#2196F3"))
+        indicatorView?.setBackgroundColor("#2196F3".toColorInt())
         addView(indicatorView)
         
         updateMode()
@@ -257,14 +269,14 @@ class MermaidViewModeSwitcher(
     
     private fun updateMode() {
         if (isPreviewMode) {
-            // 选中状态：使用深色文字
-            previewButton?.setTextColor(Color.parseColor("#000000"))
-            codeButton?.setTextColor(Color.parseColor("#999999"))
+            // 选中状态：使用主题文字颜色
+            previewButton?.setTextColor(textColorValue)
+            codeButton?.setTextColor(unselectedTextColor)
         } else {
             // 未选中状态
-            previewButton?.setTextColor(Color.parseColor("#999999"))
-            // 选中状态：使用深色文字
-            codeButton?.setTextColor(Color.parseColor("#000000"))
+            previewButton?.setTextColor(unselectedTextColor)
+            // 选中状态：使用主题文字颜色
+            codeButton?.setTextColor(textColorValue)
         }
         
         // 使用动画移动指示器

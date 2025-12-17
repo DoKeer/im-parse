@@ -914,37 +914,10 @@ public class UIKitFrameRender {
             fontSize: fontSize,
             targetSize: nil // 块级公式不使用目标尺寸
         )
-        let toolbarHeight = context.theme.toolbarHeight
-        let toolbarWidth = context.theme.toolbarWidth
-        let toolbarPadding = context.theme.toolbarPadding
         let contentPadding = context.theme.toolbarPadding
         
-        // 添加工具栏（如果有代理，只对块级公式显示）
-        if context.toolbarActionDelegate != nil {
-            let toolbar = UIKitToolbar(theme: context.theme)
-            toolbar.frame = CGRect(
-                x: frame.size.width - toolbarWidth - toolbarPadding,
-                y: toolbarPadding,
-                width: toolbarWidth,
-                height: toolbarHeight
-            )
-            toolbar.onCopy = {
-                context.toolbarActionDelegate?.copyContent(node.content, type: "math")
-            }
-            toolbar.onDownload = {
-                let image = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey)
-                context.toolbarActionDelegate?.downloadContent(node.content, type: "math", image: image)
-            }
-            toolbar.onFullscreen = {
-                let image = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey)
-                context.toolbarActionDelegate?.showFullscreen(node.content, type: "math", image: image)
-            }
-            containerView.addSubview(toolbar)
-        }
-        
-        // 计算图片区域（工具栏在顶部，图片在下方，不挤占图片高度）
-        let imageAreaY: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight + toolbarPadding * 2 : contentPadding
-        let imageAreaHeight = frame.size.height - imageAreaY - contentPadding
+        // 计算图片区域（直接使用 padding，不再考虑工具栏）
+        let imageAreaHeight = frame.size.height - contentPadding * 2
         
         // 先尝试从缓存获取图片
         if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey) {
@@ -957,7 +930,7 @@ public class UIKitFrameRender {
             // UIImage.size 返回的是逻辑尺寸（点数），已经考虑了scale
             let imageSize = cachedImage.size
             let availableWidth = frame.size.width - contentPadding * 2
-            let availableHeight = imageAreaHeight
+            let availableHeight = frame.size.height - contentPadding * 2
             
             // 计算图片在可用空间内的实际显示尺寸（保持宽高比）
             let imageAspectRatio = imageSize.width / imageSize.height
@@ -966,7 +939,7 @@ public class UIKitFrameRender {
             
             // 居中显示
             let imageX = contentPadding + (availableWidth - displayWidth) / 2
-            let imageY = imageAreaY + (availableHeight - displayHeight) / 2
+            let imageY = contentPadding + (availableHeight - displayHeight) / 2
             
             imageView.frame = CGRect(
                 x: imageX,
@@ -1009,9 +982,9 @@ public class UIKitFrameRender {
         contentLabel.numberOfLines = 0
         contentLabel.frame = CGRect(
             x: contentPadding,
-            y: imageAreaY,
+            y: contentPadding,
             width: frame.size.width - contentPadding * 2,
-            height: imageAreaHeight
+            height: frame.size.height - contentPadding * 2
         )
         contentLabel.tag = 9001 // 用于后续移除
         containerView.addSubview(contentLabel)
@@ -1048,7 +1021,7 @@ public class UIKitFrameRender {
                     // 根据图片的实际显示尺寸（考虑scale）来设置imageView的frame
                     let imageSize = image.size
                     let availableWidth = frame.size.width - contentPadding * 2
-                    let availableHeight = imageAreaHeight
+                    let availableHeight = frame.size.height - contentPadding * 2
                     
                     // 计算图片在可用空间内的实际显示尺寸（保持宽高比）
                     let imageAspectRatio = imageSize.width / imageSize.height
@@ -1057,7 +1030,7 @@ public class UIKitFrameRender {
                     
                     // 居中显示
                     let imageX = contentPadding + (availableWidth - displayWidth) / 2
-                    let imageY = imageAreaY + (availableHeight - displayHeight) / 2
+                    let imageY = contentPadding + (availableHeight - displayHeight) / 2
                     
                     imageView.frame = CGRect(
                         x: imageX,
@@ -1088,9 +1061,9 @@ public class UIKitFrameRender {
                     label.numberOfLines = 0
                     label.frame = CGRect(
                         x: contentPadding,
-                        y: imageAreaY,
+                        y: contentPadding,
                         width: frame.size.width - contentPadding * 2,
-                        height: imageAreaHeight
+                        height: frame.size.height - contentPadding * 2
                     )
                     containerView.addSubview(label)
                 }

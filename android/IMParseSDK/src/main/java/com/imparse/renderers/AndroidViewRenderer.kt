@@ -1009,50 +1009,10 @@ class AndroidViewRenderer {
             null
         )
         
-        val toolbarHeight = context.theme.toolbarHeight?.let {
-            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), context.context.resources.displayMetrics).toInt()
-        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 48f, context.context.resources.displayMetrics).toInt()
-        
-        val toolbarWidth = context.theme.toolbarWidth?.let {
-            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), context.context.resources.displayMetrics).toInt()
-        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 120f, context.context.resources.displayMetrics).toInt()
-        
-        val toolbarPadding = context.theme.toolbarPadding?.let {
-            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), context.context.resources.displayMetrics).toInt()
-        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, context.context.resources.displayMetrics).toInt()
-        
         val contentPadding = context.theme.codeBlockPadding
         
-        // 计算图片区域（工具栏在顶部，图片在下方，不挤占图片高度）
-        val imageAreaY: Int = if (context.toolbarActionDelegate != null) {
-            toolbarHeight + toolbarPadding * 2
-        } else {
-            contentPadding
-        }
-        
-        // 添加工具栏（如果有代理）
-        if (context.toolbarActionDelegate != null) {
-            val toolbar = AndroidToolbar(context.context)
-            toolbar.onCopy = {
-                context.toolbarActionDelegate?.copyContent(node.content, "math")
-            }
-            toolbar.onDownload = {
-                val image = context.formulaSizeCacheDelegate?.getFormulaImage(cacheKey)
-                context.toolbarActionDelegate?.downloadContent(node.content, "math", image)
-            }
-            toolbar.onFullscreen = {
-                val image = context.formulaSizeCacheDelegate?.getFormulaImage(cacheKey)
-                context.toolbarActionDelegate?.showFullscreen(node.content, "math", image)
-            }
-            
-            val toolbarParams = android.widget.FrameLayout.LayoutParams(
-                toolbarWidth,
-                toolbarHeight
-            )
-            toolbarParams.gravity = android.view.Gravity.TOP or android.view.Gravity.END
-            toolbarParams.setMargins(0, toolbarPadding, toolbarPadding, 0)
-            containerView.addView(toolbar, toolbarParams)
-        }
+        // 计算图片区域（直接使用 padding，不再考虑工具栏）
+        val imageAreaY: Int = contentPadding
         
         // 先尝试从缓存获取图片
         val cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(cacheKey)
@@ -1069,7 +1029,21 @@ class AndroidViewRenderer {
             
             val imageSize = android.graphics.PointF(cachedImage.width.toFloat(), cachedImage.height.toFloat())
             val imageAspectRatio = imageSize.x / imageSize.y
-            val displayWidth = minOf(availableWidth.toFloat(), imageSize.x)
+            
+            // 对于块级公式，优先使用可用宽度，确保公式足够大
+            // 如果图片原始尺寸更大，则按比例缩放以适应可用空间
+            val displayWidth = if (node.display) {
+                // 块级公式：优先使用可用宽度，确保公式足够大且清晰
+                // 如果可用宽度有效（>0），使用可用宽度；否则使用图片原始宽度
+                if (availableWidth > 0) {
+                    availableWidth.toFloat()
+                } else {
+                    imageSize.x
+                }
+            } else {
+                // 行内公式：保持原始尺寸或按比例缩放
+                minOf(availableWidth.toFloat(), imageSize.x)
+            }
             val displayHeight = minOf(availableHeight.toFloat(), displayWidth / imageAspectRatio)
             
             // 居中显示
@@ -1176,7 +1150,21 @@ class AndroidViewRenderer {
                     
                     val imageSize = android.graphics.PointF(image.width.toFloat(), image.height.toFloat())
                     val imageAspectRatio = imageSize.x / imageSize.y
-                    val displayWidth = minOf(availableWidth.toFloat(), imageSize.x)
+                    
+                    // 对于块级公式，优先使用可用宽度，确保公式足够大
+                    // 如果图片原始尺寸更大，则按比例缩放以适应可用空间
+                    val displayWidth = if (node.display) {
+                        // 块级公式：优先使用可用宽度，确保公式足够大且清晰
+                        // 如果可用宽度有效（>0），使用可用宽度；否则使用图片原始宽度
+                        if (availableWidth > 0) {
+                            availableWidth.toFloat()
+                        } else {
+                            imageSize.x
+                        }
+                    } else {
+                        // 行内公式：保持原始尺寸或按比例缩放
+                        minOf(availableWidth.toFloat(), imageSize.x)
+                    }
                     val displayHeight = minOf(availableHeight.toFloat(), displayWidth / imageAspectRatio)
                     
                     // 居中显示
@@ -1195,8 +1183,8 @@ class AndroidViewRenderer {
                     // 保存尺寸到缓存
                     context.formulaSizeCacheDelegate?.setCachedSize(imageSize, cacheKey)
                     
-                    // 计算实际需要的总高度（使用统一的计算方法）
-                    val actualHeight = displayHeight + contentPadding + imageAreaY
+                    // 计算实际需要的总高度（只包含 padding，不再包含工具栏）
+                    val actualHeight = displayHeight + contentPadding * 2
                     
                     // 如果实际高度与当前高度不同，触发高度刷新回调
                     val currentHeight = containerView.height.toFloat()
@@ -1290,7 +1278,8 @@ class AndroidViewRenderer {
             buttonWidth = switcherButtonWidth,
             buttonSpacing = switcherButtonSpacing,
             padding = toolbarPadding,
-            switcherHeight = switcherHeight
+            switcherHeight = switcherHeight,
+            textColor = context.theme.textColor
         )
         val switcherParams = android.widget.FrameLayout.LayoutParams(
             switcherWidth,
