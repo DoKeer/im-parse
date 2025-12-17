@@ -214,18 +214,48 @@ class CustomTableLayout(
                     maxLineWidth = tempTextView.measuredWidth.toFloat()
                 } else {
                     // 纯文本，计算最大行宽
-                    val lines = spannable.toString().split("\n")
+                    val text = spannable.toString()
+                    val lines = text.split("\n")
+                    
+                    // 检测是否是超长URL或超长字符串（没有空格的长文本）
+                    val hasVeryLongLine = lines.any { line ->
+                        line.length > 50 && !line.contains(" ") && (line.startsWith("http://") || line.startsWith("https://") || line.length > 100)
+                    }
+                    
+                    // 对于超长URL或超长字符串，设置更严格的上限
+                    val containerWidthHint = resources.displayMetrics.widthPixels
+                    val maxWidthForLongText = if (hasVeryLongLine) {
+                        // 超长URL：限制为容器宽度的30%
+                        (containerWidthHint * 0.3).toInt()
+                    } else {
+                        // 普通文本：限制为容器宽度的50%
+                        (containerWidthHint * 0.5).toInt()
+                    }
+                    
                     for (line in lines) {
                         val lineWidth = paint.measureText(line)
-                        maxLineWidth = maxOf(maxLineWidth, lineWidth)
+                        // 对于超长行，限制其宽度
+                        val limitedLineWidth = if (hasVeryLongLine && line.length > 50) {
+                            minOf(lineWidth, maxWidthForLongText.toFloat())
+                        } else {
+                            lineWidth
+                        }
+                        maxLineWidth = maxOf(maxLineWidth, limitedLineWidth)
                     }
                 }
                 
                 // 内容宽度 = 文本宽度 + 内边距（不包括边框，边框在布局时单独处理）
                 val contentWidth = maxLineWidth.toInt() + cellPadding * 2
                 
-                // 限制在最小和最大宽度之间
-                val clampedWidth = maxOf(minCellWidth, minOf(contentWidth, maxCellWidth))
+                // 对于超长文本（如URL），设置一个合理的上限
+                val containerWidthHint = resources.displayMetrics.widthPixels
+                val maxReasonableWidth = (containerWidthHint * 0.4).toInt()
+                
+                // 限制在最小和最大宽度之间，但不超过合理宽度上限
+                val clampedWidth = maxOf(
+                    minCellWidth, 
+                    minOf(contentWidth, maxCellWidth, maxReasonableWidth)
+                )
                 
                 // 更新或设置该列的最大宽度
                 if (cellIndex >= columnPrefWidths.size) {
@@ -240,12 +270,16 @@ class CustomTableLayout(
     /**
      * 压缩列宽（如果总宽度超过容器宽度）
      * 使用智能压缩算法：优先压缩过宽的列，但确保每列至少有最小宽度
+     * 对于特别长的单行文本，设置合理的最大宽度限制，允许文本换行显示
      * 如果压缩后仍然超过容器，允许表格宽度超过容器（支持横向滚动）
      */
     private fun compressColumnWidths(containerWidth: Int): List<Int> {
         val totalPref = columnPrefWidths.sum()
         if (totalPref <= containerWidth) {
-            return columnPrefWidths.toList()
+            // 即使总宽度不超过容器，也要检查是否有特别长的列需要压缩
+            // 这可以防止单个超长列影响表格可读性
+            val (compressed, _) = applySmartCompression(containerWidth)
+            return compressed
         }
         
         // 计算最小总宽度（所有列都使用最小宽度）
@@ -260,11 +294,24 @@ class CustomTableLayout(
         val averageWidth = totalPref / columnPrefWidths.size
         val compressionThreshold = minOf((averageWidth * 1.5).toInt(), maxCellWidth)
         
-        val compressed = columnPrefWidths.map { width ->
-            if (width > compressionThreshold) {
-                maxOf(compressionThreshold, minCellWidth)
-            } else {
-                width
+        // 对于特别长的列（超过平均宽度的1.5倍），设置更严格的限制
+        // 这样可以防止单个超长列占据过多空间
+        val veryLongThreshold = (averageWidth * 1.5).toInt()
+        // 超长列的最大宽度限制：容器宽度的25%（更严格），但不超过 maxCellWidth
+        val veryLongMaxWidth = minOf((containerWidth * 0.25).toInt(), maxCellWidth)
+        
+        val compressed = columnPrefWidths.mapIndexed { index, width ->
+            when {
+                // 特别长的列：使用更严格的限制
+                width > veryLongThreshold -> {
+                    maxOf(minOf(veryLongMaxWidth, compressionThreshold), minCellWidth)
+                }
+                // 过宽的列：使用标准压缩阈值
+                width > compressionThreshold -> {
+                    maxOf(compressionThreshold, minCellWidth)
+                }
+                // 正常宽度的列：保持原样
+                else -> width
             }
         }
         
@@ -299,30 +346,101 @@ class CustomTableLayout(
     }
     
     /**
-     * 按权重拉伸列宽以填满容器
+     * 应用智能压缩：即使总宽度不超过容器，也要压缩特别长的列
+     * 这可以防止单个超长列影响表格可读性
+     * @return Pair<压缩后的宽度列表, 被压缩的列的索引集合>
      */
-    private fun stretchColumnWidths(containerWidth: Int): List<Int> {
-        val currentTotal = columnPrefWidths.sum()
-        if (currentTotal == 0) {
-            return columnPrefWidths.toList()
+    private fun applySmartCompression(containerWidth: Int): Pair<List<Int>, Set<Int>> {
+        val totalPref = columnPrefWidths.sum()
+        val averageWidth = if (columnPrefWidths.isNotEmpty()) {
+            totalPref / columnPrefWidths.size
+        } else {
+            0
         }
         
-        val scale = containerWidth.toFloat() / currentTotal
+        // 如果所有列都很短，不需要压缩
+        if (averageWidth < containerWidth * 0.15 || columnPrefWidths.isEmpty()) {
+            return Pair(columnPrefWidths.toList(), emptySet())
+        }
+        
+        // 更激进的压缩策略：检测特别长的列
+        // 1. 超过平均宽度的1.5倍
+        // 2. 或者超过容器宽度的30%（更低的阈值，更容易触发）
+        val veryLongThreshold1 = (averageWidth * 1.5).toInt()
+        val veryLongThreshold2 = (containerWidth * 0.3).toInt()
+        val veryLongThreshold = maxOf(veryLongThreshold1, veryLongThreshold2)
+        
+        // 超长列的最大宽度限制：容器宽度的30%（更严格），但不超过 maxCellWidth
+        val veryLongMaxWidth = minOf((containerWidth * 0.3).toInt(), maxCellWidth)
+        
+        // 对于特别长的列，应用压缩
+        val compressed = mutableListOf<Int>()
+        val compressedIndices = mutableSetOf<Int>()
+        
+        columnPrefWidths.forEachIndexed { index, width ->
+            if (width > veryLongThreshold) {
+                // 压缩到合理范围，但确保至少保持最小宽度
+                val compressedWidth = maxOf(minOf(veryLongMaxWidth, width), minCellWidth)
+                compressed.add(compressedWidth)
+                compressedIndices.add(index)
+            } else {
+                compressed.add(width)
+            }
+        }
+        
+        return Pair(compressed, compressedIndices)
+    }
+    
+    /**
+     * 按权重拉伸列宽以填满容器
+     * @param containerWidth 容器宽度
+     * @param baseWidths 基础宽度列表（如果为 null，使用 columnPrefWidths）
+     * @param protectedIndices 被保护的列的索引集合（这些列不会被拉伸，保持压缩后的宽度）
+     */
+    private fun stretchColumnWidths(containerWidth: Int, baseWidths: List<Int>? = null, protectedIndices: Set<Int> = emptySet()): List<Int> {
+        val currentWidths = baseWidths ?: columnPrefWidths
+        val currentTotal = currentWidths.sum()
+        if (currentTotal == 0) {
+            return currentWidths.toList()
+        }
+        
+        // 计算被保护列的总宽度
+        val protectedTotal = currentWidths.mapIndexed { index, width ->
+            if (protectedIndices.contains(index)) width else 0
+        }.sum()
+        
+        // 计算可拉伸的总宽度和剩余空间
+        val stretchableTotal = currentTotal - protectedTotal
+        val remainingSpace = containerWidth - protectedTotal
+        
+        if (stretchableTotal <= 0 || remainingSpace <= 0) {
+            // 没有可拉伸的列，或者没有剩余空间
+            return currentWidths.toList()
+        }
+        
+        val scale = remainingSpace.toFloat() / stretchableTotal
         val result = mutableListOf<Int>()
         var actualTotal = 0
         
-        // 按比例拉伸，但不超过最大宽度
-        for (width in columnPrefWidths) {
-            val stretched = minOf((width * scale).toInt(), maxCellWidth)
-            result.add(stretched)
-            actualTotal += stretched
+        // 按比例拉伸，但被保护的列保持原宽度，且不超过最大宽度
+        currentWidths.forEachIndexed { index, width ->
+            if (protectedIndices.contains(index)) {
+                // 被保护的列：保持原宽度
+                result.add(width)
+                actualTotal += width
+            } else {
+                // 可拉伸的列：按比例拉伸，但不超过最大宽度
+                val stretched = minOf((width * scale).toInt(), maxCellWidth)
+                result.add(stretched)
+                actualTotal += stretched
+            }
         }
         
-        // 如果由于最大宽度限制导致总宽度不足，将剩余空间平均分配给未达到最大宽度的列
+        // 如果由于最大宽度限制导致总宽度不足，将剩余空间平均分配给未达到最大宽度且未被保护的列
         if (actualTotal < containerWidth) {
             val remaining = containerWidth - actualTotal
             val eligibleIndices = result.mapIndexedNotNull { index, width ->
-                if (width < maxCellWidth) index else null
+                if (!protectedIndices.contains(index) && width < maxCellWidth) index else null
             }
             
             if (eligibleIndices.isNotEmpty()) {
@@ -350,16 +468,27 @@ class CustomTableLayout(
         columnWidths.clear()
         columnWidths.addAll(
             if (totalPref < containerWidth) {
-                // 总宽度小于容器，按权重拉伸以填满容器
-                stretchColumnWidths(containerWidth)
+                // 总宽度小于容器
+                // 先应用智能压缩处理特别长的列，然后再拉伸
+                val (smartCompressed, compressedIndices) = applySmartCompression(containerWidth)
+                val smartCompressedTotal = smartCompressed.sum()
+                
+                if (smartCompressedTotal < containerWidth) {
+                    // 智能压缩后仍然小于容器，按权重拉伸以填满容器
+                    // 但被压缩的列保持压缩后的宽度，不会被拉伸回去
+                    stretchColumnWidths(containerWidth, smartCompressed, compressedIndices)
+                } else {
+                    // 智能压缩后超过容器，使用压缩后的宽度
+                    smartCompressed
+                }
             } else {
                 // 总宽度大于容器
                 // 优先保持原始宽度，允许横向滚动
                 // 只有在 AT_MOST 模式下且确实需要压缩时才压缩
                 if (widthMode == MeasureSpec.AT_MOST) {
                     // AT_MOST 模式：尝试压缩，但如果压缩后仍然超过容器，保持原始宽度
-                val compressed = compressColumnWidths(containerWidth)
-                val compressedTotal = compressed.sum()
+                    val compressed = compressColumnWidths(containerWidth)
+                    val compressedTotal = compressed.sum()
                     // 如果压缩后仍然超过容器很多，保持原始宽度（支持横向滚动）
                     if (compressedTotal > containerWidth * 1.2) {
                         columnPrefWidths.toList()
@@ -381,7 +510,10 @@ class CustomTableLayout(
         val tableWidth = if (finalTotal < containerWidth && widthMode == MeasureSpec.EXACTLY) {
             // 拉伸到容器宽度
             val scale = containerWidth.toFloat() / finalTotal
-            columnWidths.replaceAll { (it * scale).toInt() }
+            // 使用兼容的方式替换（replaceAll 需要 API 24）
+            for (i in columnWidths.indices) {
+                columnWidths[i] = (columnWidths[i] * scale).toInt()
+            }
             containerWidth
         } else {
             // 使用内容宽度（可能超过容器）
