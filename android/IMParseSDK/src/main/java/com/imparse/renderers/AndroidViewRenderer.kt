@@ -69,8 +69,16 @@ class AndroidViewRenderer {
             is ListNode -> renderList(node, context)
             is ListItemNode -> renderListItem(node, context)
             is TableNode -> renderTable(node, context)
-            is TableRowNode -> renderTableRow(node, context)
-            is TableCellNode -> renderTableCell(node, context)
+            is TableRowNode -> TextView(context.context).apply {
+                text = "TableRow should be rendered within TableNode"
+                textSize = context.theme.fontSize
+                setTextColor(android.graphics.Color.GRAY)
+            }
+            is TableCellNode -> TextView(context.context).apply {
+                text = "TableCell should be rendered within TableNode"
+                textSize = context.theme.fontSize
+                setTextColor(android.graphics.Color.GRAY)
+            }
             is BlockquoteNode -> renderBlockquote(node, context)
             is HorizontalRuleNode -> renderHorizontalRule(context)
             is MathNode -> renderMath(node, context)
@@ -638,19 +646,23 @@ class AndroidViewRenderer {
         // 创建主容器
         val containerView = android.widget.FrameLayout(context.context)
         
-        // 设置表格整体圆角
+        // 设置表格整体圆角（与 iOS 保持一致）
         val radius = TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP,
             context.theme.codeBlockBorderRadius.toFloat(),
             context.context.resources.displayMetrics
         )
+        
+        // 设置边框（与 iOS 保持一致：borderWidth = 1, borderColor = tableBorderColor, backgroundColor = clear）
+        val borderWidth = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, 1f,
+            context.context.resources.displayMetrics
+        ).toInt()
+        
         containerView.background = android.graphics.drawable.GradientDrawable().apply {
-            setColor(android.graphics.Color.TRANSPARENT)
+            setColor(android.graphics.Color.TRANSPARENT) // backgroundColor = .clear
             cornerRadius = radius
-            setStroke(
-                TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 1f, context.context.resources.displayMetrics).toInt(),
-                context.theme.tableBorderColor
-            )
+            setStroke(borderWidth, context.theme.tableBorderColor) // borderWidth = 1, borderColor = tableBorderColor
         }
         containerView.clipToOutline = true
         containerView.outlineProvider = object : android.view.ViewOutlineProvider() {
@@ -675,13 +687,28 @@ class AndroidViewRenderer {
         val headerBarHeight: Int = if (context.toolbarActionDelegate != null) toolbarHeight else 0
         
         // 创建标题栏（如果有toolbar）
+        // 注意：headerBar 需要留出边框空间，不能覆盖 containerView 的边框
         if (context.toolbarActionDelegate != null) {
             val headerBar = android.widget.FrameLayout(context.context)
-            headerBar.setBackgroundColor(context.theme.tableHeaderBackground)
-            headerBar.layoutParams = android.widget.FrameLayout.LayoutParams(
+            // 设置 headerBar 的背景，使用圆角以匹配 containerView 的顶部圆角
+            // 这样 headerBar 就不会遮挡圆角边框
+            headerBar.background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(context.theme.tableHeaderBackground)
+                // 只设置顶部圆角，与 containerView 的圆角匹配
+                cornerRadii = floatArrayOf(
+                    radius, radius,  // 左上角
+                    radius, radius,  // 右上角
+                    0f, 0f,           // 右下角
+                    0f, 0f            // 左下角
+                )
+            }
+            val headerBarParams = android.widget.FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 headerBarHeight
             )
+            // 设置 margin 以留出边框空间：顶部和左右需要留出边框，底部不需要（因为会被 scrollView 覆盖）
+            headerBarParams.setMargins(borderWidth, borderWidth, borderWidth, 0)
+            headerBar.layoutParams = headerBarParams
             
             // 添加"表格"标题文字（左侧）
             val titleLeftPadding = context.theme.tableCellPadding
@@ -727,6 +754,7 @@ class AndroidViewRenderer {
         }
         
         // 创建横向滚动容器（在标题栏下方）
+        // 注意：scrollView 需要留出边框空间，不能覆盖 containerView 的边框
         val scrollView = android.widget.HorizontalScrollView(context.context)
         scrollView.isFillViewport = true
         scrollView.setHorizontalScrollBarEnabled(true)
@@ -736,7 +764,12 @@ class AndroidViewRenderer {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         )
-        scrollParams.setMargins(0, headerBarHeight, 0, 0)
+        // 设置 margin 以留出边框空间：
+        // - 左侧：borderWidth（留出左边框）
+        // - 顶部：headerBarHeight（在 headerBar 下方）
+        // - 右侧：borderWidth（留出右边框）
+        // - 底部：borderWidth（留出底边框）
+        scrollParams.setMargins(borderWidth, headerBarHeight + (if (context.toolbarActionDelegate != null) 0 else borderWidth), borderWidth, borderWidth)
         containerView.addView(scrollView, scrollParams)
         
         // 创建表格内容容器（放在 ScrollView 中）
@@ -805,108 +838,6 @@ class AndroidViewRenderer {
             }
         }
         return text.toString()
-    }
-    
-    /**
-     * 渲染表格行
-     */
-    private fun renderTableRow(
-        node: TableRowNode,
-        context: AndroidRenderContext,
-        isHeader: Boolean = false
-    ): View {
-        val tableRow = TableRow(context.context)
-        if (isHeader) {
-            tableRow.setBackgroundColor(context.theme.tableHeaderBackground)
-        }
-        
-        for (cell in node.cells) {
-            val cellView = renderTableCell(cell, context)
-            tableRow.addView(cellView)
-        }
-        
-        return tableRow
-    }
-    
-    /**
-     * 渲染表格单元格
-     */
-    private fun renderTableCell(node: TableCellNode, context: AndroidRenderContext): View {
-        val textView = TextView(context.context)
-        
-        // 设置单元格边框
-        val borderWidth = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP, 1f,
-            context.context.resources.displayMetrics
-        ).toInt()
-        
-        val borderDrawable = android.graphics.drawable.GradientDrawable()
-        borderDrawable.setStroke(borderWidth, context.theme.tableBorderColor)
-        borderDrawable.setColor(android.graphics.Color.TRANSPARENT)
-        textView.background = borderDrawable
-        
-        // 设置内边距
-        val padding = context.theme.tableCellPadding
-        textView.setPadding(padding, padding, padding, padding)
-        
-        // 最小宽度和最大宽度，确保单元格不会太窄或太宽
-        val minWidth = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP,
-            context.theme.tableMinCellWidth?.toFloat() ?: 80f,
-            context.context.resources.displayMetrics
-        ).toInt()
-        textView.minimumWidth = minWidth
-        
-        val maxWidth = context.theme.tableMaxCellWidth?.let {
-            TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP,
-                it.toFloat(),
-                context.context.resources.displayMetrics
-            ).toInt()
-        }
-        if (maxWidth != null) {
-            textView.maxWidth = maxWidth
-        }
-        
-        textView.gravity = when (node.align) {
-            "center" -> Gravity.CENTER
-            "right" -> Gravity.END
-            else -> Gravity.START
-        }
-        
-        // 设置行高，确保换行时有足够的间距
-        val fontSizePx = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP,
-            context.theme.fontSize,
-            textView.context.resources.displayMetrics
-        )
-        val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            textView.lineHeight = lineHeightPx
-        } else {
-            val addSpacing = (lineHeightPx - fontSizePx).toFloat().coerceAtLeast(0f)
-            textView.setLineSpacing(addSpacing, 1.0f)
-        }
-        
-        val spannable = SpannableStringBuilder()
-        // 用于记录行内数学公式的位置
-        val mathNodes = mutableListOf<Pair<Int, MathNode>>()
-        
-        for (child in node.children) {
-            appendInlineNode(spannable, child, context, mathNodes)
-        }
-        
-        textView.text = spannable
-        textView.textSize = context.theme.fontSize
-        textView.setTextColor(context.theme.textColor)
-        textView.movementMethod = LinkMovementMethod.getInstance()
-        
-        // 异步渲染行内数学公式（作为富文本附件）
-        if (mathNodes.isNotEmpty()) {
-            renderInlineMathNodes(textView, spannable, mathNodes, context)
-        }
-        
-        return textView
     }
     
     /**
