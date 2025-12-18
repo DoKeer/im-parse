@@ -197,7 +197,7 @@ class CustomTableLayout(
                 
                 // 检查是否包含附件（如行内公式）
                 var hasAttachment = false
-                spannable.getSpans(0, spannable.length, android.text.style.ImageSpan::class.java).forEach {
+                spannable.getSpans(0, spannable.length, android.text.style.ImageSpan::class.java).forEach { _ ->
                     hasAttachment = true
                 }
                 
