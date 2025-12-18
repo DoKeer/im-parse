@@ -108,20 +108,14 @@ class AndroidViewRenderer {
             textView.context.resources.displayMetrics
         )
         val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
-        // 设置额外的行间距，避免换行时拥挤
-        val extraSpacing = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP, 2f,
-            textView.context.resources.displayMetrics
-        )
         // API 28+ 使用 setLineHeight，低版本使用 setLineSpacing 兼容
+        // 注意：不再添加额外的硬编码间距，完全依赖 lineHeight 配置
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             textView.lineHeight = lineHeightPx
-            // 在行高基础上增加额外间距
-            textView.setLineSpacing(extraSpacing, 1.0f)
         } else {
             // 对于低版本，使用 setLineSpacing 实现类似效果
-            // 将行高和额外间距合并：add = (lineHeightPx - fontSizePx) + extraSpacing，mult = 1.0f
-            val addSpacing = (lineHeightPx - fontSizePx).toFloat().coerceAtLeast(0f) + extraSpacing
+            // 将行高转换为间距：add = (lineHeightPx - fontSizePx)，mult = 1.0f
+            val addSpacing = (lineHeightPx - fontSizePx).toFloat().coerceAtLeast(0f)
             textView.setLineSpacing(addSpacing, 1.0f)
         }
         
@@ -150,14 +144,11 @@ class AndroidViewRenderer {
     private fun renderHeading(node: HeadingNode, context: AndroidRenderContext): View {
         val textView = TextView(context.context)
         val level = node.level.coerceIn(1, 6)
-        val fontSize = when (level) {
-            1 -> 32f
-            2 -> 28f
-            3 -> 24f
-            4 -> 20f
-            5 -> 18f
-            else -> 16f
-        }
+        // 基于 theme.fontSize 计算标题字体大小，与 iOS 保持一致
+        // iOS 使用倍数：[2.0, 1.5, 1.25, 1.1, 1.0, 0.9]
+        val headingMultipliers = floatArrayOf(2.0f, 1.5f, 1.25f, 1.1f, 1.0f, 0.9f)
+        val multiplier = headingMultipliers[(level - 1).coerceAtMost(headingMultipliers.size - 1)]
+        val fontSize = context.theme.fontSize * multiplier
         textView.textSize = fontSize
         textView.setTypeface(null, Typeface.BOLD)
         textView.setTextColor(
@@ -175,22 +166,14 @@ class AndroidViewRenderer {
             textView.context.resources.displayMetrics
         )
         val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
-        // 设置额外的行间距，避免换行时拥挤
-        // 标题需要更大的行间距，根据字体大小调整
-        val extraSpacing = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP, 
-            if (level == 1) 4f else if (level == 2) 3f else 2f,
-            textView.context.resources.displayMetrics
-        )
         // API 28+ 使用 setLineHeight，低版本使用 setLineSpacing 兼容
+        // 注意：不再添加额外的硬编码间距，完全依赖 lineHeight 配置
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             textView.lineHeight = lineHeightPx
-            // 在行高基础上增加额外间距
-            textView.setLineSpacing(extraSpacing, 1.0f)
         } else {
             // 对于低版本，使用 setLineSpacing 实现类似效果
-            // 将行高和额外间距合并：add = (lineHeightPx - fontSizePx) + extraSpacing，mult = 1.0f
-            val addSpacing = (lineHeightPx - fontSizePx).toFloat().coerceAtLeast(0f) + extraSpacing
+            // 将行高转换为间距：add = (lineHeightPx - fontSizePx)，mult = 1.0f
+            val addSpacing = (lineHeightPx - fontSizePx).toFloat().coerceAtLeast(0f)
             textView.setLineSpacing(addSpacing, 1.0f)
         }
         
