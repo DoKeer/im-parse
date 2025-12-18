@@ -344,8 +344,9 @@ object MathFormulaRenderer {
         val imageHeight = image.height
         val aspectRatio = imageWidth.toFloat() / imageHeight.toFloat()
         
-        // 目标高度为行高
-        val targetHeight = lineHeightPx.toFloat()
+        // 目标高度使用行高的 80%，确保公式不会太小
+        // 这样既能保持与文本的协调性，又能保证公式清晰可见
+        val targetHeight = lineHeightPx.toFloat() * 1.5f
         val targetWidth = targetHeight * aspectRatio
         
         // 缩放图片（只计算一次，避免滚动时重复计算）

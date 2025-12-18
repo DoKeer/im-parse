@@ -901,21 +901,17 @@ public class UIKitFrameRender {
         
         // 生成包含尺寸信息的缓存key（块级公式不包含尺寸，使用原始尺寸）
         let textColor = context.theme.textColor
-        let components = textColor.cgColor.components ?? [0, 0, 0, 1]
-        let colorHex = String(format: "#%02X%02X%02X",
-                              Int(components[0] * 255),
-                              Int(components[1] * 255),
-                              Int(components[2] * 255))
+
         let fontSize = node.display ? 16.0 : 14.0
         let cacheKey = generateMathCacheKey(
             mathContent: node.content,
-            textColor: colorHex,
+            textColor: textColor,
             fontSize: fontSize,
         )
         let contentPadding = context.theme.toolbarPadding
         
         // 先尝试从缓存获取图片
-        if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey) {
+        if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0) {
             // 缓存命中，直接使用缓存的图片
             let imageView = UIImageView()
             imageView.image = cachedImage
@@ -998,7 +994,7 @@ public class UIKitFrameRender {
             let image = await MathHTMLRenderer.render(
                 mathContent: node.content,
                 display: node.display,
-                textColor: colorHex,
+                textColor: cacheKey.1,
                 fontSize: fontSize,
                 formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
             )
@@ -1084,24 +1080,12 @@ public class UIKitFrameRender {
         // 转换颜色为十六进制（用于生成统一的 cacheKey）
         let textColor = context.theme.textColor
         let backgroundColor = context.theme.codeBackgroundColor
-        let textComponents = textColor.cgColor.components ?? [0, 0, 0, 1]
-        let textColorHex = String(format: "#%02X%02X%02X",
-                                  Int(textComponents[0] * 255),
-                                  Int(textComponents[1] * 255),
-                                  Int(textComponents[2] * 255)
-        )
-        let bgComponents = backgroundColor.cgColor.components ?? [1, 1, 1, 1]
-        let backgroundColorHex = String(format: "#%02X%02X%02X",
-                                        Int(bgComponents[0] * 255),
-                                        Int(bgComponents[1] * 255),
-                                        Int(bgComponents[2] * 255)
-        )
-        
+
         // 使用统一的 cacheKey 生成方法
         let cacheKey = generateMermaidCacheKey(
             mermaidCode: node.content,
-            textColor: textColorHex,
-            backgroundColor: backgroundColorHex
+            textColor: textColor,
+            backgroundColor: backgroundColor
         )
         
         let toolbarHeight = context.theme.toolbarHeight
@@ -1140,11 +1124,11 @@ public class UIKitFrameRender {
                 context.toolbarActionDelegate?.copyContent(node.content, type: "mermaid")
             }
             toolbar.onDownload = {
-                let image = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey)
+                let image = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0)
                 context.toolbarActionDelegate?.downloadContent(node.content, type: "mermaid", image: image)
             }
             toolbar.onFullscreen = {
-                let image = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey)
+                let image = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0)
                 context.toolbarActionDelegate?.showFullscreen(node.content, type: "mermaid", image: image)
             }
             containerView.addSubview(toolbar)
@@ -1191,7 +1175,7 @@ public class UIKitFrameRender {
         }
         
         // 先尝试从缓存获取图片
-        if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey) {
+        if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0) {
             // 缓存命中，直接使用缓存的图片
             let imageView = UIImageView()
             imageView.image = cachedImage
@@ -1251,7 +1235,7 @@ public class UIKitFrameRender {
         }
         
         // 异步渲染 Mermaid 图表（使用已转换的颜色值）
-        let validationResult = IMParseCore.mermaidToHTML(node.content, textColor: textColorHex, backgroundColor: backgroundColorHex)
+        let validationResult = IMParseCore.mermaidToHTML(node.content, textColor: cacheKey.1, backgroundColor: cacheKey.2)
         
         guard validationResult.success else {
             // 语法错误时，更新预览视图显示错误信息
@@ -1268,8 +1252,8 @@ public class UIKitFrameRender {
             
             let image = await MermaidHTMLRenderer.render(
                 mermaidCode: node.content,
-                textColor: textColorHex,
-                backgroundColor: backgroundColorHex,
+                textColor: cacheKey.1,
+                backgroundColor: cacheKey.2,
                 formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
             )
             

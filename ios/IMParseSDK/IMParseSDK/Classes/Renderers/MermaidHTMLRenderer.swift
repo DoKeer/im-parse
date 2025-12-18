@@ -14,11 +14,29 @@ import WebKit
 ///   - mermaidCode: Mermaid 代码
 ///   - textColor: 文本颜色（十六进制，如 "#000000"）
 ///   - backgroundColor: 背景颜色（十六进制，如 "#ffffff"）
-/// - Returns: 缓存键
-public func generateMermaidCacheKey(mermaidCode: String, textColor: String, backgroundColor: String) -> String {
-    let hash = mermaidCode.hashValue
-    return "mermaid_\(hash)_\(textColor)_\(backgroundColor)"
+/// - Returns: 缓存键 , stringTextColor,stringBackgroundColor
+public func generateMermaidCacheKey(mermaidCode: String, textColor: UIColor, backgroundColor: UIColor) -> (String, String, String) {
+    let textComponents = textColor.cgColor.components ?? [0, 0, 0, 1]
+    let textColorHex = String(format: "#%02X%02X%02X",
+                              Int(textComponents[0] * 255),
+                              Int(textComponents[1] * 255),
+                              Int(textComponents[2] * 255)
+    )
+    let bgComponents = backgroundColor.cgColor.components ?? [1, 1, 1, 1]
+    let backgroundColorHex = String(format: "#%02X%02X%02X",
+                                    Int(bgComponents[0] * 255),
+                                    Int(bgComponents[1] * 255),
+                                    Int(bgComponents[2] * 255)
+    )
+    
+    return generateMermaidCacheKey(mermaidCode: mermaidCode, stringTextColor: textColorHex, stringBackgroundColor: backgroundColorHex)
 }
+
+public func generateMermaidCacheKey(mermaidCode: String, stringTextColor: String, stringBackgroundColor: String) -> (String, String, String) {
+    let hash = mermaidCode.hashValue
+    return ("mermaid_\(hash)_\(stringTextColor)_\(stringBackgroundColor)", stringTextColor, stringBackgroundColor)
+}
+
 
 /// Mermaid 图表 HTML 渲染器
 /// 使用独立的 WKWebView 将 Mermaid 图表渲染为图片，支持 mermaid.js
@@ -48,13 +66,13 @@ public struct MermaidHTMLRenderer {
         formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil
     ) async -> UIImage? {
         // 生成缓存键
-        let cacheKey = generateMermaidCacheKey(mermaidCode: mermaidCode, textColor: textColor, backgroundColor: backgroundColor)
+        let cacheKey = generateMermaidCacheKey(mermaidCode: mermaidCode, stringTextColor: textColor, stringBackgroundColor: backgroundColor)
         
         // 优先使用传入的 delegate，否则使用实例的 delegate
         let cacheDelegate = formulaSizeCacheDelegate
         
         // 先检查缓存（优先使用 delegate）
-        if let cachedImage = cacheDelegate?.getFormulaImage(for: cacheKey) {
+        if let cachedImage = cacheDelegate?.getFormulaImage(for: cacheKey.0) {
             return cachedImage
         }
         
@@ -72,7 +90,7 @@ public struct MermaidHTMLRenderer {
             mermaidCode: mermaidCode,
             textColor: textColor,
             backgroundColor: backgroundColor,
-            cacheKey: cacheKey,
+            cacheKey: cacheKey.0,
             cacheDelegate: cacheDelegate
         )
     }

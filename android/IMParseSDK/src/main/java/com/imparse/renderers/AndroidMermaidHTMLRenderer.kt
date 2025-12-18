@@ -172,7 +172,7 @@ class AndroidMermaidHTMLRenderer private constructor() {
         val screenHeight = displayMetrics.heightPixels
         
         // 设置 WebView 配置（Gantt 图表需要更宽的渲染空间以避免横坐标拥挤）
-        val width = if (isGantt) 3200 else 2000
+        val width = if (isGantt) 6400 else 2000
         val height = if (isGantt) 1600 else 2000
         
         // WebView 必须被添加到视图层次结构中才能渲染

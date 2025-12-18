@@ -22,12 +22,26 @@ import WebKit
 /// - Returns: 缓存key
 public func generateMathCacheKey(
     mathContent: String,
-    textColor: String,
+    textColor: UIColor,
     fontSize: CGFloat
-) -> String {
+) -> (String, String) {
+    let components = textColor.cgColor.components ?? [0, 0, 0, 1]
+    let colorHex = String(format: "#%02X%02X%02X",
+                          Int(components[0] * 255),
+                          Int(components[1] * 255),
+                          Int(components[2] * 255))
+    // 块级公式：使用原始尺寸
+    return generateMathCacheKey(mathContent: mathContent, stringColor: colorHex, fontSize: fontSize)
+}
+
+public func generateMathCacheKey(
+    mathContent: String,
+    stringColor: String,
+    fontSize: CGFloat
+) -> (String, String){
     let contentHash = mathContent.hashValue
     // 块级公式：使用原始尺寸
-    return "math:\(contentHash):\(textColor):\(Int(fontSize))"
+    return ("math:\(contentHash):\(stringColor):\(Int(fontSize))", stringColor)
 }
 
 /// 数学公式 HTML 渲染器
@@ -67,7 +81,7 @@ public struct MathHTMLRenderer {
         // 生成缓存键：优先使用 mathContent（如果提供），确保与其他地方一致
         let cacheKey = generateMathCacheKey(
             mathContent: mathContent,
-            textColor: textColor,
+            stringColor: textColor,
             fontSize: fontSize
         )
         
@@ -75,7 +89,7 @@ public struct MathHTMLRenderer {
         let cacheDelegate = formulaSizeCacheDelegate
         
         // 先检查缓存（优先使用 delegate）
-        if let cachedImage = cacheDelegate?.getFormulaImage(for: cacheKey) {
+        if let cachedImage = cacheDelegate?.getFormulaImage(for: cacheKey.0) {
             return cachedImage
         }
         // 异步渲染公式图片
@@ -97,7 +111,7 @@ public struct MathHTMLRenderer {
                 display: display,
                 textColor: textColor,
                 fontSize: fontSize,
-                cacheKey: cacheKey,
+                cacheKey: cacheKey.0,
                 cacheDelegate: cacheDelegate
             )
     }
@@ -121,12 +135,6 @@ public struct MathHTMLRenderer {
         // 优先使用传入的 delegate，否则使用实例的 delegate
         let cacheDelegate = formulaSizeCacheDelegate
         
-        // 转换颜色为十六进制（用于生成缓存键）
-        let components = textColor.cgColor.components ?? [0, 0, 0, 1]
-        let colorHex = String(format: "#%02X%02X%02X",
-                              Int(components[0] * 255),
-                              Int(components[1] * 255),
-                              Int(components[2] * 255))
         
         // 生成缓存键（行内公式需要包含 lineHeight，因为不同行高会有不同的缩放尺寸）
         // 先获取原始 HTML 以生成基础缓存键
@@ -138,12 +146,12 @@ public struct MathHTMLRenderer {
         // 生成包含 lineHeight 的缓存键
         let cacheKey = generateMathCacheKey(
             mathContent: mathContent,
-            textColor: colorHex,
+            textColor: textColor,
             fontSize: fontSize
         )
         
         // 先检查缓存（优先使用 delegate）
-        if let cachedImage = cacheDelegate?.getFormulaImage(for: cacheKey) {
+        if let cachedImage = cacheDelegate?.getFormulaImage(for: cacheKey.0) {
             // 从缓存的图片中获取尺寸
             return cachedImage
         }
@@ -152,34 +160,35 @@ public struct MathHTMLRenderer {
         guard let image = await MathHTMLRenderer.shared.renderHTML(
             html: html,
             display: false,
-            textColor: colorHex,
+            textColor: cacheKey.1,
             fontSize: fontSize,
-            cacheKey: cacheKey,
+            cacheKey: cacheKey.0,
             cacheDelegate: cacheDelegate
         ) else {
             return nil
         }
         
-        // 在后台线程调整图片尺寸以适应行高（避免主线程卡顿）
-        let targetHeight = lineHeight
-        let scale = targetHeight / image.size.height
-        let scaledWidth = image.size.width * scale
-        let scaledSize = CGSize(width: scaledWidth, height: targetHeight)
+        // // 在后台线程调整图片尺寸以适应行高（避免主线程卡顿）
+        // // 使用行高的 1.2 倍作为目标高度，确保公式清晰可见且不会太小
+        // let targetHeight = lineHeight * 1.2
+        // let scale = targetHeight / image.size.height
+        // let scaledWidth = image.size.width * scale
+        // let scaledSize = CGSize(width: scaledWidth, height: targetHeight)
         
-        // 缩放图片，UIGraphicsImageRenderer会自动处理屏幕scale
-        // 使用目标尺寸（点数），renderer会自动生成对应scale的像素图片
-        // UIGraphicsImageRenderer 是线程安全的，可以在后台线程使用
-        let renderer = UIGraphicsImageRenderer(size: scaledSize)
-        let scaledImage = renderer.image { context in
-            // 设置高质量插值以保持清晰度
-            context.cgContext.interpolationQuality = .high
-            // 绘制到目标尺寸
-            image.draw(in: CGRect(origin: .zero, size: scaledSize))
-        }
+        // // 缩放图片，UIGraphicsImageRenderer会自动处理屏幕scale
+        // // 使用目标尺寸（点数），renderer会自动生成对应scale的像素图片
+        // // UIGraphicsImageRenderer 是线程安全的，可以在后台线程使用
+        // let renderer = UIGraphicsImageRenderer(size: scaledSize)
+        // let scaledImage = renderer.image { context in
+        //     // 设置高质量插值以保持清晰度
+        //     context.cgContext.interpolationQuality = .high
+        //     // 绘制到目标尺寸
+        //     image.draw(in: CGRect(origin: .zero, size: scaledSize))
+        // }
         
         // 保存缩放后的图片到缓存（如果有 delegate）
-        cacheDelegate?.saveFormulaImage(scaledImage, for: cacheKey)
-        return scaledImage
+        cacheDelegate?.saveFormulaImage(image, for: cacheKey.0)
+        return image
 
     }
     

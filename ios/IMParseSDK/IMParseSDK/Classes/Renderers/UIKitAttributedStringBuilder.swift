@@ -139,20 +139,15 @@ public class UIKitAttributedStringBuilder {
                 
                 // 生成缓存键
                 let textColor = context.currentTextColor ?? context.theme.textColor
-                let components = textColor.cgColor.components ?? [0, 0, 0, 1]
-                let colorHex = String(format: "#%02X%02X%02X",
-                                      Int(components[0] * 255),
-                                      Int(components[1] * 255),
-                                      Int(components[2] * 255))
                 let fontSize = font.pointSize
                 let cacheKey = generateMathCacheKey(
                     mathContent: mathNode.content,
-                    textColor: colorHex,
+                    textColor: textColor,
                     fontSize: fontSize
                 )
                 
                 // 先检查缓存，如果命中则创建 MathTextAttachment
-                if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey) {
+                if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0) {
                     let mathAttachment = MathTextAttachment(mathNode: mathNode, image: cachedImage, font: font)
                     return NSAttributedString(attachment: mathAttachment)
                 }
@@ -182,7 +177,10 @@ public class UIKitAttributedStringBuilder {
                             lineHeight: lineHeight,
                             formulaSizeCacheDelegate: formulaSizeCacheDelegate
                         ) {
-                            onNodeLayoutChanged?(mathNode)
+                            // 在主线程触发布局更新回调
+                            await MainActor.run {
+                                onNodeLayoutChanged?(mathNode)
+                            }
                         }
                     }
                 }

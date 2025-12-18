@@ -492,25 +492,20 @@ public class UIKitFrameAsyncCalculator {
         // 生成缓存键（使用内容字符串作为key）
         // 生成包含尺寸信息的缓存key（块级公式不包含尺寸，使用原始尺寸）
         let textColor = context.theme.textColor
-        let components = textColor.cgColor.components ?? [0, 0, 0, 1]
-        let colorHex = String(format: "#%02X%02X%02X",
-                              Int(components[0] * 255),
-                              Int(components[1] * 255),
-                              Int(components[2] * 255))
         let fontSize = node.display ? 16.0 : 14.0
         let cacheKey = generateMathCacheKey(
             mathContent: node.content,
-            textColor: colorHex,
+            textColor: textColor,
             fontSize: fontSize
         )
         
         // 优先从缓存获取尺寸
-        if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey) {
+        if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey.0) {
             // 如果缓存中有尺寸，使用缓存的尺寸
             let imageHeight = cachedSize.height
             let totalHeight = imageHeight + padding * 2
             return CGSize(width: width, height: totalHeight)
-        } else if let cachedSize = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey)?.size {
+        } else if let cachedSize = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0)?.size {
             // 没尺寸缓存，直接用图片缓存的尺寸
             let imageHeight = cachedSize.height
             let totalHeight = imageHeight + padding * 2
@@ -549,28 +544,16 @@ public class UIKitFrameAsyncCalculator {
         // 转换颜色为十六进制（用于生成统一的 cacheKey）
         let textColor = context.theme.textColor
         let backgroundColor = context.theme.codeBackgroundColor
-        let textComponents = textColor.cgColor.components ?? [0, 0, 0, 1]
-        let textColorHex = String(format: "#%02X%02X%02X",
-                                  Int(textComponents[0] * 255),
-                                  Int(textComponents[1] * 255),
-                                  Int(textComponents[2] * 255)
-        )
-        let bgComponents = backgroundColor.cgColor.components ?? [1, 1, 1, 1]
-        let backgroundColorHex = String(format: "#%02X%02X%02X",
-                                        Int(bgComponents[0] * 255),
-                                        Int(bgComponents[1] * 255),
-                                        Int(bgComponents[2] * 255)
-        )
         
         // 使用统一的 cacheKey 生成方法
         let cacheKey = generateMermaidCacheKey(
             mermaidCode: node.content,
-            textColor: textColorHex,
-            backgroundColor: backgroundColorHex
+            textColor: textColor,
+            backgroundColor: backgroundColor
         )
         
         // 优先从缓存获取尺寸
-        if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey) {
+        if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey.0) {
             // 如果缓存中有尺寸，使用缓存的尺寸
             // 注意：缓存的尺寸可能是图片的实际尺寸，需要加上padding和顶部区域高度
             let totalHeight = cachedSize.height + padding * 2 + topAreaHeight
@@ -816,24 +799,19 @@ public class UIKitFrameAsyncCalculator {
             } else if let mathNode = group.mathNode {
                 // 行内数学公式：先检查缓存，如果有图片才创建 MathTextAttachment
                 let font = context.currentFont ?? context.theme.font
-                let lineHeight = font.lineHeight
                 
                 // 生成缓存键
                 let textColor = context.currentTextColor ?? context.theme.textColor
-                let components = textColor.cgColor.components ?? [0, 0, 0, 1]
-                let colorHex = String(format: "#%02X%02X%02X",
-                                      Int(components[0] * 255),
-                                      Int(components[1] * 255),
-                                      Int(components[2] * 255))
+  
                 let fontSize = font.pointSize
                 let cacheKey = generateMathCacheKey(
                     mathContent: mathNode.content,
-                    textColor: colorHex,
+                    textColor: textColor,
                     fontSize: fontSize,
                 )
                 
                 // 先检查缓存，如果命中则创建 MathTextAttachment
-                if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey) {
+                if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0) {
                     let mathAttachment = MathTextAttachment(mathNode: mathNode, image: cachedImage, font: font)
                     let attachmentString = NSAttributedString(attachment: mathAttachment)
                     mutableAttrString.append(attachmentString)
