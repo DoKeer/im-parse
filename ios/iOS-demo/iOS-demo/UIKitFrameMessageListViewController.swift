@@ -104,7 +104,7 @@ class UIKitFrameMessageListViewController: UIViewController {
         
         // 在后台线程生成消息
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let generatedMessages = MessageDataGenerator.generateMessages(count: 10)
+            let generatedMessages = MessageDataGenerator.generateMessages(count: 1)
             
             // 解析消息并计算布局
             var parsedMessages = generatedMessages

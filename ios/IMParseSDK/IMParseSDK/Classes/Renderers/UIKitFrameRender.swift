@@ -994,7 +994,7 @@ public class UIKitFrameRender {
             let image = await MathHTMLRenderer.render(
                 mathContent: node.content,
                 display: node.display,
-                textColor: cacheKey.1,
+                textColor: textColor,
                 fontSize: fontSize,
                 formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
             )

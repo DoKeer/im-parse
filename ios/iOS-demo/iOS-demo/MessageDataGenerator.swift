@@ -74,30 +74,30 @@ class MessageDataGenerator {
     /// 生成 Markdown 模板
     private static func generateMarkdownTemplates() -> [String] {
         return [
-            #"""
-            $$
-            \int_{0}^{\infty} e^{-x^{2}} \, dx \approx \frac{\sqrt{\pi}}{2}
-            $$
-            
-            ```mermaid
-            sequenceDiagram
-                participant A as Alice
-                participant B as Bob
-                A->>B: 发送消息
-                B-->>A: 回复消息
-            ```
-            
-            ```mermaid
-              gantt
-                  title 项目进度
-                  dateFormat  YYYY-MM-DD
-                  section 阶段1
-                  任务1           :a1, 2024-01-01, 30d
-                  任务2           :a2, 2024-01-15, 20d
-                  section 阶段2
-                  任务3           :a3, 2024-02-01, 30d
-            ```
-            """#,
+//            #"""
+//            $$
+//            \int_{0}^{\infty} e^{-x^{2}} \, dx \approx \frac{\sqrt{\pi}}{2}
+//            $$
+//            
+//            ```mermaid
+//            sequenceDiagram
+//                participant A as Alice
+//                participant B as Bob
+//                A->>B: 发送消息
+//                B-->>A: 回复消息
+//            ```
+//            
+//            ```mermaid
+//              gantt
+//                  title 项目进度
+//                  dateFormat  YYYY-MM-DD
+//                  section 阶段1
+//                  任务1           :a1, 2024-01-01, 30d
+//                  任务2           :a2, 2024-01-15, 20d
+//                  section 阶段2
+//                  任务3           :a3, 2024-02-01, 30d
+//            ```
+//            """#,
             """
             ## 表格测试
             

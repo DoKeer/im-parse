@@ -120,6 +120,10 @@ class AndroidMathHTMLRenderer private constructor() {
     // 用于存储当前渲染任务的信息（key: WebView hashCode, value: RenderTask）
     private val pendingTasks = ConcurrentHashMap<Int, RenderTask>()
     
+    // 复用控制：存储正在进行的渲染任务（key: cacheKey, value: 等待的回调列表）
+    // 相同 cacheKey 的多个请求会共享同一个渲染任务
+    private val pendingRenderTasks = ConcurrentHashMap<String, MutableList<(Bitmap?) -> Unit>>()
+    
     /**
      * 渲染 HTML 为图片
      * @param context Android Context
@@ -146,21 +150,58 @@ class AndroidMathHTMLRenderer private constructor() {
             return
         }
         
+        // 检查是否有正在进行的渲染任务（复用控制）
+        synchronized(pendingRenderTasks) {
+            val waitingCallbacks = pendingRenderTasks[cacheKey]
+            if (waitingCallbacks != null) {
+                // 已有正在进行的任务，将当前回调添加到等待列表
+                waitingCallbacks.add(completion)
+                Log.d(TAG, "Reusing render task for cacheKey: $cacheKey, total waiters: ${waitingCallbacks.size}")
+                return
+            }
+            
+            // 创建新的等待列表
+            val callbacks = mutableListOf(completion)
+            pendingRenderTasks[cacheKey] = callbacks
+        }
+        
         // 缓存未命中，验证 HTML 是否有效
         if (html.isEmpty() || (!html.contains("katex") && !html.contains("math-container"))) {
             Log.w(TAG, "Invalid HTML content")
-            completion(null)
+            // 通知所有等待的回调
+            notifyAllCallbacks(cacheKey, null)
             return
         }
         
         // HTML 有效，进行渲染（必须在主线程）
         Handler(Looper.getMainLooper()).post {
-            renderHTML(context, html, display, textColor, fontSize, cacheKey, completion)
+            renderHTML(context, html, display, textColor, fontSize, cacheKey) { bitmap ->
+                // 通知所有等待的回调
+                notifyAllCallbacks(cacheKey, bitmap)
+            }
+        }
+    }
+    
+    /**
+     * 通知所有等待的回调并清理任务
+     */
+    private fun notifyAllCallbacks(cacheKey: String, bitmap: Bitmap?) {
+        synchronized(pendingRenderTasks) {
+            val callbacks = pendingRenderTasks.remove(cacheKey)
+            if (callbacks != null) {
+                Handler(Looper.getMainLooper()).post {
+                    callbacks.forEach { callback ->
+                        callback(bitmap)
+                    }
+                }
+                Log.d(TAG, "Notified ${callbacks.size} callbacks for cacheKey: $cacheKey")
+            }
         }
     }
     
     /**
      * 实际渲染 HTML（必须在主线程调用）
+     * 注意：completion 会被调用一次，然后通过 notifyAllCallbacks 通知所有等待的回调
      */
     private fun renderHTML(
         context: Context,

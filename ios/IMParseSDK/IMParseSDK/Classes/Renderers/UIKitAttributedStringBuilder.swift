@@ -135,7 +135,6 @@ public class UIKitAttributedStringBuilder {
             // 行内数学公式：先检查缓存，如果有图片才创建 MathTextAttachment
             if !mathNode.display {
                 let font = context.currentFont ?? context.theme.font
-                let lineHeight = font.lineHeight
                 
                 // 生成缓存键
                 let textColor = context.currentTextColor ?? context.theme.textColor
@@ -174,7 +173,6 @@ public class UIKitAttributedStringBuilder {
                             mathContent: mathContent,
                             textColor: textColor,
                             fontSize: fontSize,
-                            lineHeight: lineHeight,
                             formulaSizeCacheDelegate: formulaSizeCacheDelegate
                         ) {
                             // 在主线程触发布局更新回调

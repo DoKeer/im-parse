@@ -62,6 +62,12 @@ public struct MathHTMLRenderer {
     
     // 本地资源管理器
     private let resourceManager = LocalResourceManager.shared
+    
+    // 复用控制：存储正在进行的渲染任务（key: cacheKey, value: Task）
+    // 相同 cacheKey 的多个请求会共享同一个渲染任务
+    private static var pendingRenderTasks: [String: Task<UIImage?, Never>] = [:]
+    private static let renderTaskLock = NSLock()
+ 
 
     /// 渲染 HTML 为图片
     /// - Parameters:
@@ -75,13 +81,13 @@ public struct MathHTMLRenderer {
     static func render(
         mathContent: String,
         display: Bool,
-        textColor: String = "#000000",
+        textColor:UIColor,
         fontSize: CGFloat = 16,
         formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil) async -> UIImage? {
         // 生成缓存键：优先使用 mathContent（如果提供），确保与其他地方一致
         let cacheKey = generateMathCacheKey(
             mathContent: mathContent,
-            stringColor: textColor,
+            textColor: textColor,
             fontSize: fontSize
         )
         
@@ -92,28 +98,65 @@ public struct MathHTMLRenderer {
         if let cachedImage = cacheDelegate?.getFormulaImage(for: cacheKey.0) {
             return cachedImage
         }
-        // 异步渲染公式图片
-        let result = IMParseCore.mathToHTML(mathContent, display: display)
-        guard result.success, let html = result.astJSON else {
-            return nil
+        
+        // 检查是否有正在进行的渲染任务（复用控制）
+        let existingTask: Task<UIImage?, Never>? = renderTaskLock.withLock {
+            return pendingRenderTasks[cacheKey.0]
         }
         
-        // 缓存未命中，验证 HTML 是否有效（检查是否包含 KaTeX 相关类）
-        if html.isEmpty || (!html.contains("katex") && !html.contains("math-container")) {
-            // HTML 无效或不包含数学公式内容
-            print("MathHTMLRenderer: Invalid HTML content")
-            return nil
+        if let existingTask = existingTask {
+            // 等待现有任务完成并返回结果
+            return await existingTask.value
         }
         
+        // 创建新的渲染任务
+        let renderTask = Task<UIImage?, Never> { @MainActor in
+            // 异步渲染公式图片
+            let result = IMParseCore.mathToHTML(mathContent, display: display)
+            guard result.success, let html = result.astJSON else {
+                // 清理任务
+                renderTaskLock.withLock {
+                    pendingRenderTasks.removeValue(forKey: cacheKey.0)
+                }
+                return nil
+            }
+            
+            // 缓存未命中，验证 HTML 是否有效（检查是否包含 KaTeX 相关类）
+            if html.isEmpty || (!html.contains("katex") && !html.contains("math-container")) {
+                // HTML 无效或不包含数学公式内容
+                print("MathHTMLRenderer: Invalid HTML content")
+                // 清理任务
+                renderTaskLock.withLock {
+                    pendingRenderTasks.removeValue(forKey: cacheKey.0)
+                }
+                return nil
+            }
+            
             // HTML 有效，进行渲染（必须在主线程）
-        return await MathHTMLRenderer.shared.renderHTML(
+            let image = await MathHTMLRenderer.shared.renderHTML(
                 html: html,
                 display: display,
-                textColor: textColor,
+                textColor: cacheKey.1,
                 fontSize: fontSize,
                 cacheKey: cacheKey.0,
                 cacheDelegate: cacheDelegate
             )
+            
+            // 清理任务
+            renderTaskLock.withLock {
+                pendingRenderTasks.removeValue(forKey: cacheKey.0)
+            }
+            
+            return image
+        }
+        
+        // 存储任务
+        renderTaskLock.withLock {
+            pendingRenderTasks[cacheKey.0] = renderTask
+        }
+        
+        // 等待任务完成
+        return await renderTask.value
     }
     
     /// 渲染行内数学公式并调整尺寸以适应行高
@@ -129,67 +172,9 @@ public struct MathHTMLRenderer {
         mathContent: String,
         textColor: UIColor,
         fontSize: CGFloat,
-        lineHeight: CGFloat,
         formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil
     ) async -> UIImage? {
-        // 优先使用传入的 delegate，否则使用实例的 delegate
-        let cacheDelegate = formulaSizeCacheDelegate
-        
-        
-        // 生成缓存键（行内公式需要包含 lineHeight，因为不同行高会有不同的缩放尺寸）
-        // 先获取原始 HTML 以生成基础缓存键
-        let result = IMParseCore.mathToHTML(mathContent, display: false)
-        guard result.success, let html = result.astJSON else {
-            return nil
-        }
-        
-        // 生成包含 lineHeight 的缓存键
-        let cacheKey = generateMathCacheKey(
-            mathContent: mathContent,
-            textColor: textColor,
-            fontSize: fontSize
-        )
-        
-        // 先检查缓存（优先使用 delegate）
-        if let cachedImage = cacheDelegate?.getFormulaImage(for: cacheKey.0) {
-            // 从缓存的图片中获取尺寸
-            return cachedImage
-        }
-        // 缓存未命中，直接调用 renderHTML 进行渲染（避免重复的缓存检查）
-        
-        guard let image = await MathHTMLRenderer.shared.renderHTML(
-            html: html,
-            display: false,
-            textColor: cacheKey.1,
-            fontSize: fontSize,
-            cacheKey: cacheKey.0,
-            cacheDelegate: cacheDelegate
-        ) else {
-            return nil
-        }
-        
-        // // 在后台线程调整图片尺寸以适应行高（避免主线程卡顿）
-        // // 使用行高的 1.2 倍作为目标高度，确保公式清晰可见且不会太小
-        // let targetHeight = lineHeight * 1.2
-        // let scale = targetHeight / image.size.height
-        // let scaledWidth = image.size.width * scale
-        // let scaledSize = CGSize(width: scaledWidth, height: targetHeight)
-        
-        // // 缩放图片，UIGraphicsImageRenderer会自动处理屏幕scale
-        // // 使用目标尺寸（点数），renderer会自动生成对应scale的像素图片
-        // // UIGraphicsImageRenderer 是线程安全的，可以在后台线程使用
-        // let renderer = UIGraphicsImageRenderer(size: scaledSize)
-        // let scaledImage = renderer.image { context in
-        //     // 设置高质量插值以保持清晰度
-        //     context.cgContext.interpolationQuality = .high
-        //     // 绘制到目标尺寸
-        //     image.draw(in: CGRect(origin: .zero, size: scaledSize))
-        // }
-        
-        // 保存缩放后的图片到缓存（如果有 delegate）
-        cacheDelegate?.saveFormulaImage(image, for: cacheKey.0)
-        return image
-
+        return await render(mathContent: mathContent, display: false, textColor: textColor, fontSize: fontSize, formulaSizeCacheDelegate: formulaSizeCacheDelegate)
     }
     
     /// 实际渲染 HTML（必须在主线程调用）

@@ -2,6 +2,9 @@ package com.imparse.renderers
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Rect
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.style.ImageSpan
@@ -14,6 +17,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.core.graphics.scale
 import com.imparse.models.MathNode
+import java.lang.ref.WeakReference
 
 /**
  * 统一的数学公式渲染工具类
@@ -344,7 +348,7 @@ object MathFormulaRenderer {
         val imageHeight = image.height
         val aspectRatio = imageWidth.toFloat() / imageHeight.toFloat()
         
-        // 目标高度使用行高的 80%，确保公式不会太小
+        // 目标高度使用行高的 1.5 倍，确保公式清晰可见
         // 这样既能保持与文本的协调性，又能保证公式清晰可见
         val targetHeight = lineHeightPx.toFloat() * 1.5f
         val targetWidth = targetHeight * aspectRatio
@@ -352,9 +356,9 @@ object MathFormulaRenderer {
         // 缩放图片（只计算一次，避免滚动时重复计算）
         val scaledBitmap = image.scale(targetWidth.toInt(), targetHeight.toInt())
         
-        // 使用 ALIGN_CENTER 对齐方式，让系统自动处理垂直居中
-        // 这样可以避免在滚动时重复计算，提升性能
-        return ImageSpan(context, scaledBitmap, ImageSpan.ALIGN_CENTER)
+        // 使用自定义的 CenterImageSpan，让公式的中心与文本的中心对齐
+        // 这样可以获得最美观和谐的排版效果
+        return CenterImageSpan(context, scaledBitmap)
     }
     
     /**
@@ -410,6 +414,80 @@ object MathFormulaRenderer {
         )
         contentParams.setMargins(padding, padding + 20, padding, padding)
         containerView.addView(contentLabel, contentParams)
+    }
+}
+
+/**
+ * 自定义 ImageSpan，让图片的中心与文本的中心对齐
+ * 这是行内数学公式最专业、最美观的对齐方式
+ */
+private class CenterImageSpan(context: Context, bitmap: Bitmap) : ImageSpan(context, bitmap) {
+    
+    override fun getSize(
+        paint: Paint,
+        text: CharSequence?,
+        start: Int,
+        end: Int,
+        fm: Paint.FontMetricsInt?
+    ): Int {
+        val drawable = drawable
+        val rect = drawable?.bounds ?: return 0
+        
+        if (fm != null) {
+            // 获取字体的度量信息
+            val pfm = paint.fontMetricsInt
+            
+            // 计算文本的中心位置（相对于基线）
+            // ascent 是负数，descent 是正数
+            val textCenter = (pfm.descent + pfm.ascent) / 2
+            
+            // 计算图片的高度
+            val imageHeight = rect.height()
+            
+            // 让图片的中心与文本的中心对齐
+            val imageCenter = imageHeight / 2
+            
+            // 计算图片的上下边界（相对于基线）
+            fm.ascent = textCenter - imageCenter
+            fm.descent = textCenter + imageCenter
+            
+            fm.top = fm.ascent
+            fm.bottom = fm.descent
+        }
+        
+        return rect.right
+    }
+    
+    override fun draw(
+        canvas: Canvas,
+        text: CharSequence?,
+        start: Int,
+        end: Int,
+        x: Float,
+        top: Int,
+        y: Int,
+        bottom: Int,
+        paint: Paint
+    ) {
+        val drawable = drawable ?: return
+        
+        canvas.save()
+        
+        // 获取字体的度量信息
+        val fm = paint.fontMetricsInt
+        
+        // 计算文本的中心位置（相对于基线 y）
+        val textCenter = y + (fm.descent + fm.ascent) / 2
+        
+        // 计算图片的高度
+        val imageHeight = drawable.bounds.height()
+        
+        // 让图片的中心与文本的中心对齐
+        val transY = textCenter - imageHeight / 2
+        
+        canvas.translate(x, transY.toFloat())
+        drawable.draw(canvas)
+        canvas.restore()
     }
 }
 

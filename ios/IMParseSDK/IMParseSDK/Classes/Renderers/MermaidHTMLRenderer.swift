@@ -49,6 +49,11 @@ public struct MermaidHTMLRenderer {
     
     // 使用共享的 WebView 池（与 MathHTMLRenderer 共享，减少资源占用）
     private let webViewPool = SharedWebViewPool.shared
+    
+    // 复用控制：存储正在进行的渲染任务（key: cacheKey, value: Task）
+    // 相同 cacheKey 的多个请求会共享同一个渲染任务
+    private static var pendingRenderTasks: [String: Task<UIImage?, Never>] = [:]
+    private static let renderTaskLock = NSLock()
 
     
     /// 渲染 Mermaid 图表为图片
@@ -76,23 +81,55 @@ public struct MermaidHTMLRenderer {
             return cachedImage
         }
         
-        // 缓存未命中，先验证语法
-        let result = IMParseCore.mermaidToHTML(mermaidCode, textColor: textColor, backgroundColor: backgroundColor)
-        
-        guard result.success, let _ = result.astJSON else {
-            // 语法错误或生成失败，直接返回 nil
-            print("MermaidHTMLRenderer: Syntax error or generation failed: \(result.error?.message ?? "Unknown error")")
-            return nil
+        // 检查是否有正在进行的渲染任务（复用控制）
+        let existingTask: Task<UIImage?, Never>? = renderTaskLock.withLock {
+            return pendingRenderTasks[cacheKey.0]
         }
         
-        // 语法正确，进行渲染（必须在主线程）
-        return await MermaidHTMLRenderer.shared.renderMermaid(
-            mermaidCode: mermaidCode,
-            textColor: textColor,
-            backgroundColor: backgroundColor,
-            cacheKey: cacheKey.0,
-            cacheDelegate: cacheDelegate
-        )
+        if let existingTask = existingTask {
+            // 等待现有任务完成并返回结果
+            return await existingTask.value
+        }
+        
+        // 创建新的渲染任务
+        let renderTask = Task<UIImage?, Never> { @MainActor in
+            // 缓存未命中，先验证语法
+            let result = IMParseCore.mermaidToHTML(mermaidCode, textColor: textColor, backgroundColor: backgroundColor)
+            
+            guard result.success, let _ = result.astJSON else {
+                // 语法错误或生成失败，直接返回 nil
+                print("MermaidHTMLRenderer: Syntax error or generation failed: \(result.error?.message ?? "Unknown error")")
+                // 清理任务
+                renderTaskLock.withLock {
+                    pendingRenderTasks.removeValue(forKey: cacheKey.0)
+                }
+                return nil
+            }
+            
+            // 语法正确，进行渲染（必须在主线程）
+            let image = await MermaidHTMLRenderer.shared.renderMermaid(
+                mermaidCode: mermaidCode,
+                textColor: textColor,
+                backgroundColor: backgroundColor,
+                cacheKey: cacheKey.0,
+                cacheDelegate: cacheDelegate
+            )
+            
+            // 清理任务
+            renderTaskLock.withLock {
+                pendingRenderTasks.removeValue(forKey: cacheKey.0)
+            }
+            
+            return image
+        }
+        
+        // 存储任务
+        renderTaskLock.withLock {
+            pendingRenderTasks[cacheKey.0] = renderTask
+        }
+        
+        // 等待任务完成
+        return await renderTask.value
     }
     
     /// 实际渲染 Mermaid（必须在主线程调用）
