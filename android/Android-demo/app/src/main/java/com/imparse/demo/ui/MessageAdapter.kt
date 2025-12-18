@@ -108,7 +108,17 @@ class MessageAdapter(
                         }
                     },
                     formulaSizeCacheDelegate = this@MessageAdapter,
-                    toolbarActionDelegate = this@MessageAdapter
+                    toolbarActionDelegate = this@MessageAdapter,
+                    onLayoutHeightChanged = { newHeight ->
+                        // 当内容高度变化时，通知 RecyclerView 更新该 item
+                        // 使用 post 确保在布局完成后更新，避免布局冲突
+                        binding.root.post {
+                            val adapterPosition = bindingAdapterPosition
+                            if (adapterPosition != RecyclerView.NO_POSITION) {
+                                notifyItemChanged(adapterPosition)
+                            }
+                        }
+                    }
                 )
                 
                 // 渲染

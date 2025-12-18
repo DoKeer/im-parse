@@ -754,77 +754,10 @@ class CustomTableLayout(
                 )
             }
             is com.imparse.models.MathNode -> {
-                // 行内数学公式：先尝试从缓存获取图片
+                // 行内数学公式：添加占位符，稍后统一处理
                 val start = builder.length
-                
-                // 生成缓存键（先尝试不带 lineHeight 的键，因为此时还没有 TextView）
-                val textColor = context.theme.textColor
-                val colorHex = String.format(
-                    "#%02X%02X%02X",
-                    android.graphics.Color.red(textColor),
-                    android.graphics.Color.green(textColor),
-                    android.graphics.Color.blue(textColor)
-                )
-                val fontSize = context.theme.fontSize
-                
-                // 先尝试用基础 cacheKey 获取缓存（不包含 lineHeight）
-                val baseCacheKey = AndroidMathHTMLRenderer.generateMathCacheKey(
-                    node.content,
-                    false, // 行内公式
-                    colorHex,
-                    fontSize,
-                    null // 不指定 targetSize
-                )
-                
-                val cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(baseCacheKey)
-                
-                if (cachedImage != null) {
-                    // 缓存命中，直接创建 ImageSpan
-                    // 注意：此时还没有 TextView，无法获取精确的 lineHeight，使用估算值
-                    val fontSizePx = TypedValue.applyDimension(
-                        TypedValue.COMPLEX_UNIT_SP,
-                        fontSize,
-                        context.context.resources.displayMetrics
-                    )
-                    val estimatedLineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
-                    
-                    // 计算图片尺寸，使其与行高匹配
-                    val imageWidth = cachedImage.width
-                    val imageHeight = cachedImage.height
-                    val aspectRatio = imageWidth.toFloat() / imageHeight.toFloat()
-                    
-                    // 目标高度为行高
-                    val targetHeight = estimatedLineHeightPx.toFloat()
-                    val targetWidth = targetHeight * aspectRatio
-                    
-                    // 缩放图片
-                    val scaledBitmap = android.graphics.Bitmap.createScaledBitmap(
-                        cachedImage,
-                        targetWidth.toInt(),
-                        targetHeight.toInt(),
-                        true
-                    )
-                    
-                    // 创建 ImageSpan
-                    val imageSpan = android.text.style.ImageSpan(
-                        context.context,
-                        scaledBitmap,
-                        android.text.style.ImageSpan.ALIGN_BASELINE
-                    )
-                    
-                    // 添加占位符并立即设置 ImageSpan
-                    builder.append(" ")
-                    builder.setSpan(
-                        imageSpan,
-                        start,
-                        builder.length,
-                        android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                } else {
-                    // 缓存未命中，添加占位符，稍后异步渲染
-                    builder.append(" ")
-                    mathNodes.add(Pair(start, node))
-                }
+                builder.append("   ") // 使用 3 个空格作为占位符
+                mathNodes.add(Pair(start, node))
             }
             is com.imparse.models.EmojiNode -> builder.append(node.emoji)
             is com.imparse.models.MentionNode -> {
@@ -875,38 +808,7 @@ class CustomTableLayout(
         }
     }
     
-    // 辅助方法：创建 ImageSpan（提取公共逻辑）
-    private fun createImageSpanForMath(
-        image: android.graphics.Bitmap,
-        lineHeightPx: Int,
-        context: Context
-    ): android.text.style.ImageSpan {
-        // 计算图片尺寸，使其与行高匹配
-        val imageWidth = image.width
-        val imageHeight = image.height
-        val aspectRatio = imageWidth.toFloat() / imageHeight.toFloat()
-        
-        // 目标高度为行高
-        val targetHeight = lineHeightPx.toFloat()
-        val targetWidth = targetHeight * aspectRatio
-        
-        // 缩放图片
-        val scaledBitmap = android.graphics.Bitmap.createScaledBitmap(
-            image,
-            targetWidth.toInt(),
-            targetHeight.toInt(),
-            true
-        )
-        
-        // 创建 ImageSpan
-        return android.text.style.ImageSpan(
-            context,
-            scaledBitmap,
-            android.text.style.ImageSpan.ALIGN_BASELINE
-        )
-    }
-    
-    // 辅助方法：渲染行内数学公式（优化后的版本）
+    // 辅助方法：渲染行内数学公式（使用统一的渲染方法）
     private fun renderInlineMathNodes(
         textView: TextView,
         spannable: SpannableStringBuilder,
@@ -915,101 +817,26 @@ class CustomTableLayout(
     ) {
         if (mathNodes.isEmpty()) return
         
-        // 转换颜色为十六进制
-        val textColor = context.theme.textColor
-        val colorHex = String.format(
-            "#%02X%02X%02X",
-            android.graphics.Color.red(textColor),
-            android.graphics.Color.green(textColor),
-            android.graphics.Color.blue(textColor)
-        )
-        
-        val fontSize = context.theme.fontSize
-        val fontSizePx = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP,
-            fontSize,
-            textView.context.resources.displayMetrics
-        )
-        val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
-        
         // 用于跟踪已完成的渲染数量
         var completedCount = 0
         val totalCount = mathNodes.size
         
-        // 为每个数学公式渲染图片
+        // 为每个数学公式使用统一的渲染方法
         mathNodes.forEach { (position, mathNode) ->
-            // 先尝试用带 lineHeight 的 cacheKey 获取缓存
-            val inlineCacheKey = AndroidMathHTMLRenderer.generateInlineMathCacheKey(
-                mathNode.content,
-                colorHex,
-                fontSize,
-                lineHeightPx.toFloat()
-            )
-            
-            val cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(inlineCacheKey)
-            
-            if (cachedImage != null) {
-                // 缓存命中，直接创建 ImageSpan
-                val imageSpan = createImageSpanForMath(cachedImage, lineHeightPx, textView.context)
-                spannable.setSpan(
-                    imageSpan,
-                    position,
-                    position + 1,
-                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-                
-                completedCount++
-                if (completedCount == totalCount) {
-                    textView.text = spannable
-                }
-                return@forEach
-            }
-            
-            // 缓存未命中，验证语法并异步渲染
-            val result = com.imparse.core.IMParseCore.mathToHTMLResult(mathNode.content, mathNode.display)
-            
-            if (!result.success || result.astJSON == null) {
-                // 语法错误，显示原始内容
-                val errorText = mathNode.content
-                spannable.replace(position, position + 1, errorText)
-                completedCount++
-                if (completedCount == totalCount) {
-                    textView.text = spannable
-                }
-                return@forEach
-            }
-            
-            // 使用 MathHTMLRenderer 渲染（行内公式 display=false）
-            AndroidMathHTMLRenderer.getInstance().render(
-                context = context.context,
-                html = result.astJSON!!,
-                display = false, // 行内公式
-                textColor = colorHex,
-                fontSize = fontSize
-            ) { image ->
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    if (image != null) {
-                        // 创建 ImageSpan
-                        val imageSpan = createImageSpanForMath(image, lineHeightPx, textView.context)
-                        
-                        // 替换占位符
-                        spannable.setSpan(
-                            imageSpan,
-                            position,
-                            position + 1,
-                            android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                        )
-                        
-                        // 保存到缓存（使用带 lineHeight 的 key）
-                        context.formulaSizeCacheDelegate?.saveFormulaImage(image, inlineCacheKey)
-                    }
-                    
+            MathFormulaRenderer.renderInlineMath(
+                textView = textView,
+                spannable = spannable,
+                position = position,
+                placeholderLength = 3,
+                mathNode = mathNode,
+                context = context,
+                onComplete = {
                     completedCount++
                     if (completedCount == totalCount) {
                         textView.text = spannable
                     }
                 }
-            }
+            )
         }
     }
 }

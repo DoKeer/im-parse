@@ -1,7 +1,9 @@
 package com.imparse.renderers
 
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.Typeface
 import android.os.Build
 import android.text.*
@@ -14,6 +16,8 @@ import android.view.ViewGroup
 import android.widget.*
 import androidx.core.view.setPadding
 import com.imparse.models.*
+import androidx.core.graphics.withTranslation
+import androidx.core.graphics.scale
 
 /**
  * Android View 渲染器
@@ -369,10 +373,10 @@ class AndroidViewRenderer {
             // 添加工具栏（右侧）- 代码块不显示下载按钮
             val toolbar = AndroidToolbar(context.context)
             toolbar.onCopy = {
-                context.toolbarActionDelegate?.copyContent(node.content, "code")
+                context.toolbarActionDelegate.copyContent(node.content, "code")
             }
             toolbar.onFullscreen = {
-                context.toolbarActionDelegate?.showFullscreen(node.content, "code", null)
+                context.toolbarActionDelegate.showFullscreen(node.content, "code", null)
             }
             
             val toolbarParams = android.widget.FrameLayout.LayoutParams(
@@ -451,7 +455,7 @@ class AndroidViewRenderer {
         // 添加点击手势
         if (context.onCodeBlockTap != null) {
             containerView.setOnClickListener {
-                context.onCodeBlockTap?.invoke(node)
+                context.onCodeBlockTap.invoke(node)
             }
         }
         
@@ -717,13 +721,13 @@ class AndroidViewRenderer {
             val tableContent = convertTableToString(node)
             
             toolbar.onCopy = {
-                context.toolbarActionDelegate?.copyContent(tableContent, "table")
+                context.toolbarActionDelegate.copyContent(tableContent, "table")
             }
             toolbar.onDownload = {
-                context.toolbarActionDelegate?.downloadContent(tableContent, "table", null)
+                context.toolbarActionDelegate.downloadContent(tableContent, "table", null)
             }
             toolbar.onFullscreen = {
-                context.toolbarActionDelegate?.showFullscreen(tableContent, "table", null)
+                context.toolbarActionDelegate.showFullscreen(tableContent, "table", null)
             }
             
             val toolbarParams = android.widget.FrameLayout.LayoutParams(
@@ -926,206 +930,8 @@ class AndroidViewRenderer {
         
         val contentPadding = context.theme.codeBlockPadding
         
-        // 计算图片区域（直接使用 padding，不再考虑工具栏）
-        val imageAreaY: Int = contentPadding
-        
-        // 先尝试从缓存获取图片
-        val cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(cacheKey)
-        if (cachedImage != null) {
-            // 缓存命中，直接使用缓存的图片
-            val imageView = android.widget.ImageView(context.context)
-            imageView.setImageBitmap(cachedImage)
-            imageView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-            imageView.adjustViewBounds = true
-            
-            // 计算图片在可用空间内的实际显示尺寸（保持宽高比）
-            val availableWidth = containerView.width - contentPadding * 2
-            val availableHeight = containerView.height - imageAreaY - contentPadding
-            
-            val imageSize = android.graphics.PointF(cachedImage.width.toFloat(), cachedImage.height.toFloat())
-            val imageAspectRatio = imageSize.x / imageSize.y
-            
-            // 对于块级公式，优先使用可用宽度，确保公式足够大
-            // 如果图片原始尺寸更大，则按比例缩放以适应可用空间
-            val displayWidth = if (node.display) {
-                // 块级公式：优先使用可用宽度，确保公式足够大且清晰
-                // 如果可用宽度有效（>0），使用可用宽度；否则使用图片原始宽度
-                if (availableWidth > 0) {
-                    availableWidth.toFloat()
-                } else {
-                    imageSize.x
-                }
-            } else {
-                // 行内公式：保持原始尺寸或按比例缩放
-                minOf(availableWidth.toFloat(), imageSize.x)
-            }
-            val displayHeight = minOf(availableHeight.toFloat(), displayWidth / imageAspectRatio)
-            
-            // 居中显示
-            val imageX = contentPadding + (availableWidth - displayWidth.toInt()) / 2
-            val imageY = imageAreaY + (availableHeight - displayHeight.toInt()) / 2
-            
-            val params = android.widget.FrameLayout.LayoutParams(
-                displayWidth.toInt(),
-                displayHeight.toInt()
-            )
-            params.setMargins(imageX, imageY, 0, 0)
-            containerView.addView(imageView, params)
-            
-            // 添加点击手势
-            if (context.onMathTap != null) {
-                containerView.setOnClickListener {
-                    context.onMathTap?.invoke(node)
-                }
-            }
-            
-            return containerView
-        }
-        
-        // 验证语法
-        val result = com.imparse.core.IMParseCore.mathToHTMLResult(node.content, node.display)
-        
-        if (!result.success || result.astJSON == null) {
-            // 语法错误时，显示错误信息
-            val padding = context.theme.codeBlockPadding
-            
-            // 错误提示标签
-            val errorLabel = TextView(context.context)
-            errorLabel.text = "数学公式语法错误"
-            errorLabel.textSize = 12f
-            errorLabel.setTextColor(android.graphics.Color.RED)
-            errorLabel.setTypeface(null, android.graphics.Typeface.BOLD)
-            errorLabel.maxLines = 1
-            val errorParams = android.widget.FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-            errorParams.setMargins(padding, padding, padding, 0)
-            containerView.addView(errorLabel, errorParams)
-            
-            // 原始内容标签
-            val contentLabel = TextView(context.context)
-            contentLabel.text = node.content
-            contentLabel.textSize = context.theme.codeFontSize
-            contentLabel.setTextColor(context.theme.codeTextColor)
-            contentLabel.alpha = 0.6f
-            contentLabel.maxLines = Int.MAX_VALUE
-            val contentParams = android.widget.FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-            contentParams.setMargins(padding, padding + 20, padding, padding)
-            containerView.addView(contentLabel, contentParams)
-            
-            return containerView
-        }
-        
-        val imageView = android.widget.ImageView(context.context)
-        imageView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-        imageView.adjustViewBounds = true
-        imageView.visibility = View.INVISIBLE // 初始隐藏，渲染完成后显示
-        val imageParams = android.widget.FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-        imageParams.setMargins(contentPadding, imageAreaY, contentPadding, contentPadding)
-        containerView.addView(imageView, imageParams)
-        
-        val progressBar = android.widget.ProgressBar(context.context)
-        progressBar.layoutParams = android.widget.FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply {
-            gravity = android.view.Gravity.CENTER
-        }
-        containerView.addView(progressBar)
-        
-        // 添加点击手势
-        if (context.onMathTap != null) {
-            containerView.setOnClickListener {
-                context.onMathTap?.invoke(node)
-            }
-        }
-        
-        // 使用 MathHTMLRenderer 渲染
-        AndroidMathHTMLRenderer.getInstance().render(
-            context = context.context,
-            html = result.astJSON!!,
-            display = node.display,
-            textColor = colorHex,
-            fontSize = fontSize
-        ) { image ->
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                progressBar.visibility = View.GONE
-                
-                if (image != null) {
-                    // 计算图片在可用空间内的实际显示尺寸（保持宽高比）
-                    val availableWidth = containerView.width - contentPadding * 2
-                    val availableHeight = containerView.height - imageAreaY - contentPadding
-                    
-                    val imageSize = android.graphics.PointF(image.width.toFloat(), image.height.toFloat())
-                    val imageAspectRatio = imageSize.x / imageSize.y
-                    
-                    // 对于块级公式，优先使用可用宽度，确保公式足够大
-                    // 如果图片原始尺寸更大，则按比例缩放以适应可用空间
-                    val displayWidth = if (node.display) {
-                        // 块级公式：优先使用可用宽度，确保公式足够大且清晰
-                        // 如果可用宽度有效（>0），使用可用宽度；否则使用图片原始宽度
-                        if (availableWidth > 0) {
-                            availableWidth.toFloat()
-                        } else {
-                            imageSize.x
-                        }
-                    } else {
-                        // 行内公式：保持原始尺寸或按比例缩放
-                        minOf(availableWidth.toFloat(), imageSize.x)
-                    }
-                    val displayHeight = minOf(availableHeight.toFloat(), displayWidth / imageAspectRatio)
-                    
-                    // 居中显示
-                    val imageX = contentPadding + (availableWidth - displayWidth.toInt()) / 2
-                    val imageY = imageAreaY + (availableHeight - displayHeight.toInt()) / 2
-                    
-                    imageView.layoutParams.width = displayWidth.toInt()
-                    imageView.layoutParams.height = displayHeight.toInt()
-                    (imageView.layoutParams as android.widget.FrameLayout.LayoutParams).setMargins(imageX, imageY, 0, 0)
-                    imageView.setImageBitmap(image)
-                    imageView.visibility = View.VISIBLE
-                    
-                    // 保存图片到缓存
-                    context.formulaSizeCacheDelegate?.saveFormulaImage(image, cacheKey)
-                    
-                    // 保存尺寸到缓存
-                    context.formulaSizeCacheDelegate?.setCachedSize(imageSize, cacheKey)
-                    
-                    // 计算实际需要的总高度（只包含 padding，不再包含工具栏）
-                    val actualHeight = displayHeight + contentPadding * 2
-                    
-                    // 如果实际高度与当前高度不同，触发高度刷新回调
-                    val currentHeight = containerView.height.toFloat()
-                    if (kotlin.math.abs(actualHeight - currentHeight) > 1.0f) {
-                        context.onLayoutHeightChanged?.invoke(actualHeight)
-                    }
-                } else {
-                    // 渲染失败时，像代码块一样展示原始内容
-                    imageView.visibility = View.GONE
-                    
-                    val label = TextView(context.context)
-                    label.text = node.content
-                    label.textSize = context.theme.codeFontSize
-                    label.setTextColor(context.theme.codeTextColor)
-                    label.maxLines = Int.MAX_VALUE
-                    val labelParams = android.widget.FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    )
-                    labelParams.setMargins(contentPadding, imageAreaY, contentPadding, contentPadding)
-                    containerView.addView(label, labelParams)
-                }
-            }
-        }
-        
-        return containerView
+        // 使用统一的块级数学公式渲染方法
+        return MathFormulaRenderer.renderBlockMath(containerView, node, context)
     }
     
     /**
@@ -1208,15 +1014,15 @@ class AndroidViewRenderer {
         if (context.toolbarActionDelegate != null) {
             val toolbar = AndroidToolbar(context.context)
             toolbar.onCopy = {
-                context.toolbarActionDelegate?.copyContent(node.content, "mermaid")
+                context.toolbarActionDelegate.copyContent(node.content, "mermaid")
             }
             toolbar.onDownload = {
                 val image = context.formulaSizeCacheDelegate?.getFormulaImage(cacheKey)
-                context.toolbarActionDelegate?.downloadContent(node.content, "mermaid", image)
+                context.toolbarActionDelegate.downloadContent(node.content, "mermaid", image)
             }
             toolbar.onFullscreen = {
                 val image = context.formulaSizeCacheDelegate?.getFormulaImage(cacheKey)
-                context.toolbarActionDelegate?.showFullscreen(node.content, "mermaid", image)
+                context.toolbarActionDelegate.showFullscreen(node.content, "mermaid", image)
             }
             
             val toolbarParams = android.widget.FrameLayout.LayoutParams(
@@ -1626,9 +1432,10 @@ class AndroidViewRenderer {
             }
             is MathNode -> {
                 // 行内数学公式：添加占位符，稍后会被 ImageSpan 替换
+                // 使用多个空格作为占位符，确保有足够的宽度显示公式（公式通常比单个字符宽）
                 val start = builder.length
-                // 使用一个空格作为占位符，确保有足够的空间显示公式
-                builder.append(" ")
+                // 使用 3 个空格作为占位符，实际宽度会在渲染时根据公式图片宽度调整
+                builder.append("   ")
                 mathNodes.add(Pair(start, node))
             }
             is EmojiNode -> builder.append(node.emoji)
@@ -1656,7 +1463,7 @@ class AndroidViewRenderer {
     }
     
     /**
-     * 异步渲染行内数学公式
+     * 异步渲染行内数学公式（使用统一的渲染方法）
      */
     private fun renderInlineMathNodes(
         textView: TextView,
@@ -1664,121 +1471,28 @@ class AndroidViewRenderer {
         mathNodes: List<Pair<Int, MathNode>>,
         context: AndroidRenderContext
     ) {
-        // 转换颜色为十六进制
-        val textColor = context.theme.textColor
-        val colorHex = String.format(
-            "#%02X%02X%02X",
-            android.graphics.Color.red(textColor),
-            android.graphics.Color.green(textColor),
-            android.graphics.Color.blue(textColor)
-        )
-        
-        val fontSize = context.theme.fontSize
+        if (mathNodes.isEmpty()) return
         
         // 用于跟踪已完成的渲染数量
         var completedCount = 0
         val totalCount = mathNodes.size
         
-        // 为每个数学公式渲染图片
+        // 为每个数学公式使用统一的渲染方法
         mathNodes.forEach { (position, mathNode) ->
-            // 验证语法
-            val result = com.imparse.core.IMParseCore.mathToHTMLResult(mathNode.content, mathNode.display)
-            
-            if (!result.success || result.astJSON == null) {
-                // 语法错误，显示原始内容
-                val errorText = mathNode.content
-                spannable.replace(position, position + 1, errorText)
-                completedCount++
-                if (completedCount == totalCount) {
-                    textView.text = spannable
-                }
-                return@forEach
-            }
-            
-            // 使用 MathHTMLRenderer 渲染（行内公式 display=false）
-            AndroidMathHTMLRenderer.getInstance().render(
-                context = context.context,
-                html = result.astJSON!!,
-                display = false, // 行内公式
-                textColor = colorHex,
-                fontSize = fontSize
-            ) { image ->
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    if (image != null) {
-                        // 计算图片的显示尺寸（根据行高调整，使公式与文本对齐）
-                        val fontSizePx = TypedValue.applyDimension(
-                            TypedValue.COMPLEX_UNIT_SP,
-                            fontSize,
-                            textView.context.resources.displayMetrics
-                        )
-                        // 使用行高作为目标高度，使公式与文本基线对齐
-                        val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
-                        val targetHeight = lineHeightPx.coerceAtLeast(fontSizePx.toInt())
-                        
-                        // 计算缩放比例，保持宽高比
-                        val scale = if (image.height > 0) {
-                            targetHeight.toFloat() / image.height.toFloat()
-                        } else {
-                            1.0f
-                        }
-                        
-                        val scaledWidth = (image.width * scale).toInt().coerceAtLeast(1)
-                        val scaledHeight = (image.height * scale).toInt().coerceAtLeast(1)
-                        
-                        // 缩放图片以适应行高
-                        val scaledBitmap = android.graphics.Bitmap.createScaledBitmap(
-                            image,
-                            scaledWidth,
-                            scaledHeight,
-                            true
-                        )
-                        
-                        // 创建 ImageSpan
-                        val imageSpan = ImageSpan(textView.context, scaledBitmap, ImageSpan.ALIGN_BASELINE)
-                        
-                        // 替换占位符
-                        try {
-                            spannable.setSpan(
-                                imageSpan,
-                                position,
-                                position + 1,
-                                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                            )
-                            
-                            // 添加点击事件
-                            if (context.onMathTap != null) {
-                                val clickableSpan = object : ClickableSpan() {
-                                    override fun onClick(widget: View) {
-                                        context.onMathTap?.invoke(mathNode)
-                                    }
-                                }
-                                spannable.setSpan(
-                                    clickableSpan,
-                                    position,
-                                    position + 1,
-                                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                                )
-                            }
-                        } catch (e: Exception) {
-                            android.util.Log.e("AndroidViewRenderer", "Error setting ImageSpan", e)
-                        }
-                    } else {
-                        // 渲染失败，显示原始内容
-                        val errorText = mathNode.content
-                        try {
-                            spannable.replace(position, position + 1, errorText)
-                        } catch (e: Exception) {
-                            android.util.Log.e("AndroidViewRenderer", "Error replacing placeholder", e)
-                        }
-                    }
-                    
+            MathFormulaRenderer.renderInlineMath(
+                textView = textView,
+                spannable = spannable,
+                position = position,
+                placeholderLength = 3,
+                mathNode = mathNode,
+                context = context,
+                onComplete = {
                     completedCount++
-                    // 所有公式渲染完成后，更新 TextView
                     if (completedCount == totalCount) {
                         textView.text = spannable
                     }
                 }
-            }
+            )
         }
     }
 }
