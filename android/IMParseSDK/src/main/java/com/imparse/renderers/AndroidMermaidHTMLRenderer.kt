@@ -152,8 +152,18 @@ class AndroidMermaidHTMLRenderer private constructor() {
         // 添加 JavaScript Bridge
         webView.addJavascriptInterface(CaptureBridge(webViewKey), "AndroidBridge")
         
+        // 检测是否为 Gantt 图表（需要更大的渲染空间）
+        val isGantt = mermaidCode.trim().lowercase().startsWith("gantt")
+        
+        // 优化 Gantt 代码（自动添加 tickInterval 和 axisFormat）
+        val optimizedCode = if (isGantt) {
+            optimizeGanttCode(mermaidCode)
+        } else {
+            mermaidCode
+        }
+        
         // 构建完整的 HTML（包含 mermaid.js 和 html2canvas）
-        val fullHTML = buildFullHTML(context, mermaidCode, textColor, backgroundColor)
+        val fullHTML = buildFullHTML(context, optimizedCode, textColor, backgroundColor)
         
         // 获取屏幕尺寸
         val activity = getActivityFromContext(context)
@@ -161,9 +171,9 @@ class AndroidMermaidHTMLRenderer private constructor() {
         val screenWidth = displayMetrics.widthPixels
         val screenHeight = displayMetrics.heightPixels
         
-        // 设置 WebView 配置（使用较大的初始尺寸，确保内容能完全渲染）
-        val width = 2000
-        val height = 2000
+        // 设置 WebView 配置（Gantt 图表需要更宽的渲染空间以避免横坐标拥挤）
+        val width = if (isGantt) 3200 else 2000
+        val height = if (isGantt) 1600 else 2000
         
         // WebView 必须被添加到视图层次结构中才能渲染
         // 使用已创建的容器
@@ -715,6 +725,99 @@ class AndroidMermaidHTMLRenderer private constructor() {
             Log.e(TAG, "Error parsing JavaScript result: $result", e)
             emptyMap()
         }
+    }
+    
+    /**
+     * 优化 Gantt 图表代码，自动添加配置以避免横坐标拥挤
+     * @param code 原始 Mermaid Gantt 代码
+     * @return 优化后的代码
+     */
+    private fun optimizeGanttCode(code: String): String {
+        val lines = code.split("\n")
+        val optimizedLines = mutableListOf<String>()
+        var hasTickInterval = false
+        var hasAxisFormat = false
+        var dateFormatLineIndex: Int? = null
+        var dateFormatIndent = "    " // 默认缩进（4个空格）
+        
+        // 检查是否已有相关配置，并获取 dateFormat 行的缩进
+        for ((index, line) in lines.withIndex()) {
+            val trimmedLine = line.trim().lowercase()
+            
+            if (trimmedLine.contains("tickinterval")) {
+                hasTickInterval = true
+            }
+            if (trimmedLine.contains("axisformat")) {
+                hasAxisFormat = true
+            }
+            if (trimmedLine.contains("dateformat")) {
+                dateFormatLineIndex = index
+                // 提取 dateFormat 行的缩进
+                val leadingSpaces = line.takeWhile { it == ' ' || it == '\t' }
+                if (leadingSpaces.isNotEmpty()) {
+                    dateFormatIndent = leadingSpaces
+                }
+            }
+        }
+        
+        // 如果用户已经配置了这些选项，不需要优化
+        if (hasTickInterval && hasAxisFormat) {
+            return code
+        }
+        
+        // 构建优化后的代码
+        for ((index, line) in lines.withIndex()) {
+            optimizedLines.add(line)
+            
+            // 在 dateFormat 行之后添加优化配置（如果用户没有指定）
+            if (dateFormatLineIndex != null && index == dateFormatLineIndex) {
+                if (!hasTickInterval) {
+                    // 添加 tickInterval，每7天显示一个刻度，避免拥挤
+                    optimizedLines.add("${dateFormatIndent}tickInterval 7d")
+                }
+                if (!hasAxisFormat) {
+                    // 添加 axisFormat，使用简洁的日期格式（月-日）
+                    optimizedLines.add("${dateFormatIndent}axisFormat %m-%d")
+                }
+            }
+        }
+        
+        // 如果代码中没有 dateFormat，在 gantt 或 title 行之后添加所有配置
+        if (dateFormatLineIndex == null) {
+            var insertIndex = 0
+            var foundIndent = "    " // 默认缩进
+            
+            for ((index, line) in optimizedLines.withIndex()) {
+                val trimmedLine = line.trim().lowercase()
+                if (trimmedLine.startsWith("gantt") || trimmedLine.startsWith("title")) {
+                    insertIndex = index + 1
+                    // 提取该行的缩进，用于后续配置行
+                    val leadingSpaces = line.takeWhile { it == ' ' || it == '\t' }
+                    if (leadingSpaces.isNotEmpty()) {
+                        foundIndent = leadingSpaces
+                    }
+                    break
+                }
+            }
+            
+            // 在合适的位置插入配置
+            if (insertIndex > 0) {
+                val configurationsToAdd = mutableListOf<String>()
+                if (!hasTickInterval) {
+                    configurationsToAdd.add("${foundIndent}tickInterval 7d")
+                }
+                if (!hasAxisFormat) {
+                    configurationsToAdd.add("${foundIndent}axisFormat %m-%d")
+                }
+                
+                // 逆序插入以保持正确的顺序
+                configurationsToAdd.reversed().forEach { config ->
+                    optimizedLines.add(insertIndex, config)
+                }
+            }
+        }
+        
+        return optimizedLines.joinToString("\n")
     }
     
     /**

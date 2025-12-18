@@ -195,9 +195,10 @@ class AndroidMathHTMLRenderer private constructor() {
         val screenWidth = displayMetrics.widthPixels
         val screenHeight = displayMetrics.heightPixels
         
-        // 设置 WebView 配置（使用较大的初始尺寸，确保内容能完全渲染）
-        val width = 1000
-        val height = if (display) 300 else 150
+        // 设置 WebView 配置（使用更大的初始尺寸，确保内容能完全渲染）
+        // 增大宽度以确保行内公式不被截断
+        val width = 3000
+        val height = if (display) 800 else 400
         
         // WebView 必须被添加到视图层次结构中才能渲染
         // 使用已创建的容器
@@ -365,20 +366,29 @@ class AndroidMathHTMLRenderer private constructor() {
                         color: $textColor;
                         background: transparent;
                         margin: 0;
-                        padding: 0;
-                        display: flex;
-                        align-items: center;
-                        justify-content: $textAlign;
-                        min-height: 100vh;
+                        padding: 5px;
+                        /* 移除 flex 布局，避免内容被裁剪 */
+                        width: fit-content;
+                        height: fit-content;
                     }
                     .math-container {
                         display: $displayStyle;
                         text-align: $textAlign;
                         margin: 0;
                         padding: 0;
+                        /* 确保容器能够容纳完整内容 */
+                        width: fit-content;
+                        height: fit-content;
+                        max-width: none;
+                        max-height: none;
+                        overflow: visible;
+                        white-space: nowrap;
                     }
                     .katex {
                         font-size: 1em !important;
+                        /* 确保 katex 内容不被截断 */
+                        display: inline-block;
+                        white-space: nowrap;
                     }
                 </style>
             </head>
@@ -427,22 +437,38 @@ class AndroidMathHTMLRenderer private constructor() {
                         return JSON.stringify({ error: 'Element not found' });
                     }
                     
-                    const rect = mathElement.getBoundingClientRect();
-                    if (rect.width === 0 || rect.height === 0) {
+                    // 使用 scrollWidth/scrollHeight 以确保捕获完整内容（包括溢出部分）
+                    const actualWidth = Math.max(
+                        mathElement.scrollWidth,
+                        mathElement.offsetWidth,
+                        mathElement.clientWidth
+                    );
+                    const actualHeight = Math.max(
+                        mathElement.scrollHeight,
+                        mathElement.offsetHeight,
+                        mathElement.clientHeight
+                    );
+                    
+                    if (actualWidth === 0 || actualHeight === 0) {
                         AndroidBridge.onCaptureError('Element has zero size');
                         return JSON.stringify({ error: 'Zero size' });
                     }
                     
-                    // 使用 html2canvas 截图
+                    console.log('Capturing element with size:', actualWidth, 'x', actualHeight);
+                    
+                    // 使用 html2canvas 截图，使用实际内容尺寸
                     html2canvas(mathElement, {
                         backgroundColor: null,
                         scale: window.devicePixelRatio || 2,
                         useCORS: true,
-                        logging: false,
-                        width: rect.width,
-                        height: rect.height,
-                        windowWidth: rect.width,
-                        windowHeight: rect.height
+                        logging: true,
+                        width: actualWidth,
+                        height: actualHeight,
+                        windowWidth: actualWidth,
+                        windowHeight: actualHeight,
+                        // 确保捕获溢出内容
+                        allowTaint: true,
+                        foreignObjectRendering: false
                     }).then(function(canvas) {
                         const dataUrl = canvas.toDataURL("image/png");
                         console.log('Capture success, dataUrl length:', dataUrl.length);
@@ -551,55 +577,7 @@ class AndroidMathHTMLRenderer private constructor() {
         // 返回结果
         completion(bitmap)
     }
-    
-    /**
-     * 检查 Bitmap 是否有内容（不是全透明或全黑）
-     */
-    private fun checkBitmapHasContent(bitmap: Bitmap): Boolean {
-        if (bitmap.width <= 0 || bitmap.height <= 0) {
-            return false
-        }
-        
-        // 更全面的采样检查
-        val samplePoints = mutableListOf<Pair<Int, Int>>()
-        
-        // 中心点
-        samplePoints.add(Pair(bitmap.width / 2, bitmap.height / 2))
-        
-        // 四个角落
-        samplePoints.add(Pair(0, 0))
-        samplePoints.add(Pair(bitmap.width - 1, 0))
-        samplePoints.add(Pair(0, bitmap.height - 1))
-        samplePoints.add(Pair(bitmap.width - 1, bitmap.height - 1))
-        
-        // 四边中点
-        samplePoints.add(Pair(bitmap.width / 2, 0))
-        samplePoints.add(Pair(bitmap.width / 2, bitmap.height - 1))
-        samplePoints.add(Pair(0, bitmap.height / 2))
-        samplePoints.add(Pair(bitmap.width - 1, bitmap.height / 2))
-        
-        // 检查所有采样点
-        var nonTransparentCount = 0
-        for ((x, y) in samplePoints) {
-            if (x >= 0 && x < bitmap.width && y >= 0 && y < bitmap.height) {
-                val pixel = bitmap.getPixel(x, y)
-                val alpha = android.graphics.Color.alpha(pixel)
-                // 如果像素不是完全透明，认为有内容
-                if (alpha > 10) { // 允许一些透明度误差
-                    nonTransparentCount++
-                }
-            }
-        }
-        
-        // 如果至少有一个点不是完全透明，认为有内容
-        val hasContent = nonTransparentCount > 0
-        if (!hasContent) {
-            Log.d(TAG, "Bitmap check: all ${samplePoints.size} sample points are transparent")
-        }
-        
-        return hasContent
-    }
-    
+
     /**
      * 轮询等待 KaTeX CSS 加载完成
      */
@@ -632,8 +610,19 @@ class AndroidMathHTMLRenderer private constructor() {
                     return { ready: false, reason: 'DOM not complete' };
                 }
                 
-                const rect = katexElement.getBoundingClientRect();
-                const hasValidDimensions = rect.width > 0 && rect.height > 0;
+                // 使用 scrollWidth/scrollHeight 以确保捕获完整尺寸
+                const actualWidth = Math.max(
+                    katexElement.scrollWidth,
+                    katexElement.offsetWidth,
+                    katexElement.clientWidth
+                );
+                const actualHeight = Math.max(
+                    katexElement.scrollHeight,
+                    katexElement.offsetHeight,
+                    katexElement.clientHeight
+                );
+                
+                const hasValidDimensions = actualWidth > 0 && actualHeight > 0;
                 
                 if (!hasValidDimensions) {
                     return { ready: false, reason: 'no dimensions' };
@@ -644,14 +633,14 @@ class AndroidMathHTMLRenderer private constructor() {
                                           document.fonts.check('16px KaTeX_Main');
                     const mathFontLoaded = document.fonts.check('1em KaTeX_Math-Italic') || 
                                           document.fonts.check('16px KaTeX_Math');
-                    const fontsReady = mainFontLoaded || mathFontLoaded || rect.height > 12;
+                    const fontsReady = mainFontLoaded || mathFontLoaded || actualHeight > 12;
                     
                     if (!fontsReady) {
                         return { 
                             ready: false, 
                             reason: 'fonts not loaded',
-                            width: Math.ceil(rect.width),
-                            height: Math.ceil(rect.height)
+                            width: Math.ceil(actualWidth),
+                            height: Math.ceil(actualHeight)
                         };
                     }
                 }
@@ -659,8 +648,8 @@ class AndroidMathHTMLRenderer private constructor() {
                 return { 
                     ready: true, 
                     reason: 'fully rendered',
-                    width: Math.ceil(rect.width),
-                    height: Math.ceil(rect.height)
+                    width: Math.ceil(actualWidth),
+                    height: Math.ceil(actualHeight)
                 };
             })();
         """.trimIndent()) { result ->
