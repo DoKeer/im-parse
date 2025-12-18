@@ -66,8 +66,8 @@ class CustomTableLayout(
             rowViews.add(rowView)
             addView(rowView)
             
-            // 添加水平分隔线（除了第一行和最后一行）
-            if (rowIndex > 0 && rowIndex < tableNode.rows.size - 1) {
+            // 添加水平分隔线（除了最后一行）
+            if (rowIndex < tableNode.rows.size - 1) {
                 val divider = View(context)
                 divider.setBackgroundColor(renderContext.theme.tableBorderColor)
                 horizontalDividers.add(divider)
@@ -77,9 +77,9 @@ class CustomTableLayout(
         
         // 预创建垂直分隔线（列之间的分隔线）
         // 列数由第一行决定
-        // 第一列和最后一列都没有分割线，所以每行有 max(0, columnCount - 2) 个分割线
+        // 只有最后一列没有分割线，所以每行有 max(0, columnCount - 1) 个分割线
         val columnCount = tableNode.rows.firstOrNull()?.cells?.size ?: 0
-        val dividersPerRow = maxOf(0, columnCount - 2)
+        val dividersPerRow = maxOf(0, columnCount - 1)
         for (i in 0 until dividersPerRow * tableNode.rows.size) {
             val divider = View(context)
             divider.setBackgroundColor(renderContext.theme.tableBorderColor)
@@ -590,10 +590,9 @@ class CustomTableLayout(
             
             totalHeight += maxRowHeight
             
-            // 添加水平分隔线高度（除了第一行和最后一行）
-            // horizontalDividers 的索引需要调整，因为第一行没有分割线
-            if (rowIndex > 0 && rowIndex < rowViews.size - 1) {
-                horizontalDividers[rowIndex - 1].measure(
+            // 添加水平分隔线高度（除了最后一行）
+            if (rowIndex < rowViews.size - 1) {
+                horizontalDividers[rowIndex].measure(
                     MeasureSpec.makeMeasureSpec(tableWidth, MeasureSpec.EXACTLY),
                     MeasureSpec.makeMeasureSpec(borderWidth, MeasureSpec.EXACTLY)
                 )
@@ -617,8 +616,8 @@ class CustomTableLayout(
             // 由于我们手动控制了列宽，需要重新布局单元格以匹配 columnWidths
             // 同时布局垂直分隔线
             var currentX = 0
-            // 第一列和最后一列都没有分割线，所以每行有 max(0, columnWidths.size - 2) 个分割线
-            val dividersPerRow = maxOf(0, columnWidths.size - 2)
+            // 只有最后一列没有分割线，所以每行有 max(0, columnWidths.size - 1) 个分割线
+            val dividersPerRow = maxOf(0, columnWidths.size - 1)
             var dividerIndex = rowIndex * dividersPerRow
             
             for ((cellIndex, cellView) in rowContainer.getChildren().withIndex()) {
@@ -635,9 +634,8 @@ class CustomTableLayout(
                         cellHeight
                     )
                     
-                    // 在单元格右侧添加垂直分隔线
-                    // 第一列（cellIndex == 0）和最后一列（cellIndex == columnWidths.size - 1）都没有分割线
-                    if (cellIndex > 0 && cellIndex < columnWidths.size - 1 && dividerIndex < verticalDividers.size) {
+                    // 在单元格右侧添加垂直分隔线（除了最后一列）
+                    if (cellIndex < columnWidths.size - 1 && dividerIndex < verticalDividers.size) {
                         val divider = verticalDividers[dividerIndex]
                         divider.measure(
                             MeasureSpec.makeMeasureSpec(borderWidth, MeasureSpec.EXACTLY),
@@ -659,10 +657,9 @@ class CustomTableLayout(
             
             currentY += rowContainer.measuredHeight
             
-            // 布局水平分隔线（除了第一行和最后一行）
-            // horizontalDividers 的索引需要调整，因为第一行没有分割线
-            if (rowIndex > 0 && rowIndex < rowViews.size - 1) {
-                val divider = horizontalDividers[rowIndex - 1] // 索引减1，因为第一行没有分割线
+            // 布局水平分隔线（除了最后一行）
+            if (rowIndex < rowViews.size - 1) {
+                val divider = horizontalDividers[rowIndex]
                 divider.layout(0, currentY, measuredWidth, currentY + borderWidth)
                 currentY += borderWidth
             }
