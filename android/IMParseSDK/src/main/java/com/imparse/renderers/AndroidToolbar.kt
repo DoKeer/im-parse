@@ -203,9 +203,9 @@ class MermaidViewModeSwitcher(
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), metrics).toInt()
     } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 4f, metrics).toInt()
     
-    val padding: Int = theme.contentPadding?.let {
+    val padding: Int = theme.contentPadding.let {
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), metrics).toInt()
-    } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 2.0f, metrics).toInt()
+    }
     
     val switcherHeight: Int = theme.toolbarSwitcherHeight?.let {
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), metrics).toInt()
@@ -230,36 +230,55 @@ class MermaidViewModeSwitcher(
         setBackgroundColor(Color.TRANSPARENT)
         
         // 计算字体大小（根据切换器高度）
-        val fontSize = (switcherHeightDp * 0.5).toInt()
+        val fontSize = 12F
         
         // 预览按钮
         previewButton = Button(context)
         previewButton?.text = previewText
-        previewButton?.textSize = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP, fontSize.toFloat(), resources.displayMetrics
-        )
+        previewButton?.textSize = fontSize
         previewButton?.setTypeface(null, android.graphics.Typeface.BOLD)
         previewButton?.setBackgroundColor(Color.TRANSPARENT)
         previewButton?.setTextColor(unselectedTextColor)
         previewButton?.setOnClickListener { isPreviewMode = true }
-        previewButton?.setPadding(0, 0, 0, 0)
-        previewButton?.setAllCaps(false)
+        // 添加水平 padding，确保文本不会紧贴边缘
+        val horizontalPadding = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, 8f, resources.displayMetrics
+        ).toInt()
+        previewButton?.setPadding(horizontalPadding, 0, horizontalPadding, 0)
+        previewButton?.isAllCaps = false
+        // 设置文本居中对齐
+        previewButton?.gravity = Gravity.CENTER
+        // 移除 Button 的默认最小尺寸限制
+        previewButton?.minWidth = 0
+        previewButton?.minHeight = 0
+        // 设置 LayoutParams，确保按钮可以正确布局
+        // 使用 MATCH_PARENT 高度，在 onLayout 中会手动调整
+        val previewParams = FrameLayout.LayoutParams(buttonWidthDp, ViewGroup.LayoutParams.MATCH_PARENT)
+        previewButton?.layoutParams = previewParams
         addView(previewButton)
         
         // 代码按钮
         codeButton = Button(context)
         codeButton?.text = codeText
-        codeButton?.textSize = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP, fontSize.toFloat(), resources.displayMetrics
-        )
+        // fontSize 已经是像素值，直接使用 COMPLEX_UNIT_PX
+        codeButton?.textSize = fontSize
         codeButton?.setTypeface(null, android.graphics.Typeface.BOLD)
         codeButton?.setBackgroundColor(Color.TRANSPARENT)
         codeButton?.setTextColor(unselectedTextColor)
         codeButton?.setOnClickListener { isPreviewMode = false }
-        codeButton?.setPadding(0, 0, 0, 0)
+        // 添加水平 padding，确保文本不会紧贴边缘（复用上面计算的 horizontalPadding）
+        codeButton?.setPadding(horizontalPadding, 0, horizontalPadding, 0)
         codeButton?.isAllCaps = false
+        // 设置文本居中对齐
+        codeButton?.gravity = Gravity.CENTER
+        // 移除 Button 的默认最小尺寸限制
+        codeButton?.minWidth = 0
+        codeButton?.minHeight = 0
+        // 设置 LayoutParams，确保按钮可以正确布局
+        // 使用 MATCH_PARENT 高度，在 onLayout 中会手动调整
+        val codeParams = FrameLayout.LayoutParams(buttonWidthDp, ViewGroup.LayoutParams.MATCH_PARENT)
+        codeButton?.layoutParams = codeParams
         addView(codeButton)
-        
         // 指示器
         indicatorView = View(context)
         indicatorView?.setBackgroundColor("#2196F3".toColorInt())
