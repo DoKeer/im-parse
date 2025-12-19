@@ -892,15 +892,7 @@ class AndroidViewRenderer {
     private fun renderMath(node: MathNode, context: AndroidRenderContext): View {
         val containerView = android.widget.FrameLayout(context.context)
         containerView.setPadding(context.theme.codeBlockPadding)
-        
-        // 设置圆角背景
-        val radius = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP,
-            context.theme.codeBlockBorderRadius.toFloat(),
-            context.context.resources.displayMetrics
-        )
-        containerView.applyRoundedBackground(context.theme.codeBackgroundColor, radius)
-        
+
         // 生成缓存键
         val textColor = context.theme.textColor
         val colorHex = String.format(
