@@ -12,6 +12,7 @@ import com.imparse.models.MathNode
 import com.imparse.models.MentionNode
 import com.imparse.models.MermaidNode
 import com.imparse.models.StyleConfig
+import androidx.core.graphics.toColorInt
 
 /**
  * Android 渲染上下文
@@ -92,14 +93,14 @@ data class AndroidRenderContext(
 data class AndroidTheme(
     val fontSize: Float = 16f,
     val codeFontSize: Float = 14f,
-    val textColor: Int = Color.parseColor("#333333"),
-    val backgroundColor: Int = Color.parseColor("#ffffff"),
-    val linkColor: Int = Color.parseColor("#007AFF"),
-    val codeBackgroundColor: Int = Color.parseColor("#f4f4f4"),
-    val codeTextColor: Int = Color.parseColor("#333333"),
+    val textColor: Int = "#333333".toColorInt(),
+    val backgroundColor: Int = "#ffffff".toColorInt(),
+    val linkColor: Int = "#007AFF".toColorInt(),
+    val codeBackgroundColor: Int = "#f4f4f4".toColorInt(),
+    val codeTextColor: Int = "#333333".toColorInt(),
     val headingColors: List<Int> = listOf(
-        Color.parseColor("#333333"), Color.parseColor("#333333"), Color.parseColor("#333333"),
-        Color.parseColor("#333333"), Color.parseColor("#333333"), Color.parseColor("#333333")
+        "#333333".toColorInt(), "#333333".toColorInt(), "#333333".toColorInt(),
+        "#333333".toColorInt(), "#333333".toColorInt(), "#333333".toColorInt()
     ),
     val paragraphSpacing: Int = 16,
     val listItemSpacing: Int = 8,
@@ -108,22 +109,22 @@ data class AndroidTheme(
     val codeBlockMaxWidth: Int? = null,
     val codeBlockMinWidth: Int? = null,
     val tableCellPadding: Int = 8,
-    val tableBorderColor: Int = Color.parseColor("#dddddd"),
-    val tableHeaderBackground: Int = Color.parseColor("#f4f4f4"),
+    val tableBorderColor: Int = "#dddddd".toColorInt(),
+    val tableHeaderBackground: Int = "#f4f4f4".toColorInt(),
     val tableMaxCellWidth: Int? = null,
     val tableMinCellWidth: Int? = null,
     val blockquoteBorderWidth: Int = 4,
-    val blockquoteBorderColor: Int = Color.parseColor("#dddddd"),
-    val blockquoteTextColor: Int = Color.parseColor("#666666"),
+    val blockquoteBorderColor: Int = "#dddddd".toColorInt(),
+    val blockquoteTextColor: Int = "#666666".toColorInt(),
     val imageBorderRadius: Int = 8,
     val imageMargin: Int = 0,
-    val mentionBackground: Int = Color.parseColor("#E3F2FD"),
-    val mentionTextColor: Int = Color.parseColor("#1976D2"),
-    val cardBackground: Int = Color.parseColor("#f9f9f9"),
-    val cardBorderColor: Int = Color.parseColor("#dddddd"),
+    val mentionBackground: Int = "#E3F2FD".toColorInt(),
+    val mentionTextColor: Int = "#1976D2".toColorInt(),
+    val cardBackground: Int = "#f9f9f9".toColorInt(),
+    val cardBorderColor: Int = "#dddddd".toColorInt(),
     val cardPadding: Int = 16,
     val cardBorderRadius: Int = 8,
-    val hrColor: Int = Color.parseColor("#dddddd"),
+    val hrColor: Int = "#dddddd".toColorInt(),
     val lineHeight: Float = 1.0f,
     val maxContentWidth: Int = 800,
     val contentPadding: Int = 2,
@@ -148,7 +149,7 @@ data class AndroidTheme(
             // 辅助函数：安全解析颜色，失败时使用默认值
             fun parseColor(hex: String?, default: Int): Int {
                 return try {
-                    hex?.let { Color.parseColor(it) } ?: default
+                    hex?.toColorInt() ?: default
                 } catch (e: Exception) {
                     default
                 }
@@ -163,15 +164,15 @@ data class AndroidTheme(
             return AndroidTheme(
                 fontSize = toFloat(config.fontSize?.toDouble(), 16f),
                 codeFontSize = toFloat(config.codeFontSize?.toDouble(), 14f),
-                textColor = parseColor(config.textColor, Color.parseColor("#333333")),
-                backgroundColor = parseColor(config.backgroundColor, Color.parseColor("#ffffff")),
-                linkColor = parseColor(config.linkColor, Color.parseColor("#007AFF")),
-                codeBackgroundColor = parseColor(config.codeBackgroundColor, Color.parseColor("#f4f4f4")),
-                codeTextColor = parseColor(config.codeTextColor, Color.parseColor("#333333")),
-                headingColors = config.headingColors?.map { parseColor(it, Color.parseColor("#333333")) }
+                textColor = parseColor(config.textColor, "#333333".toColorInt()),
+                backgroundColor = parseColor(config.backgroundColor, "#ffffff".toColorInt()),
+                linkColor = parseColor(config.linkColor, "#007AFF".toColorInt()),
+                codeBackgroundColor = parseColor(config.codeBackgroundColor, "#f4f4f4".toColorInt()),
+                codeTextColor = parseColor(config.codeTextColor, "#333333".toColorInt()),
+                headingColors = config.headingColors?.map { parseColor(it, "#333333".toColorInt()) }
                     ?: listOf(
-                        Color.parseColor("#333333"), Color.parseColor("#333333"), Color.parseColor("#333333"),
-                        Color.parseColor("#333333"), Color.parseColor("#333333"), Color.parseColor("#333333")
+                        "#333333".toColorInt(), "#333333".toColorInt(), "#333333".toColorInt(),
+                        "#333333".toColorInt(), "#333333".toColorInt(), "#333333".toColorInt()
                     ),
                 paragraphSpacing = toInt(config.paragraphSpacing, 16),
                 listItemSpacing = toInt(config.listItemSpacing, 8),
@@ -180,22 +181,24 @@ data class AndroidTheme(
                 codeBlockMaxWidth = config.codeBlockMaxWidth,
                 codeBlockMinWidth = config.codeBlockMinWidth,
                 tableCellPadding = toInt(config.tableCellPadding, 8),
-                tableBorderColor = parseColor(config.tableBorderColor, Color.parseColor("#dddddd")),
-                tableHeaderBackground = parseColor(config.tableHeaderBackground, Color.parseColor("#f4f4f4")),
+                tableBorderColor = parseColor(config.tableBorderColor, "#dddddd".toColorInt()),
+                tableHeaderBackground = parseColor(config.tableHeaderBackground,
+                    "#f4f4f4".toColorInt()),
                 tableMaxCellWidth = config.tableMaxCellWidth,
                 tableMinCellWidth = config.tableMinCellWidth,
                 blockquoteBorderWidth = toInt(config.blockquoteBorderWidth, 4),
-                blockquoteBorderColor = parseColor(config.blockquoteBorderColor, Color.parseColor("#dddddd")),
-                blockquoteTextColor = parseColor(config.blockquoteTextColor, Color.parseColor("#666666")),
+                blockquoteBorderColor = parseColor(config.blockquoteBorderColor,
+                    "#dddddd".toColorInt()),
+                blockquoteTextColor = parseColor(config.blockquoteTextColor, "#666666".toColorInt()),
                 imageBorderRadius = toInt(config.imageBorderRadius, 8),
                 imageMargin = toInt(config.imageMargin, 0),
-                mentionBackground = parseColor(config.mentionBackground, Color.parseColor("#E3F2FD")),
-                mentionTextColor = parseColor(config.mentionTextColor, Color.parseColor("#1976D2")),
-                cardBackground = parseColor(config.cardBackground, Color.parseColor("#f9f9f9")),
-                cardBorderColor = parseColor(config.cardBorderColor, Color.parseColor("#dddddd")),
+                mentionBackground = parseColor(config.mentionBackground, "#E3F2FD".toColorInt()),
+                mentionTextColor = parseColor(config.mentionTextColor, "#1976D2".toColorInt()),
+                cardBackground = parseColor(config.cardBackground, "#f9f9f9".toColorInt()),
+                cardBorderColor = parseColor(config.cardBorderColor, "#dddddd".toColorInt()),
                 cardPadding = toInt(config.cardPadding, 16),
                 cardBorderRadius = toInt(config.cardBorderRadius, 8),
-                hrColor = parseColor(config.hrColor, Color.parseColor("#dddddd")),
+                hrColor = parseColor(config.hrColor, "#dddddd".toColorInt()),
                 lineHeight = toFloat(config.lineHeight, 1.0f),
                 maxContentWidth = toInt(config.maxContentWidth, 800),
                 contentPadding = toInt(config.contentPadding, 2),
@@ -241,22 +244,22 @@ data class AndroidTheme(
                 android.util.Log.w("AndroidTheme", "Failed to get dark config from Rust, using fallback values")
                 AndroidTheme(
                     textColor = Color.WHITE,
-                    linkColor = Color.parseColor("#64B5F6"),
-                    codeBackgroundColor = Color.parseColor("#2D2D2D"),
+                    linkColor = "#64B5F6".toColorInt(),
+                    codeBackgroundColor = "#2D2D2D".toColorInt(),
                     codeTextColor = Color.WHITE,
                     headingColors = listOf(
                         Color.WHITE, Color.WHITE, Color.WHITE,
                         Color.WHITE, Color.WHITE, Color.WHITE
                     ),
-                    tableBorderColor = Color.parseColor("#424242"),
-                    tableHeaderBackground = Color.parseColor("#2D2D2D"),
-                    blockquoteBorderColor = Color.parseColor("#424242"),
-                    blockquoteTextColor = Color.parseColor("#B0B0B0"),
-                    mentionBackground = Color.parseColor("#1E3A5F"),
-                    mentionTextColor = Color.parseColor("#64B5F6"),
-                    cardBackground = Color.parseColor("#2D2D2D"),
-                    cardBorderColor = Color.parseColor("#424242"),
-                    hrColor = Color.parseColor("#424242")
+                    tableBorderColor = "#424242".toColorInt(),
+                    tableHeaderBackground = "#2D2D2D".toColorInt(),
+                    blockquoteBorderColor = "#424242".toColorInt(),
+                    blockquoteTextColor = "#B0B0B0".toColorInt(),
+                    mentionBackground = "#1E3A5F".toColorInt(),
+                    mentionTextColor = "#64B5F6".toColorInt(),
+                    cardBackground = "#2D2D2D".toColorInt(),
+                    cardBorderColor = "#424242".toColorInt(),
+                    hrColor = "#424242".toColorInt()
                 )
             }
         }

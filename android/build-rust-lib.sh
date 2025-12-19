@@ -71,26 +71,29 @@ fi
 # 重新启用 set -e
 set -e
 
-# 生成 C 头文件
-echo "📝 生成 C 头文件..."
-if [ -n "$CBINDGEN_CMD" ] && [ -f "$RUST_CORE_DIR/cbindgen.toml" ]; then
-    echo "   使用 cbindgen: $CBINDGEN_CMD"
-    "$CBINDGEN_CMD" --config "$RUST_CORE_DIR/cbindgen.toml" --crate im-parse-core --output "$HEADER_FILE"
-    if [ $? -eq 0 ] && [ -f "$HEADER_FILE" ]; then
-        echo "   ✅ C 头文件已生成: $HEADER_FILE"
-    else
-        echo "   ⚠️  警告: cbindgen 生成头文件失败"
-        echo "       JNI 代码将无法编译，请检查 cbindgen 配置"
-    fi
-else
-    if [ -z "$CBINDGEN_CMD" ]; then
-        echo "   ⚠️  警告: cbindgen 未安装或未找到"
-    fi
-    if [ ! -f "$RUST_CORE_DIR/cbindgen.toml" ]; then
-        echo "   ⚠️  警告: 未找到 cbindgen.toml 配置文件"
-    fi
-    echo "   ⚠️  警告: 无法生成 C 头文件，JNI 代码可能无法编译"
-fi
+# 生成 C 头文件（仅在使用 C++ JNI 桥接层时需要）
+# 注意：当前使用直接 JNI 模式（extern "system"），不需要 C++ 层，因此不需要头文件
+# 如果将来需要使用 C++ 桥接层，可以取消注释以下代码
+# echo "📝 生成 C 头文件..."
+# if [ -n "$CBINDGEN_CMD" ] && [ -f "$RUST_CORE_DIR/cbindgen.toml" ]; then
+#     echo "   使用 cbindgen: $CBINDGEN_CMD"
+#     "$CBINDGEN_CMD" --config "$RUST_CORE_DIR/cbindgen.toml" --crate im-parse-core --output "$HEADER_FILE"
+#     if [ $? -eq 0 ] && [ -f "$HEADER_FILE" ]; then
+#         echo "   ✅ C 头文件已生成: $HEADER_FILE"
+#     else
+#         echo "   ⚠️  警告: cbindgen 生成头文件失败"
+#         echo "       C++ JNI 桥接代码将无法编译，请检查 cbindgen 配置"
+#     fi
+# else
+#     if [ -z "$CBINDGEN_CMD" ]; then
+#         echo "   ⚠️  警告: cbindgen 未安装或未找到"
+#     fi
+#     if [ ! -f "$RUST_CORE_DIR/cbindgen.toml" ]; then
+#         echo "   ⚠️  警告: 未找到 cbindgen.toml 配置文件"
+#     fi
+#     echo "   ⚠️  警告: 无法生成 C 头文件，C++ JNI 桥接代码可能无法编译"
+# fi
+echo "ℹ️  跳过 C 头文件生成（使用直接 JNI 模式，无需 C++ 层）"
 
 # Android 目标架构列表
 ANDROID_TARGETS=(
