@@ -1,9 +1,11 @@
 package com.imparse.models
 
+import com.imparse.core.IMParseCore
 import org.json.JSONObject
 
 /**
  * 样式配置
+ * 与 Rust 端的 StyleConfig 对应，从 Rust 层读取标准配置
  */
 data class StyleConfig(
     val textColor: String? = null,
@@ -113,73 +115,156 @@ data class StyleConfig(
     
     companion object {
         /**
-         * 默认样式配置
+         * 获取默认样式配置
+         * 从 Rust 层读取标准配置，与 iOS 实现对齐
          */
-        fun default(): StyleConfig {
-            val config = StyleConfig()
-            android.util.Log.d("StyleConfig", "StyleConfig initialized: ${config.toJSON()}")
-            return config
+        fun default(): StyleConfig? {
+            val jsonString = IMParseCore.getDefaultStyleConfig()
+            if (jsonString == null) {
+                android.util.Log.e("StyleConfig", "Failed to get default style config from Rust layer")
+                return null
+            }
+            return fromJSON(jsonString)
+        }
+        
+        /**
+         * 获取深色模式样式配置
+         * 从 Rust 层读取标准配置，与 iOS 实现对齐
+         */
+        fun dark(): StyleConfig? {
+            val jsonString = IMParseCore.getDarkStyleConfig()
+            if (jsonString == null) {
+                android.util.Log.e("StyleConfig", "Failed to get dark style config from Rust layer")
+                return null
+            }
+            return fromJSON(jsonString)
         }
         
         /**
          * 从 JSON 字符串创建 StyleConfig
+         * 支持 camelCase 和 snake_case 两种格式（Rust 层返回的是 snake_case）
          */
         fun fromJSON(jsonString: String): StyleConfig? {
             return try {
                 val json = JSONObject(jsonString)
+                
+                // 辅助函数：获取字符串值，支持两种命名格式
+                fun getString(camelCase: String, snakeCase: String): String? {
+                    // 先尝试 camelCase
+                    if (json.has(camelCase)) {
+                        val value = json.optString(camelCase, null)
+                        if (value != null && value.isNotEmpty()) {
+                            return value
+                        }
+                    }
+                    // 再尝试 snake_case
+                    if (json.has(snakeCase)) {
+                        val value = json.optString(snakeCase, null)
+                        if (value != null && value.isNotEmpty()) {
+                            return value
+                        }
+                    }
+                    return null
+                }
+                
+                // 辅助函数：获取整数值，支持两种命名格式，同时支持 Double/Float 类型
+                fun getInt(camelCase: String, snakeCase: String): Int? {
+                    if (json.has(camelCase)) {
+                        val value = json.opt(camelCase)
+                        return when (value) {
+                            is Int -> value.takeIf { it != 0 }
+                            is Double -> value.toInt().takeIf { it != 0 }
+                            is Float -> value.toInt().takeIf { it != 0 }
+                            else -> null
+                        }
+                    }
+                    if (json.has(snakeCase)) {
+                        val value = json.opt(snakeCase)
+                        return when (value) {
+                            is Int -> value.takeIf { it != 0 }
+                            is Double -> value.toInt().takeIf { it != 0 }
+                            is Float -> value.toInt().takeIf { it != 0 }
+                            else -> null
+                        }
+                    }
+                    return null
+                }
+                
+                // 辅助函数：获取浮点数值，支持两种命名格式
+                fun getDouble(camelCase: String, snakeCase: String): Double? {
+                    if (json.has(camelCase)) {
+                        val value = json.optDouble(camelCase, Double.NaN)
+                        return value.takeIf { !value.isNaN() && value != 0.0 }
+                    }
+                    if (json.has(snakeCase)) {
+                        val value = json.optDouble(snakeCase, Double.NaN)
+                        return value.takeIf { !value.isNaN() && value != 0.0 }
+                    }
+                    return null
+                }
+                
+                // 辅助函数：获取字符串数组，支持两种命名格式
+                fun getStringArray(camelCase: String, snakeCase: String): List<String>? {
+                    val array = json.optJSONArray(camelCase) ?: json.optJSONArray(snakeCase)
+                    return array?.let { arr ->
+                        (0 until arr.length()).mapNotNull { 
+                            val s = arr.optString(it, null)
+                            s?.takeIf { it.isNotEmpty() }
+                        }
+                    }
+                }
+                
                 val config = StyleConfig(
-                    textColor = json.optString("textColor", null).takeIf { it.isNotEmpty() },
-                    fontSize = json.optInt("fontSize").takeIf { it != 0 },
-                    codeFontSize = json.optInt("codeFontSize").takeIf { it != 0 },
-                    backgroundColor = json.optString("backgroundColor", null).takeIf { it.isNotEmpty() },
-                    paragraphSpacing = json.optInt("paragraphSpacing").takeIf { it != 0 },
-                    codeBackgroundColor = json.optString("codeBackgroundColor", null).takeIf { it.isNotEmpty() },
-                    codeTextColor = json.optString("codeTextColor", null).takeIf { it.isNotEmpty() },
-                    linkColor = json.optString("linkColor", null).takeIf { it.isNotEmpty() },
-                    headingColors = json.optJSONArray("headingColors")?.let { array ->
-                        (0 until array.length()).mapNotNull { array.optString(it, null).takeIf { s -> s.isNotEmpty() } }
-                    },
-                    listItemSpacing = json.optInt("listItemSpacing").takeIf { it != 0 },
-                    codeBlockPadding = json.optInt("codeBlockPadding").takeIf { it != 0 },
-                    codeBlockBorderRadius = json.optInt("codeBlockBorderRadius").takeIf { it != 0 },
-                    codeBlockMaxWidth = json.optInt("codeBlockMaxWidth").takeIf { it != 0 },
-                    codeBlockMinWidth = json.optInt("codeBlockMinWidth").takeIf { it != 0 },
-                    tableCellPadding = json.optInt("tableCellPadding").takeIf { it != 0 },
-                    tableBorderColor = json.optString("tableBorderColor", null).takeIf { it.isNotEmpty() },
-                    tableHeaderBackground = json.optString("tableHeaderBackground", null).takeIf { it.isNotEmpty() },
-                    tableMaxCellWidth = json.optInt("tableMaxCellWidth").takeIf { it != 0 },
-                    tableMinCellWidth = json.optInt("tableMinCellWidth").takeIf { it != 0 },
-                    blockquoteBorderWidth = json.optInt("blockquoteBorderWidth").takeIf { it != 0 },
-                    blockquoteBorderColor = json.optString("blockquoteBorderColor", null).takeIf { it.isNotEmpty() },
-                    blockquoteTextColor = json.optString("blockquoteTextColor", null).takeIf { it.isNotEmpty() },
-                    imageBorderRadius = json.optInt("imageBorderRadius").takeIf { it != 0 },
-                    imageMargin = json.optInt("imageMargin").takeIf { it != 0 },
-                    mentionBackground = json.optString("mentionBackground", null).takeIf { it.isNotEmpty() },
-                    mentionTextColor = json.optString("mentionTextColor", null).takeIf { it.isNotEmpty() },
-                    cardBackground = json.optString("cardBackground", null).takeIf { it.isNotEmpty() },
-                    cardBorderColor = json.optString("cardBorderColor", null).takeIf { it.isNotEmpty() },
-                    cardPadding = json.optInt("cardPadding").takeIf { it != 0 },
-                    cardBorderRadius = json.optInt("cardBorderRadius").takeIf { it != 0 },
-                    hrColor = json.optString("hrColor", null).takeIf { it.isNotEmpty() },
-                    lineHeight = json.optDouble("lineHeight").takeIf { it != 0.0 },
-                    maxContentWidth = json.optInt("maxContentWidth").takeIf { it != 0 },
-                    contentPadding = json.optInt("contentPadding").takeIf { it != 0 },
-                    toolbarHeight = json.optInt("toolbarHeight").takeIf { it != 0 },
-                    toolbarWidth = json.optInt("toolbarWidth").takeIf { it != 0 },
-                    toolbarPadding = json.optInt("toolbarPadding").takeIf { it != 0 },
-                    toolbarButtonSize = json.optInt("toolbarButtonSize").takeIf { it != 0 },
-                    toolbarButtonSpacing = json.optInt("toolbarButtonSpacing").takeIf { it != 0 },
-                    toolbarSwitcherHeight = json.optInt("toolbarSwitcherHeight").takeIf { it != 0 },
-                    toolbarSwitcherButtonWidth = json.optInt("toolbarSwitcherButtonWidth").takeIf { it != 0 },
-                    toolbarSwitcherButtonSpacing = json.optInt("toolbarSwitcherButtonSpacing").takeIf { it != 0 },
-                    tableTitle = json.optString("tableTitle", null).takeIf { it.isNotEmpty() },
-                    toolbarPreviewText = json.optString("toolbarPreviewText", null).takeIf { it.isNotEmpty() },
-                    toolbarCodeText = json.optString("toolbarCodeText", null).takeIf { it.isNotEmpty() }
+                    textColor = getString("textColor", "text_color"),
+                    fontSize = getInt("fontSize", "font_size"),
+                    codeFontSize = getInt("codeFontSize", "code_font_size"),
+                    backgroundColor = getString("backgroundColor", "background_color"),
+                    paragraphSpacing = getInt("paragraphSpacing", "paragraph_spacing"),
+                    codeBackgroundColor = getString("codeBackgroundColor", "code_background_color"),
+                    codeTextColor = getString("codeTextColor", "code_text_color"),
+                    linkColor = getString("linkColor", "link_color"),
+                    headingColors = getStringArray("headingColors", "heading_colors"),
+                    listItemSpacing = getInt("listItemSpacing", "list_item_spacing"),
+                    codeBlockPadding = getInt("codeBlockPadding", "code_block_padding"),
+                    codeBlockBorderRadius = getInt("codeBlockBorderRadius", "code_block_border_radius"),
+                    codeBlockMaxWidth = getInt("codeBlockMaxWidth", "code_block_max_width"),
+                    codeBlockMinWidth = getInt("codeBlockMinWidth", "code_block_min_width"),
+                    tableCellPadding = getInt("tableCellPadding", "table_cell_padding"),
+                    tableBorderColor = getString("tableBorderColor", "table_border_color"),
+                    tableHeaderBackground = getString("tableHeaderBackground", "table_header_background"),
+                    tableMaxCellWidth = getInt("tableMaxCellWidth", "table_max_cell_width"),
+                    tableMinCellWidth = getInt("tableMinCellWidth", "table_min_cell_width"),
+                    blockquoteBorderWidth = getInt("blockquoteBorderWidth", "blockquote_border_width"),
+                    blockquoteBorderColor = getString("blockquoteBorderColor", "blockquote_border_color"),
+                    blockquoteTextColor = getString("blockquoteTextColor", "blockquote_text_color"),
+                    imageBorderRadius = getInt("imageBorderRadius", "image_border_radius"),
+                    imageMargin = getInt("imageMargin", "image_margin"),
+                    mentionBackground = getString("mentionBackground", "mention_background"),
+                    mentionTextColor = getString("mentionTextColor", "mention_text_color"),
+                    cardBackground = getString("cardBackground", "card_background"),
+                    cardBorderColor = getString("cardBorderColor", "card_border_color"),
+                    cardPadding = getInt("cardPadding", "card_padding"),
+                    cardBorderRadius = getInt("cardBorderRadius", "card_border_radius"),
+                    hrColor = getString("hrColor", "hr_color"),
+                    lineHeight = getDouble("lineHeight", "line_height"),
+                    maxContentWidth = getInt("maxContentWidth", "max_content_width"),
+                    contentPadding = getInt("contentPadding", "content_padding"),
+                    toolbarHeight = getInt("toolbarHeight", "toolbar_height"),
+                    toolbarWidth = getInt("toolbarWidth", "toolbar_width"),
+                    toolbarPadding = getInt("toolbarPadding", "toolbar_padding"),
+                    toolbarButtonSize = getInt("toolbarButtonSize", "toolbar_button_size"),
+                    toolbarButtonSpacing = getInt("toolbarButtonSpacing", "toolbar_button_spacing"),
+                    toolbarSwitcherHeight = getInt("toolbarSwitcherHeight", "toolbar_switcher_height"),
+                    toolbarSwitcherButtonWidth = getInt("toolbarSwitcherButtonWidth", "toolbar_switcher_button_width"),
+                    toolbarSwitcherButtonSpacing = getInt("toolbarSwitcherButtonSpacing", "toolbar_switcher_button_spacing"),
+                    tableTitle = getString("tableTitle", "table_title"),
+                    toolbarPreviewText = getString("toolbarPreviewText", "toolbar_preview_text"),
+                    toolbarCodeText = getString("toolbarCodeText", "toolbar_code_text")
                 )
                 android.util.Log.d("StyleConfig", "StyleConfig fromJSON initialized: ${config.toJSON()}")
                 config
             } catch (e: Exception) {
-                android.util.Log.e("StyleConfig", "Failed to parse StyleConfig from JSON: ${e.message}")
+                android.util.Log.e("StyleConfig", "Failed to parse StyleConfig from JSON: ${e.message}", e)
                 null
             }
         }

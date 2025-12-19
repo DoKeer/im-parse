@@ -42,7 +42,7 @@ class AndroidViewRenderer {
         return ToolbarDimensions(
             height = context.theme.toolbarHeight?.let {
                 TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), metrics).toInt()
-            } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 48f, metrics).toInt(),
+            } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 36f, metrics).toInt(),
             width = context.theme.toolbarWidth?.let {
                 TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), metrics).toInt()
             } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 120f, metrics).toInt(),

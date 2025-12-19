@@ -214,32 +214,51 @@ data class AndroidTheme(
         }
         
         /**
-         * 默认主题（与 StyleConfig 的默认值保持一致）
+         * 默认主题
+         * 从 Rust 层读取标准配置，与 iOS 实现对齐
          */
         fun default(): AndroidTheme {
-            return AndroidTheme()
+            val config = StyleConfig.default()
+            return if (config != null) {
+                from(config)
+            } else {
+                // 如果从 Rust 层读取失败，使用硬编码的默认值作为后备
+                android.util.Log.w("AndroidTheme", "Failed to get default config from Rust, using fallback values")
+                AndroidTheme()
+            }
         }
         
+        /**
+         * 深色模式主题
+         * 从 Rust 层读取标准配置，与 iOS 实现对齐
+         */
         fun dark(): AndroidTheme {
-            return AndroidTheme(
-                textColor = Color.WHITE,
-                linkColor = Color.parseColor("#64B5F6"),
-                codeBackgroundColor = Color.parseColor("#2D2D2D"),
-                codeTextColor = Color.WHITE,
-                headingColors = listOf(
-                    Color.WHITE, Color.WHITE, Color.WHITE,
-                    Color.WHITE, Color.WHITE, Color.WHITE
-                ),
-                tableBorderColor = Color.parseColor("#424242"),
-                tableHeaderBackground = Color.parseColor("#2D2D2D"),
-                blockquoteBorderColor = Color.parseColor("#424242"),
-                blockquoteTextColor = Color.parseColor("#B0B0B0"),
-                mentionBackground = Color.parseColor("#1E3A5F"),
-                mentionTextColor = Color.parseColor("#64B5F6"),
-                cardBackground = Color.parseColor("#2D2D2D"),
-                cardBorderColor = Color.parseColor("#424242"),
-                hrColor = Color.parseColor("#424242")
-            )
+            val config = StyleConfig.dark()
+            return if (config != null) {
+                from(config)
+            } else {
+                // 如果从 Rust 层读取失败，使用硬编码的深色模式值作为后备
+                android.util.Log.w("AndroidTheme", "Failed to get dark config from Rust, using fallback values")
+                AndroidTheme(
+                    textColor = Color.WHITE,
+                    linkColor = Color.parseColor("#64B5F6"),
+                    codeBackgroundColor = Color.parseColor("#2D2D2D"),
+                    codeTextColor = Color.WHITE,
+                    headingColors = listOf(
+                        Color.WHITE, Color.WHITE, Color.WHITE,
+                        Color.WHITE, Color.WHITE, Color.WHITE
+                    ),
+                    tableBorderColor = Color.parseColor("#424242"),
+                    tableHeaderBackground = Color.parseColor("#2D2D2D"),
+                    blockquoteBorderColor = Color.parseColor("#424242"),
+                    blockquoteTextColor = Color.parseColor("#B0B0B0"),
+                    mentionBackground = Color.parseColor("#1E3A5F"),
+                    mentionTextColor = Color.parseColor("#64B5F6"),
+                    cardBackground = Color.parseColor("#2D2D2D"),
+                    cardBorderColor = Color.parseColor("#424242"),
+                    hrColor = Color.parseColor("#424242")
+                )
+            }
         }
     }
 }

@@ -39,7 +39,7 @@ target_link_options(im_parse_jni PRIVATE
 )
 
 # 根据架构添加 Rust 库路径
-set(RUST_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs.backup/${ANDROID_ABI}")
+set(RUST_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}")
 
 # 如果 Rust 静态库存在，链接它
 if(EXISTS "${RUST_LIB_DIR}/libim_parse_core.a")

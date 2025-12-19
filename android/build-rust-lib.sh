@@ -1,7 +1,9 @@
 #!/bin/bash
 
 # 构建 Rust 核心库为 Android 可用的 .so 文件
-# 使用方法: ./build-rust-lib.sh
+# 使用方法: 
+#   ./build-rust-lib.sh          # 正常构建
+#   ./build-rust-lib.sh clean    # 清理 Rust 构建缓存后构建
 
 set -e
 
@@ -20,6 +22,19 @@ HEADER_FILE="$HEADER_OUTPUT_DIR/im_parse_core.h"
 echo "🔨 开始构建 Rust 核心库为 Android .so 文件..."
 
 cd "$RUST_CORE_DIR"
+
+# 检查是否需要清理 Rust 构建缓存
+if [ "$1" == "clean" ]; then
+    echo "🧹 清理 Rust 构建缓存..."
+    # 清理 Rust target 目录中的 Android 相关构建
+    for target in aarch64-linux-android armv7-linux-androideabi; do
+        if [ -d "target/$target" ]; then
+            echo "   清理 target/$target..."
+            rm -rf "target/$target"
+        fi
+    done
+    echo "   ✅ Rust 构建缓存已清理"
+fi
 
 # 清理之前的构建
 rm -rf "$BUILD_DIR"

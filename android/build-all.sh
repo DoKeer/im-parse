@@ -58,7 +58,14 @@ build_rust_library() {
     log_info "使用 JNI 模式构建（直接 JNI 支持，无需 C++ 层）"
     export USE_JNI_FEATURE=true
     
-    if ./build-rust-lib.sh; then
+    # 如果指定了 clean 参数，传递给 build-rust-lib.sh
+    local rust_clean_flag=""
+    if [ "$1" == "clean" ]; then
+        rust_clean_flag="clean"
+        log_info "将清理 Rust 构建缓存"
+    fi
+    
+    if ./build-rust-lib.sh $rust_clean_flag; then
         log_success "Rust 核心库构建完成"
         
         # 验证生成的库文件
@@ -162,7 +169,7 @@ main() {
     echo ""
     
     # 执行构建步骤
-    build_rust_library
+    build_rust_library "$clean_flag"
     verify_module_dependency
     build_demo_app "$clean_flag"
     

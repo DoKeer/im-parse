@@ -27,6 +27,42 @@ class MessageAdapter(
     com.imparse.renderers.AndroidRenderContext.FormulaSizeCacheDelegate,
     com.imparse.renderers.AndroidRenderContext.ToolbarActionDelegate {
     
+    // 共享的渲染上下文，所有 cell 共用
+    private val sharedRenderContext: com.imparse.renderers.AndroidRenderContext by lazy {
+        com.imparse.renderers.AndroidRenderContext(
+            context = context,
+            theme = com.imparse.renderers.AndroidTheme.default(),
+            contentWidth = contentWidth,
+            onLinkTap = { url ->
+                val intent = android.content.Intent(
+                    android.content.Intent.ACTION_VIEW,
+                    android.net.Uri.parse(url)
+                )
+                context.startActivity(intent)
+            },
+            onImageTap = { imageNode ->
+                // 处理图片点击（例如打开大图）
+            },
+            imageLoader = object : com.imparse.renderers.AndroidRenderContext.ImageLoader {
+                override fun loadImage(
+                    url: String,
+                    imageView: android.widget.ImageView,
+                    callback: (Boolean) -> Unit
+                ) {
+                    // 使用 Glide 加载图片
+                    Glide.with(context)
+                        .load(url)
+                        .into(imageView)
+                    callback(true)
+                }
+            },
+            formulaSizeCacheDelegate = this,
+            toolbarActionDelegate = this,
+            // onLayoutHeightChanged 在 bind 时动态设置
+            onLayoutHeightChanged = null
+        )
+    }
+    
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MessageViewHolder {
         val binding = ItemMessageBinding.inflate(
             LayoutInflater.from(parent.context),
@@ -37,7 +73,7 @@ class MessageAdapter(
     }
     
     override fun onBindViewHolder(holder: MessageViewHolder, position: Int) {
-        holder.bind(messages[position], contentWidth)
+        holder.bind(messages[position])
     }
     
     override fun getItemCount(): Int = messages.size
@@ -49,7 +85,7 @@ class MessageAdapter(
         private val binding: ItemMessageBinding
     ) : RecyclerView.ViewHolder(binding.root) {
         
-        fun bind(message: Message, contentWidth: Int) {
+        fun bind(message: Message) {
             // 清除旧视图
             binding.container.removeAllViews()
             
@@ -79,36 +115,8 @@ class MessageAdapter(
             }
             
             if (rootNode != null) {
-                // 创建渲染上下文，包含所有代理
-                val renderContext = com.imparse.renderers.AndroidRenderContext(
-                    context = binding.root.context,
-                    theme = com.imparse.renderers.AndroidTheme.default(),
-                    contentWidth = contentWidth,
-                    onLinkTap = { url ->
-                        val intent = android.content.Intent(
-                            android.content.Intent.ACTION_VIEW,
-                            android.net.Uri.parse(url)
-                        )
-                        binding.root.context.startActivity(intent)
-                    },
-                    onImageTap = { imageNode ->
-                        // 处理图片点击（例如打开大图）
-                    },
-                    imageLoader = object : com.imparse.renderers.AndroidRenderContext.ImageLoader {
-                        override fun loadImage(
-                            url: String,
-                            imageView: android.widget.ImageView,
-                            callback: (Boolean) -> Unit
-                        ) {
-                            // 使用 Glide 加载图片
-                            Glide.with(binding.root.context)
-                                .load(url)
-                                .into(imageView)
-                            callback(true)
-                        }
-                    },
-                    formulaSizeCacheDelegate = this@MessageAdapter,
-                    toolbarActionDelegate = this@MessageAdapter,
+                // 使用共享的渲染上下文，但为当前 ViewHolder 设置 onLayoutHeightChanged 回调
+                val renderContext = sharedRenderContext.copy(
                     onLayoutHeightChanged = { newHeight ->
                         // 当内容高度变化时，通知 RecyclerView 更新该 item
                         // 使用 post 确保在布局完成后更新，避免布局冲突
