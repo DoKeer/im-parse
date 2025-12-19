@@ -15,10 +15,8 @@ import WebKit
 /// 生成包含尺寸信息的缓存key
 /// - Parameters:
 ///   - mathContent: 数学公式内容
-///   - display: 是否为块级显示
 ///   - textColor: 文本颜色（十六进制）
 ///   - fontSize: 字体大小
-///   - targetSize: 目标尺寸（可选，用于行内公式）
 /// - Returns: 缓存key
 public func generateMathCacheKey(
     mathContent: String,

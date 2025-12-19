@@ -222,6 +222,7 @@ object MathFormulaRenderer {
             // 缓存命中，直接显示图片
             val imageView = ImageView(context.context)
             imageView.setImageBitmap(cachedImage)
+            // 使用 FIT_CENTER 保持宽高比，并确保图片在容器中居中显示
             imageView.scaleType = ImageView.ScaleType.FIT_CENTER
             imageView.adjustViewBounds = true
             
@@ -304,27 +305,7 @@ object MathFormulaRenderer {
                     // 保存尺寸到缓存
                     val imageSize = android.graphics.PointF(image.width.toFloat(), image.height.toFloat())
                     context.formulaSizeCacheDelegate?.setCachedSize(imageSize, cacheKey)
-                    
-                    // 计算实际需要的总高度
-                    val imageAspectRatio = imageSize.x / imageSize.y
-                    val availableWidth = containerView.width - contentPadding * 2
-                    val displayHeight = if (availableWidth > 0) {
-                        val displayWidth = if (mathNode.display) {
-                            availableWidth.toFloat()
-                        } else {
-                            minOf(availableWidth.toFloat(), imageSize.x)
-                        }
-                        minOf((containerView.height - contentPadding * 2).toFloat(), displayWidth / imageAspectRatio)
-                    } else {
-                        imageSize.y
-                    }
-                    val actualHeight = displayHeight + contentPadding * 2
-                    
-                    // 如果实际高度与当前高度不同，触发高度刷新回调
-                    val currentHeight = containerView.height.toFloat()
-                    if (kotlin.math.abs(actualHeight - currentHeight) > 1.0f) {
-                        context.onLayoutHeightChanged?.invoke(actualHeight)
-                    }
+
                 } else {
                     // 渲染失败，保持原文显示
                     originalTextView.visibility = View.VISIBLE
@@ -353,8 +334,17 @@ object MathFormulaRenderer {
         val targetHeight = lineHeightPx.toFloat() * 1.5f
         val targetWidth = targetHeight * aspectRatio
         
-        // 缩放图片（只计算一次，避免滚动时重复计算）
-        val scaledBitmap = image.scale(targetWidth.toInt(), targetHeight.toInt())
+        // 使用高质量缩放算法
+        // filter=true 会使用双线性插值，产生更平滑、更清晰的结果
+        val scaledBitmap = Bitmap.createScaledBitmap(
+            image,
+            targetWidth.toInt(),
+            targetHeight.toInt(),
+            true  // 使用高质量过滤（双线性插值）
+        )
+        
+        // 保持原图的 density 设置
+        scaledBitmap.density = image.density
         
         // 使用自定义的 CenterImageSpan，让公式的中心与文本的中心对齐
         // 这样可以获得最美观和谐的排版效果

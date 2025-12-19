@@ -58,8 +58,6 @@ class MessageAdapter(
             },
             formulaSizeCacheDelegate = this,
             toolbarActionDelegate = this,
-            // onLayoutHeightChanged 在 bind 时动态设置
-            onLayoutHeightChanged = null
         )
     }
     
@@ -115,23 +113,9 @@ class MessageAdapter(
             }
             
             if (rootNode != null) {
-                // 使用共享的渲染上下文，但为当前 ViewHolder 设置 onLayoutHeightChanged 回调
-                val renderContext = sharedRenderContext.copy(
-                    onLayoutHeightChanged = { newHeight ->
-                        // 当内容高度变化时，通知 RecyclerView 更新该 item
-                        // 使用 post 确保在布局完成后更新，避免布局冲突
-                        binding.root.post {
-                            val adapterPosition = bindingAdapterPosition
-                            if (adapterPosition != RecyclerView.NO_POSITION) {
-                                notifyItemChanged(adapterPosition)
-                            }
-                        }
-                    }
-                )
-                
                 // 渲染
                 val renderer = com.imparse.renderers.AndroidViewRenderer()
-                val contentView = renderer.render(rootNode, renderContext)
+                val contentView = renderer.render(rootNode, sharedRenderContext)
                 binding.container.addView(contentView)
             } else {
                 // 解析失败，显示原始文本

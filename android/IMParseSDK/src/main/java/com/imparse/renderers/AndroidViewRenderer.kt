@@ -893,25 +893,6 @@ class AndroidViewRenderer {
         val containerView = android.widget.FrameLayout(context.context)
         containerView.setPadding(context.theme.codeBlockPadding)
 
-        // 生成缓存键
-        val textColor = context.theme.textColor
-        val colorHex = String.format(
-            "#%02X%02X%02X",
-            android.graphics.Color.red(textColor),
-            android.graphics.Color.green(textColor),
-            android.graphics.Color.blue(textColor)
-        )
-        val fontSize = if (node.display) 16.0f else 14.0f
-        val cacheKey = AndroidMathHTMLRenderer.generateMathCacheKey(
-            node.content,
-            node.display,
-            colorHex,
-            fontSize,
-            null
-        )
-        
-        val contentPadding = context.theme.codeBlockPadding
-        
         // 使用统一的块级数学公式渲染方法
         return MathFormulaRenderer.renderBlockMath(containerView, node, context)
     }
@@ -1152,16 +1133,6 @@ class AndroidViewRenderer {
                     
                     // 保存尺寸到缓存
                     context.formulaSizeCacheDelegate?.setCachedSize(imageSize, cacheKey)
-                    
-                    // 计算实际需要的总高度（图片高度 + padding）
-                    val padding = context.theme.codeBlockPadding
-                    val actualHeight = imageSize.y + padding * 2
-                    
-                    // 如果实际高度与当前高度不同，触发高度刷新回调
-                    val currentHeight = containerView.height.toFloat()
-                    if (kotlin.math.abs(actualHeight - currentHeight) > 1.0f) {
-                        context.onLayoutHeightChanged?.invoke(actualHeight)
-                    }
                 } else {
                     // 渲染失败时，像代码块一样展示原始内容
                     imageView.visibility = View.GONE

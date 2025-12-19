@@ -11,6 +11,7 @@ import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.ui.graphics.Color
 import com.imparse.core.IMParseCore
 import java.util.concurrent.ConcurrentHashMap
 
@@ -498,9 +499,11 @@ class AndroidMathHTMLRenderer private constructor() {
                     console.log('Capturing element with size:', actualWidth, 'x', actualHeight);
                     
                     // 使用 html2canvas 截图，使用实际内容尺寸
+                    // 使用更高的 scale 以支持高密度屏幕（视网膜屏幕）
+                    const renderScale = Math.max(window.devicePixelRatio || 2, 2) * 1.5;
                     html2canvas(mathElement, {
                         backgroundColor: null,
-                        scale: window.devicePixelRatio || 2,
+                        scale: renderScale,
                         useCORS: true,
                         logging: true,
                         width: actualWidth,
@@ -558,7 +561,15 @@ class AndroidMathHTMLRenderer private constructor() {
                     }
                     
                     val bytes = Base64.decode(base64, Base64.DEFAULT)
-                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    
+                    // 使用 BitmapFactory.Options 设置适合高密度屏幕的 density
+                    val options = BitmapFactory.Options()
+                    options.inDensity = android.util.DisplayMetrics.DENSITY_MEDIUM // 160 dpi (基准)
+                    options.inTargetDensity = task.webView.context.resources.displayMetrics.densityDpi
+                    options.inScaled = true
+                    options.inPreferredConfig = Bitmap.Config.ARGB_8888 // 使用高质量配置
+                    
+                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
                     
                     if (bitmap == null) {
                         Log.e(TAG, "Failed to decode bitmap")
@@ -566,7 +577,7 @@ class AndroidMathHTMLRenderer private constructor() {
                             return@post
                         }
                     
-                    Log.d(TAG, "Bitmap decoded successfully: ${bitmap.width}x${bitmap.height}")
+                    Log.d(TAG, "Bitmap decoded successfully: ${bitmap.width}x${bitmap.height}, density: ${bitmap.density}")
                     
                     // 缓存图片
                     imageCache[task.cacheKey] = bitmap

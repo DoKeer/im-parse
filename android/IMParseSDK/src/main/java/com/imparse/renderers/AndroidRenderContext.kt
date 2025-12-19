@@ -30,7 +30,6 @@ data class AndroidRenderContext(
     val imageLoader: ImageLoader? = null,
     val formulaSizeCacheDelegate: FormulaSizeCacheDelegate? = null,
     val toolbarActionDelegate: ToolbarActionDelegate? = null,
-    val onLayoutHeightChanged: ((Float) -> Unit)? = null
 ) {
     /**
      * 图片加载器接口
