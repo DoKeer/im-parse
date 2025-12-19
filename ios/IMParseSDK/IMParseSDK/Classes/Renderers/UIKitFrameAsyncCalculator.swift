@@ -909,7 +909,11 @@ public class UIKitFrameAsyncCalculator {
         )
         
         if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey.0) {
-            let totalHeight = cachedSize.height + padding * 2
+            // cachedSize 应该是逻辑尺寸（points），直接使用
+            // 但为了确保正确性，如果缓存的尺寸是基于图片的，需要确保是逻辑尺寸
+            // 如果图片的 scale 不正确，图片的 size 可能也不正确，所以这里直接使用
+            let displayHeight = cachedSize.height
+            let totalHeight = calculateMathTotalHeight(displayHeight: displayHeight, context: context)
             return NodeLayout(
                 frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
                 node: .math(node)

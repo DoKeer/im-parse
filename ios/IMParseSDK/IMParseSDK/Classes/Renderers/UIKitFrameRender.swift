@@ -836,10 +836,7 @@ public class UIKitFrameRender {
         assert(node.display, "行内数学公式应该使用 MathTextAttachment 在 NSAttributedString 中处理")
         
         let containerView = createEmptyView(size: frame.size)
-        containerView.backgroundColor = context.theme.codeBackgroundColor
-        containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
-        containerView.layer.masksToBounds = true
-        
+     
         let textColor = context.theme.textColor
         let fontSize = node.display ? 16.0 : 14.0
         let cacheKey = generateMathCacheKey(
