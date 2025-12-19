@@ -4,11 +4,34 @@
 //
 //  Created by IMParse on 2025.
 //
-//  UIKit Frame 布局渲染器
+//  UIKit Frame 布局渲染器（优化版）
 //  负责将 NodeLayout 树转换为 UIView 树，使用精确的 frame 布局
 //
 
 import UIKit
+
+// MARK: - Constants
+
+private enum RenderConstants {
+    static let placeholderTag = 9001
+    static let mermaidPlaceholderTag = 9002
+    static let markerWidth: CGFloat = 20
+    static let markerContentSpacing: CGFloat = 8
+}
+
+// MARK: - AttributedString Features
+
+/// AttributedString 特性检测结果
+private struct AttributedStringFeatures {
+    let hasLink: Bool
+    let hasMention: Bool
+    let hasEmoji: Bool
+    let emojiAttachments: [EmojiTextAttachment]
+    
+    var needsInteraction: Bool {
+        hasLink || hasMention || hasEmoji
+    }
+}
 
 // MARK: - NonSelectableTextView
 
@@ -25,11 +48,9 @@ private class NonSelectableTextView: UITextView {
     }
     
     private func setupNonSelectable() {
-        // 直接禁用选择功能
         isSelectable = false
         allowsEditingTextAttributes = false
         
-        // 添加点击手势来处理链接点击（因为 isSelectable = false 会禁用链接点击）
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         tapGesture.numberOfTapsRequired = 1
         addGestureRecognizer(tapGesture)
@@ -38,17 +59,11 @@ private class NonSelectableTextView: UITextView {
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
         let location = gesture.location(in: self)
         
-        // 调整位置以考虑 textContainerInset
-        let textContainer = self.textContainer
-        let layoutManager = self.layoutManager
-        let textStorage = self.textStorage
-        
         let adjustedLocation = CGPoint(
             x: location.x - textContainerInset.left,
             y: location.y - textContainerInset.top
         )
         
-        // 找到点击位置的字符索引
         let characterIndex = layoutManager.characterIndex(
             for: adjustedLocation,
             in: textContainer,
@@ -57,10 +72,8 @@ private class NonSelectableTextView: UITextView {
         
         guard characterIndex < textStorage.length else { return }
         
-        // 检查该位置是否有链接
         var linkRange = NSRange()
         if let url = textStorage.attribute(.link, at: characterIndex, effectiveRange: &linkRange) as? URL {
-            // 找到链接，通过 delegate 处理
             if let delegate = self.delegate as? LinkHandler {
                 _ = delegate.textView(self, shouldInteractWith: url, in: linkRange, interaction: .invokeDefaultAction)
             }
@@ -71,272 +84,261 @@ private class NonSelectableTextView: UITextView {
 // MARK: - UIKitFrameRender
 
 /// Frame 布局渲染器
-/// 所有渲染方法都使用 frame 布局，不使用 Auto Layout
 public class UIKitFrameRender {
     private static let attributedStringBuilder = UIKitAttributedStringBuilder()
     
+    // MARK: - Main Render
+    
     /// 渲染 NodeLayout 为 UIView
     public static func render(layout: NodeLayout, context: UIKitRenderContext) -> UIView {
-        let view: UIView
-        
-        // 优先检查 node 类型，确保需要特殊处理的节点（如 mention、emoji）能正确渲染
-        // 这些节点需要支持点击事件等特殊功能，不能使用通用的 renderAttributedString
-        if let nodeWrapper = layout.node {
-            switch nodeWrapper {
-            case .paragraph(let pNode):
-                view = renderParagraph(pNode, layout: layout, context: context)
-            case .heading(let hNode):
-                view = renderHeading(hNode, layout: layout, context: context)
-            case .codeBlock(let cNode):
-                view = renderCodeBlock(cNode, frame: layout.frame, context: context)
-            case .image(let imgNode):
-                view = renderImage(imgNode, frame: layout.frame, context: context)
-            case .list(let lNode):
-                view = renderList(lNode, layout: layout, context: context)
-            case .blockquote(let bNode):
-                view = renderBlockquote(bNode, layout: layout, context: context)
-            case .horizontalRule(_):
-                view = renderHorizontalRule(frame: layout.frame, context: context)
-            case .table(let tNode):
-                view = renderTable(tNode, layout: layout, context: context)
-            case .math(let mNode):
-                view = renderMath(mNode, frame: layout.frame, context: context)
-            case .mermaid(let mNode):
-                view = renderMermaid(mNode, frame: layout.frame, context: context)
-            case .html(let hNode):
-                view = renderHtml(hNode, frame: layout.frame, context: context)
-            case .emoji(let eNode):
-                view = renderEmoji(eNode, frame: layout.frame, context: context)
-            case .mention(let mNode):
-                view = renderMention(mNode, frame: layout.frame, context: context)
-            default:
-                // 对于其他节点类型，如果有 content，使用 content 渲染
-                if let attributedString = layout.content as? NSAttributedString {
-                    view = renderAttributedString(attributedString, frame: layout.frame, context: context)
-                } else {
-                    view = UIView()
-                    view.frame = CGRect(origin: .zero, size: layout.frame.size)
-                }
-            }
-        } else if let attributedString = layout.content as? NSAttributedString {
-            // 没有 node 类型，但有 content，使用 content 渲染（纯文本节点）
-            view = renderAttributedString(attributedString, frame: layout.frame, context: context)
-        } else {
-            view = UIView()
-            view.frame = CGRect(origin: .zero, size: layout.frame.size)
-        }
-        
-        // 应用通用样式
-        if let bgColor = layout.backgroundColor {
-            view.backgroundColor = bgColor
-        }
-        if layout.cornerRadius > 0 {
-            view.layer.cornerRadius = layout.cornerRadius
-            view.clipsToBounds = true
-        }
-        if let borderColor = layout.borderColor, layout.borderWidth > 0 {
-            view.layer.borderColor = borderColor.cgColor
-            view.layer.borderWidth = layout.borderWidth
-        }
-        
-        // 递归添加子视图，使用精确的 frame
-        // 注意：某些节点类型已经在其 render 方法内部处理了 children，需要跳过通用渲染逻辑
-        if let nodeWrapper = layout.node {
-            switch nodeWrapper {
-            case .codeBlock, .image, .math, .mermaid, .html, .emoji, .mention, .horizontalRule, .table:
-                // 这些节点已经在各自的 render 方法中创建了完整视图，不需要再处理 children
-                break
-            case .paragraph, .heading, .list, .blockquote:
-                // 这些节点已经在各自的 render 方法内部递归渲染了 children，不需要再次渲染
-                break
-            default:
-                // 其他节点：递归渲染子视图
-                for childLayout in layout.children {
-                    let childView = render(layout: childLayout, context: context)
-                    childView.frame = childLayout.frame
-                    view.addSubview(childView)
-                }
-            }
-        } else {
-            // 没有节点类型，直接渲染子视图（例如 rootNode 或中间容器节点）
-            for childLayout in layout.children {
-                let childView = render(layout: childLayout, context: context)
-                childView.frame = childLayout.frame
-                view.addSubview(childView)
-            }
-        }
-        
+        let view = createViewForLayout(layout, context: context)
+        applyCommonStyles(to: view, from: layout)
+        addChildViewsIfNeeded(to: view, from: layout, context: context)
         return view
     }
     
-    // MARK: - 文本渲染
+    // MARK: - View Creation
+    
+    private static func createViewForLayout(_ layout: NodeLayout, context: UIKitRenderContext) -> UIView {
+        // 优先检查 node 类型
+        if let nodeWrapper = layout.node {
+            return createViewForNode(nodeWrapper, layout: layout, context: context)
+        }
+        
+        // 没有 node 但有 content
+        if let attributedString = layout.content as? NSAttributedString {
+            return renderAttributedString(attributedString, frame: layout.frame, context: context)
+        }
+        
+        // 默认空视图
+        return createEmptyView(size: layout.frame.size)
+    }
+    
+    private static func createViewForNode(_ node: ASTNodeWrapper, layout: NodeLayout, context: UIKitRenderContext) -> UIView {
+        switch node {
+        case .paragraph, .heading:
+            return renderContainer(layout: layout, context: context)
+            case .codeBlock(let cNode):
+            return renderCodeBlock(cNode, frame: layout.frame, context: context)
+            case .image(let imgNode):
+            return renderImage(imgNode, frame: layout.frame, context: context)
+            case .list(let lNode):
+            return renderList(lNode, layout: layout, context: context)
+            case .blockquote(let bNode):
+            return renderBlockquote(bNode, layout: layout, context: context)
+        case .horizontalRule:
+            return renderHorizontalRule(frame: layout.frame, context: context)
+            case .table(let tNode):
+            return renderTable(tNode, layout: layout, context: context)
+            case .math(let mNode):
+            return renderMath(mNode, frame: layout.frame, context: context)
+            case .mermaid(let mNode):
+            return renderMermaid(mNode, frame: layout.frame, context: context)
+            case .html(let hNode):
+            return renderHtml(hNode, frame: layout.frame, context: context)
+            case .emoji(let eNode):
+            return renderEmoji(eNode, frame: layout.frame, context: context)
+            case .mention(let mNode):
+            return renderMention(mNode, frame: layout.frame, context: context)
+            default:
+                if let attributedString = layout.content as? NSAttributedString {
+                return renderAttributedString(attributedString, frame: layout.frame, context: context)
+            }
+            return createEmptyView(size: layout.frame.size)
+        }
+    }
+    
+    // MARK: - Container Rendering
+    
+    /// 统一渲染容器（段落和标题）
+    private static func renderContainer(layout: NodeLayout, context: UIKitRenderContext) -> UIView {
+        if let attributedString = layout.content as? NSAttributedString {
+            return renderAttributedString(attributedString, frame: layout.frame, context: context)
+        }
+        return createEmptyView(size: layout.frame.size)
+    }
+    
+    // MARK: - Text Rendering (优化版)
     
     /// 渲染 NSAttributedString
     static func renderAttributedString(_ attributedString: NSAttributedString, frame: CGRect, context: UIKitRenderContext) -> UIView {
-        // 检查是否包含链接、mention 文本、mention 状态图片或 emoji attachment
+        let features = detectAttributedStringFeatures(attributedString, context: context)
+        
+        if features.needsInteraction {
+            return createInteractiveTextView(
+                attributedString: attributedString,
+                frame: frame,
+                features: features,
+                context: context
+            )
+        } else {
+            return createSimpleLabel(attributedString: attributedString, frame: frame)
+        }
+    }
+    
+    /// 一次遍历检测所有特性（性能优化）
+    private static func detectAttributedStringFeatures(_ attributedString: NSAttributedString, context: UIKitRenderContext) -> AttributedStringFeatures {
         var hasLink = false
         var hasMention = false
         var hasEmoji = false
         var emojiAttachments: [EmojiTextAttachment] = []
         
-        attributedString.enumerateAttribute(.link, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
-            if value != nil {
+        let fullRange = NSRange(location: 0, length: attributedString.length)
+        
+        attributedString.enumerateAttributes(in: fullRange, options: []) { attributes, range, stop in
+            if attributes[.link] != nil {
                 hasLink = true
+            }
+            
+            if let color = attributes[.foregroundColor] as? UIColor,
+               color == context.theme.mentionTextColor {
+                let text = attributedString.attributedSubstring(from: range).string
+                if text.hasPrefix("@") {
+                    hasMention = true
+            }
+        }
+        
+            if let attachment = attributes[.attachment] as? EmojiTextAttachment {
+                hasEmoji = true
+                emojiAttachments.append(attachment)
+            }
+            
+            if hasLink && hasMention && hasEmoji {
                 stop.pointee = true
             }
         }
         
-        // 检查是否包含 mention 文本（通过检查 mentionTextColor）
-        attributedString.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attributedString.length), options: []) { value, range, stop in
-            if let color = value as? UIColor, color == context.theme.mentionTextColor {
-                // 检查文本是否以 @ 开头
-                let text = attributedString.attributedSubstring(from: range).string
-                if text.hasPrefix("@") {
-                    hasMention = true
-                    stop.pointee = true
-                }
-            }
-        }
-        
-        attributedString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributedString.length), options: []) { value, range, stop in
-            if let emojiAttachment = value as? EmojiTextAttachment {
-                hasEmoji = true
-                emojiAttachments.append(emojiAttachment)
-            }
-        }
-        
-        // Emoji attachment 的图片已经在初始化时尝试加载，如果异步加载完成会自动更新
-        // 这里不需要额外处理，因为 attachmentBounds 方法会在布局时自动调用
-        
-        if hasLink || hasMention || hasEmoji {
-            // 如果包含链接或 mention，使用 UITextView 以支持点击
+        return AttributedStringFeatures(
+            hasLink: hasLink,
+            hasMention: hasMention,
+            hasEmoji: hasEmoji,
+            emojiAttachments: emojiAttachments
+        )
+    }
+    
+    /// 创建交互式文本视图
+    private static func createInteractiveTextView(
+        attributedString: NSAttributedString,
+        frame: CGRect,
+        features: AttributedStringFeatures,
+        context: UIKitRenderContext
+    ) -> UITextView {
             let textView = NonSelectableTextView()
             textView.attributedText = attributedString
             textView.isEditable = false
             textView.isScrollEnabled = false
-            textView.isUserInteractionEnabled = true // 确保可以接收点击事件
+        textView.isUserInteractionEnabled = true
             textView.textContainerInset = .zero
             textView.textContainer.lineFragmentPadding = 0
             textView.backgroundColor = .clear
             textView.frame = CGRect(origin: .zero, size: frame.size)
             
-            // 让 UITextView 的文本垂直居中，与 UILabel 对齐
             centerTextViewVertically(textView, attributedString: attributedString, frame: frame.size)
             
-            // 设置代理以处理链接点击
-            if hasLink {
-                let linkHandler = LinkHandler(onLinkTap: context.onLinkTap)
-                textView.delegate = linkHandler
-                objc_setAssociatedObject(textView, &AssociatedKeys.linkHandler, linkHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-            }
-            
-            // 如果包含 mention，添加点击手势处理
-            if hasMention, let onMentionTap = context.onMentionTap {
-                let mentionHandler = MentionTapHandler(
-                    textView: textView,
-                    attributedString: attributedString,
-                    context: context,
-                    onMentionTap: onMentionTap
-                )
-                objc_setAssociatedObject(textView, &AssociatedKeys.mentionHandler, mentionHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        if features.hasLink {
+            setupLinkHandler(for: textView, context: context)
+        }
+        
+        if features.hasMention, let onMentionTap = context.onMentionTap {
+            setupMentionHandler(for: textView, attributedString: attributedString, context: context, onMentionTap: onMentionTap)
             }
             
             return textView
-        } else {
-            // 纯文本，使用 UILabel 性能更好
+    }
+    
+    /// 创建简单标签
+    private static func createSimpleLabel(attributedString: NSAttributedString, frame: CGRect) -> UILabel {
             let label = UILabel()
             label.attributedText = attributedString
             label.numberOfLines = 0
             label.frame = CGRect(origin: .zero, size: frame.size)
             return label
-        }
     }
     
-    // MARK: - 段落和标题渲染
-    
-    /// 渲染段落
-    static func renderParagraph(_ node: ParagraphNode, layout: NodeLayout, context: UIKitRenderContext) -> UIView {
-        // 如果有 content（纯文本段落），直接使用 content 渲染
-        if let attributedString = layout.content as? NSAttributedString {
-            return renderAttributedString(attributedString, frame: layout.frame, context: context)
-        }
-        
-        // 如果有 children（包含特殊节点的段落），递归渲染子视图
-        let containerView = UIView()
-        containerView.frame = CGRect(origin: .zero, size: layout.frame.size)
-        
-        for childLayout in layout.children {
-            let childView = render(layout: childLayout, context: context)
-            childView.frame = childLayout.frame
-            containerView.addSubview(childView)
-        }
-        
-        return containerView
+    /// 设置链接处理器
+    private static func setupLinkHandler(for textView: UITextView, context: UIKitRenderContext) {
+        let linkHandler = LinkHandler(onLinkTap: context.onLinkTap)
+        textView.delegate = linkHandler
+        objc_setAssociatedObject(textView, &AssociatedKeys.linkHandler, linkHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
     
-    /// 渲染标题
-    static func renderHeading(_ node: HeadingNode, layout: NodeLayout, context: UIKitRenderContext) -> UIView {
-        // 如果有 content（纯文本标题），直接使用 content 渲染
-        if let attributedString = layout.content as? NSAttributedString {
-            return renderAttributedString(attributedString, frame: layout.frame, context: context)
-        }
-        
-        // 如果有 children（包含特殊节点的标题），递归渲染子视图
-        let containerView = UIView()
-        containerView.frame = CGRect(origin: .zero, size: layout.frame.size)
-        
-        for childLayout in layout.children {
-            let childView = render(layout: childLayout, context: context)
-            childView.frame = childLayout.frame
-            containerView.addSubview(childView)
-        }
-        
-        return containerView
+    /// 设置 Mention 处理器
+    private static func setupMentionHandler(
+        for textView: UITextView,
+        attributedString: NSAttributedString,
+        context: UIKitRenderContext,
+        onMentionTap: @escaping (MentionNode) -> Void
+    ) {
+        let mentionHandler = MentionTapHandler(
+            textView: textView,
+            attributedString: attributedString,
+            context: context,
+            onMentionTap: onMentionTap
+        )
+        objc_setAssociatedObject(textView, &AssociatedKeys.mentionHandler, mentionHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
     
-    // MARK: - 代码块渲染
+    // MARK: - Code Block Rendering
     
     /// 渲染代码块
     static func renderCodeBlock(_ node: CodeBlockNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
-        let containerView = UIView()
-        containerView.frame = CGRect(origin: .zero, size: frame.size)
-        
-        // 代码块整体圆角（和表格一样）
+        let containerView = createEmptyView(size: frame.size)
         containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
         containerView.layer.masksToBounds = true
-        
         containerView.backgroundColor = context.theme.codeBackgroundColor
         
         let toolbarHeight = context.theme.toolbarHeight
-        let toolbarWidth = context.theme.toolbarWidth
-        let toolbarPadding = context.theme.toolbarPadding
-        
-        // 标题栏高度
         let headerBarHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight : 0
-        
-        // 代码内容区域（在标题栏下方）
         let contentAreaHeight = frame.size.height - headerBarHeight
         let contentAreaWidth = frame.size.width
         
-        // 创建标题栏（如果有toolbar）
+        // 创建标题栏
         if context.toolbarActionDelegate != nil {
-            let headerBar = UIView()
-            headerBar.frame = CGRect(
-                x: 0,
-                y: 0,
+            let headerBar = createCodeBlockHeaderBar(
                 width: contentAreaWidth,
-                height: headerBarHeight
+                height: headerBarHeight,
+                node: node,
+                context: context
             )
-            headerBar.backgroundColor = context.theme.codeBackgroundColor
-            
-            
-            // 添加工具栏（右侧）- 代码块不显示下载按钮
+            containerView.addSubview(headerBar)
+        }
+        
+        // 创建代码内容
+        let scrollView = createCodeBlockScrollView(
+            y: headerBarHeight,
+            width: contentAreaWidth,
+            height: contentAreaHeight,
+            node: node,
+            context: context
+        )
+        containerView.addSubview(scrollView)
+        
+        // 添加点击手势
+        if let onCodeBlockTap = context.onCodeBlockTap {
+            containerView.addTapAction { onCodeBlockTap(node) }
+        }
+        
+        return containerView
+    }
+    
+    private static func createCodeBlockHeaderBar(
+        width: CGFloat,
+        height: CGFloat,
+        node: CodeBlockNode,
+        context: UIKitRenderContext
+    ) -> UIView {
+        let headerBar = UIView()
+        headerBar.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        headerBar.backgroundColor = context.theme.codeBackgroundColor
+        
             let toolbar = UIKitToolbar(theme: context.theme, configuration: .codeBlock)
+        let toolbarWidth = context.theme.toolbarWidth
+        let toolbarPadding = context.theme.toolbarPadding
             toolbar.frame = CGRect(
-                x: contentAreaWidth - toolbarWidth - toolbarPadding,
+            x: width - toolbarWidth - toolbarPadding,
                 y: toolbarPadding,
                 width: toolbarWidth,
-                height:toolbarHeight-toolbarPadding*2
+            height: height - toolbarPadding * 2
             )
             
             toolbar.onCopy = {
@@ -346,58 +348,31 @@ public class UIKitFrameRender {
                 context.toolbarActionDelegate?.showFullscreen(node.content, type: "code", image: nil)
             }
             headerBar.addSubview(toolbar)
-            containerView.addSubview(headerBar)
-        }
         
-        // 创建 ScrollView 用于横向滚动（在标题栏下方）
+        return headerBar
+    }
+    
+    private static func createCodeBlockScrollView(
+        y: CGFloat,
+        width: CGFloat,
+        height: CGFloat,
+        node: CodeBlockNode,
+        context: UIKitRenderContext
+    ) -> UIScrollView {
         let scrollView = UIScrollView()
-        scrollView.frame = CGRect(
-            x: 0,
-            y: headerBarHeight,
-            width: contentAreaWidth,
-            height: contentAreaHeight
-        )
+        scrollView.frame = CGRect(x: 0, y: y, width: width, height: height)
         scrollView.showsHorizontalScrollIndicator = true
         scrollView.showsVerticalScrollIndicator = false
         scrollView.bounces = true
         scrollView.alwaysBounceHorizontal = true
         scrollView.backgroundColor = .clear
         
-        // 计算代码内容的实际宽度
         let padding = context.theme.codeBlockPadding
-        let font = context.theme.codeFont
+        let maxLineWidth = calculateMaxLineWidth(for: node.content, font: context.theme.codeFont)
+        let codeActualWidth = max(maxLineWidth + padding * 2, width)
         
-        // 计算每行的最大宽度
-        let lines = node.content.components(separatedBy: .newlines)
-        var maxLineWidth: CGFloat = 0
-        for line in lines {
-            let lineAttr = NSAttributedString(string: line.isEmpty ? " " : line, attributes: [.font: font])
-            let lineSize = lineAttr.boundingRect(
-                with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                context: nil
-            ).size
-            maxLineWidth = max(maxLineWidth, ceil(lineSize.width))
-        }
+        scrollView.contentSize = CGSize(width: codeActualWidth, height: height)
         
-        // 代码内容实际宽度（包含 padding）
-        // 最小宽度应该填充满 scrollview 的父容器
-        let codeActualWidth = max(maxLineWidth + padding * 2, contentAreaWidth)
-        
-        // 设置 ScrollView 的 contentSize
-        scrollView.contentSize = CGSize(width: codeActualWidth, height: contentAreaHeight)
-        
-        // 创建代码内容视图（放在 ScrollView 中）
-        let codeContentView = UIView()
-        codeContentView.frame = CGRect(
-            x: 0,
-            y: 0,
-            width: codeActualWidth,
-            height: contentAreaHeight
-        )
-        codeContentView.backgroundColor = .clear
-        
-        // 代码文本标签
         let label = UILabel()
         label.text = node.content
         label.font = context.theme.codeFont
@@ -407,36 +382,45 @@ public class UIKitFrameRender {
             x: padding,
             y: padding,
             width: codeActualWidth - padding * 2,
-            height: contentAreaHeight - padding * 2
+            height: height - padding * 2
         )
-        codeContentView.addSubview(label)
         
-        scrollView.addSubview(codeContentView)
-        containerView.addSubview(scrollView)
-        
-        // 添加点击手势
-        if let onCodeBlockTap = context.onCodeBlockTap {
-            containerView.addTapAction {
-                onCodeBlockTap(node)
-            }
-        }
-        
-        return containerView
+        scrollView.addSubview(label)
+        return scrollView
     }
     
-    // MARK: - 图片渲染
+    private static func calculateMaxLineWidth(for content: String, font: UIFont) -> CGFloat {
+        let lines = content.components(separatedBy: .newlines)
+        var maxLineWidth: CGFloat = 0
+        
+        for line in lines {
+            let lineAttr = NSAttributedString(
+                string: line.isEmpty ? " " : line,
+                attributes: [.font: font]
+            )
+            let lineSize = lineAttr.boundingRect(
+                with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).size
+            maxLineWidth = max(maxLineWidth, ceil(lineSize.width))
+        }
+        
+        return maxLineWidth
+    }
+    
+    // MARK: - Image Rendering
     
     /// 渲染图片
     static func renderImage(_ node: ImageNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
-        let containerView = UIView()
-        containerView.frame = CGRect(origin: .zero, size: frame.size)
-        
+        let containerView = createEmptyView(size: frame.size)
         let imageMargin = context.theme.imageMargin
+        
         let imageView = UIImageView()
         imageView.layer.cornerRadius = context.theme.codeBlockBorderRadius
         imageView.layer.masksToBounds = true
         imageView.contentMode = .scaleAspectFit
-        imageView.backgroundColor = UIColor.clear
+        imageView.backgroundColor = .clear
         imageView.frame = CGRect(
             x: 0,
             y: imageMargin,
@@ -456,11 +440,8 @@ public class UIKitFrameRender {
         containerView.addSubview(imageView)
         containerView.addSubview(activityIndicator)
         
-        // 添加点击手势
         if let onImageTap = context.onImageTap {
-            containerView.addTapAction {
-                onImageTap(node)
-            }
+            containerView.addTapAction { onImageTap(node) }
         }
         
         guard let url = URL(string: node.url) else {
@@ -472,64 +453,55 @@ public class UIKitFrameRender {
             return containerView
         }
         
-        // 加载图片
         loadImage(url: url, into: imageView, containerView: containerView, activityIndicator: activityIndicator, node: node, context: context)
-//        print("IMParseSDK renderImage:\(containerView.frame.height)")
         return containerView
     }
     
     /// 加载图片
     static func loadImage(url: URL, into imageView: UIImageView, containerView: UIView, activityIndicator: UIActivityIndicatorView, node: ImageNode, context: UIKitRenderContext) {
-        // 优先使用代理加载图片
         if let delegate = context.imageLoaderDelegate {
             delegate.loadImage(url: url, into: imageView) { image, error in
-                DispatchQueue.main.async {
-                    activityIndicator.stopAnimating()
-                    activityIndicator.removeFromSuperview()
-                    
-                    if let error = error {
-                        print("图片加载错误: \(error.localizedDescription)")
-                        showImageError(in: containerView, message: "加载失败")
-                        return
-                    }
-                    
-                    guard let image = image else {
-                        print("无法解析图片数据")
-                        showImageError(in: containerView, message: "无法解析图片")
-                        return
-                    }
-                    
-                    updateImageAspectRatio(image: image, node: node, imageView: imageView, containerView: containerView, context: context)
-                    imageView.image = image
-                }
+                handleImageLoadResult(image: image, error: error, imageView: imageView, containerView: containerView, activityIndicator: activityIndicator, node: node, context: context)
             }
         } else {
             let task = URLSession.shared.dataTask(with: url) { data, _, error in
+                let image = data.flatMap { UIImage(data: $0) }
                 DispatchQueue.main.async {
-                    activityIndicator.stopAnimating()
-                    activityIndicator.removeFromSuperview()
-                    
-                    if let error = error {
-                        print("图片加载错误: \(error.localizedDescription)")
-                        showImageError(in: containerView, message: "加载失败")
-                        return
-                    }
-                    
-                    guard let data = data, let image = UIImage(data: data) else {
-                        print("无法解析图片数据")
-                        showImageError(in: containerView, message: "无法解析图片")
-                        return
-                    }
-                    
-                    imageView.image = image
-                    updateImageAspectRatio(image: image, node: node, imageView: imageView, containerView: containerView, context: context)
+                    handleImageLoadResult(image: image, error: error, imageView: imageView, containerView: containerView, activityIndicator: activityIndicator, node: node, context: context)
                 }
             }
             task.resume()
         }
     }
     
-    /// 更新图片宽高比
+    private static func handleImageLoadResult(
+        image: UIImage?,
+        error: Error?,
+        imageView: UIImageView,
+        containerView: UIView,
+        activityIndicator: UIActivityIndicatorView,
+        node: ImageNode,
+        context: UIKitRenderContext
+    ) {
+                DispatchQueue.main.async {
+                    activityIndicator.stopAnimating()
+                    activityIndicator.removeFromSuperview()
+                    
+                    if let error = error {
+                        showImageError(in: containerView, message: "加载失败")
+                        return
+                    }
+                    
+            guard let image = image else {
+                        showImageError(in: containerView, message: "无法解析图片")
+                        return
+                    }
+                    
+                    imageView.image = image
+                    updateImageAspectRatio(image: image, node: node, imageView: imageView, containerView: containerView, context: context)
+        }
+    }
+    
     static func updateImageAspectRatio(image: UIImage, node: ImageNode, imageView: UIImageView, containerView: UIView, context: UIKitRenderContext) {
         if node.width == nil || node.height == nil {
             let imageAspectRatio = image.size.width / image.size.height
@@ -540,15 +512,12 @@ public class UIKitFrameRender {
             let newImageHeight = containerWidth / imageAspectRatio
             let newContainerHeight = newImageHeight + imageMargin * 2
             
-            // 如果图片高度与当前容器高度不同，重新计算布局
             if abs(newContainerHeight - containerView.frame.height) > 0.5 {
-                // 重新计算图片节点的布局
                 context.onNodeLayoutChanged?(node)
             }
         }
     }
     
-    /// 显示图片错误
     static func showImageError(in containerView: UIView, message: String) {
         containerView.subviews.forEach { subview in
             if subview is UILabel { subview.removeFromSuperview() }
@@ -569,47 +538,36 @@ public class UIKitFrameRender {
         containerView.addSubview(errorLabel)
     }
     
-    // MARK: - 列表渲染
+    // MARK: - List Rendering
     
     /// 渲染列表
     static func renderList(_ node: ListNode, layout: NodeLayout, context: UIKitRenderContext) -> UIView {
-        let containerView = UIView()
-        containerView.frame = CGRect(origin: .zero, size: layout.frame.size)
+        let containerView = createEmptyView(size: layout.frame.size)
         
-        // 列表项通过 children 渲染（每个列表项包含 marker 和 content）
-        var itemIndex = 0
-        
-        // children 是成对出现的：marker 和 content
         for i in stride(from: 0, to: layout.children.count, by: 2) {
             if i + 1 < layout.children.count {
                 let markerLayout = layout.children[i]
                 let contentLayout = layout.children[i + 1]
                 
-                // 渲染标记
                 let markerView = render(layout: markerLayout, context: context)
                 markerView.frame = markerLayout.frame
                 containerView.addSubview(markerView)
                 
-                // 渲染内容
                 let contentView = render(layout: contentLayout, context: context)
                 contentView.frame = contentLayout.frame
                 containerView.addSubview(contentView)
-                
-                itemIndex += 1
             }
         }
         
         return containerView
     }
     
-    // MARK: - 引用块渲染
+    // MARK: - Blockquote Rendering
     
     /// 渲染引用块
     static func renderBlockquote(_ node: BlockquoteNode, layout: NodeLayout, context: UIKitRenderContext) -> UIView {
-        let containerView = UIView()
-        containerView.frame = CGRect(origin: .zero, size: layout.frame.size)
+        let containerView = createEmptyView(size: layout.frame.size)
         
-        // 递归渲染子视图（border 和 content）
         for childLayout in layout.children {
             let childView = render(layout: childLayout, context: context)
             childView.frame = childLayout.frame
@@ -619,7 +577,7 @@ public class UIKitFrameRender {
         return containerView
     }
     
-    // MARK: - 水平分割线渲染
+    // MARK: - Horizontal Rule Rendering
     
     /// 渲染水平分割线
     static func renderHorizontalRule(frame: CGRect, context: UIKitRenderContext) -> UIView {
@@ -629,69 +587,77 @@ public class UIKitFrameRender {
         return view
     }
     
-    // MARK: - 表格渲染
+    // MARK: - Table Rendering
     
     /// 渲染表格
     static func renderTable(_ node: TableNode, layout: NodeLayout, context: UIKitRenderContext) -> UIView {
-        let containerView = UIView()
-        containerView.frame = CGRect(origin: .zero, size: layout.frame.size)
-        
-        // 表格整体圆角
+        let containerView = createEmptyView(size: layout.frame.size)
         containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
         containerView.layer.masksToBounds = true
-        
         containerView.layer.borderWidth = 1
         containerView.layer.borderColor = context.theme.tableBorderColor.cgColor
         containerView.backgroundColor = .clear
         
         let toolbarHeight = context.theme.toolbarHeight
-        let toolbarWidth = context.theme.toolbarWidth
-        let toolbarPadding = context.theme.toolbarPadding
-        
-        // 标题栏高度
-        let headerBarHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight: 0
-        
-        // 表格内容区域（在标题栏下方）
+        let headerBarHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight : 0
         let contentAreaHeight = layout.frame.size.height - headerBarHeight
         let contentAreaWidth = layout.frame.size.width
         
-        // 创建标题栏（如果有toolbar）
+        // 创建标题栏
         if context.toolbarActionDelegate != nil {
-            let headerBar = UIView()
-            headerBar.frame = CGRect(
-                x: 0,
-                y: 0,
+            let headerBar = createTableHeaderBar(
                 width: contentAreaWidth,
-                height: headerBarHeight
+                height: headerBarHeight,
+                node: node,
+                context: context
             )
+            containerView.addSubview(headerBar)
+        }
+        
+        // 创建表格内容滚动视图
+        let scrollView = createTableScrollView(
+            y: headerBarHeight,
+            width: contentAreaWidth,
+            height: contentAreaHeight,
+            layout: layout,
+            node: node,
+            context: context
+        )
+        containerView.addSubview(scrollView)
+        
+        return containerView
+    }
+    
+    private static func createTableHeaderBar(
+        width: CGFloat,
+        height: CGFloat,
+        node: TableNode,
+        context: UIKitRenderContext
+    ) -> UIView {
+        let headerBar = UIView()
+        headerBar.frame = CGRect(x: 0, y: 0, width: width, height: height)
             headerBar.backgroundColor = context.theme.tableHeaderBackground
+        
             let titleLeftPadding = context.theme.tableCellPadding
-            // 添加"表格"标题文字（左侧）
             let titleLabel = UILabel()
             titleLabel.text = context.getTableTitle()
             titleLabel.font = .systemFont(ofSize: 16, weight: .medium)
             titleLabel.textColor = context.theme.textColor
             titleLabel.textAlignment = .left
-            titleLabel.frame = CGRect(
-                x: titleLeftPadding,
-                y: 0,
-                width: 100,
-                height: headerBarHeight
-            )
+        titleLabel.frame = CGRect(x: titleLeftPadding, y: 0, width: 100, height: height)
             headerBar.addSubview(titleLabel)
             
-            // 添加工具栏（右侧）
             let toolbar = UIKitToolbar(theme: context.theme, configuration: .codeBlock)
+        let toolbarWidth = context.theme.toolbarWidth
+        let toolbarPadding = context.theme.toolbarPadding
             toolbar.frame = CGRect(
-                x: contentAreaWidth - toolbarWidth - toolbarPadding,
+            x: width - toolbarWidth - toolbarPadding,
                 y: toolbarPadding,
                 width: toolbarWidth,
-                height: toolbarHeight-toolbarPadding*2
+            height: height - toolbarPadding * 2
             )
             
-            // 将表格内容转换为字符串（用于复制）
             let tableContent = convertTableToString(node)
-            
             toolbar.onCopy = {
                 context.toolbarActionDelegate?.copyContent(tableContent, type: "table")
             }
@@ -702,58 +668,46 @@ public class UIKitFrameRender {
                 context.toolbarActionDelegate?.showFullscreen(tableContent, type: "table", image: nil)
             }
             headerBar.addSubview(toolbar)
-            containerView.addSubview(headerBar)
-        }
         
-        // 创建 ScrollView 用于横向滚动（在标题栏下方）
+        return headerBar
+    }
+    
+    private static func createTableScrollView(
+        y: CGFloat,
+        width: CGFloat,
+        height: CGFloat,
+        layout: NodeLayout,
+        node: TableNode,
+        context: UIKitRenderContext
+    ) -> UIScrollView {
         let scrollView = UIScrollView()
-        scrollView.frame = CGRect(
-            x: 0,
-            y: headerBarHeight,
-            width: contentAreaWidth,
-            height: contentAreaHeight
-        )
+        scrollView.frame = CGRect(x: 0, y: y, width: width, height: height)
         scrollView.showsHorizontalScrollIndicator = true
         scrollView.showsVerticalScrollIndicator = false
         scrollView.bounces = true
         scrollView.alwaysBounceHorizontal = true
         scrollView.backgroundColor = .clear
         
-        // 计算表格的实际宽度
-        let tableActualWidth = layout.children.first?.frame.width ?? contentAreaWidth
+        let tableActualWidth = layout.children.first?.frame.width ?? width
+        scrollView.contentSize = CGSize(width: tableActualWidth, height: height)
         
-        // 设置 ScrollView 的 contentSize
-        scrollView.contentSize = CGSize(width: tableActualWidth, height: contentAreaHeight)
-        
-        // 创建表格内容视图（放在 ScrollView 中）
-        let tableContentView = UIView()
-        tableContentView.frame = CGRect(
-            x: 0,
-            y: 0,
-            width: tableActualWidth,
-            height: contentAreaHeight
-        )
-        tableContentView.backgroundColor = .clear
+        let tableContentView = createEmptyView(size: CGSize(width: tableActualWidth, height: height))
         scrollView.addSubview(tableContentView)
-        containerView.addSubview(scrollView)
         
         renderTableChildren(children: layout.children, into: tableContentView, context: context, node: node)
         
-        return containerView
+        return scrollView
     }
     
-    
-    /// 将表格节点转换为字符串（用于复制）
     private static func convertTableToString(_ node: TableNode) -> String {
         var result = ""
         for (rowIndex, row) in node.rows.enumerated() {
             var rowText = ""
             for (cellIndex, cell) in row.cells.enumerated() {
-                // 提取单元格文本内容
                 let cellText = extractTextFromCell(cell)
                 rowText += cellText
                 if cellIndex < row.cells.count - 1 {
-                    rowText += "\t" // 使用制表符分隔
+                    rowText += "\t"
                 }
             }
             result += rowText
@@ -764,7 +718,6 @@ public class UIKitFrameRender {
         return result
     }
     
-    /// 从单元格节点提取文本
     private static func extractTextFromCell(_ cell: TableCell) -> String {
         var text = ""
         for child in cell.children {
@@ -781,78 +734,25 @@ public class UIKitFrameRender {
         return text
     }
     
-    /// 渲染表格的子视图（行和单元格）
     static func renderTableChildren(children: [NodeLayout], into containerView: UIView, context: UIKitRenderContext, node: TableNode) {
         let cellPadding = context.theme.tableCellPadding
         
         for (rowIndex, rowLayout) in children.enumerated() {
-            // 直接使用 rowLayout.frame，不要重新计算位置
             let rowView = UIView()
             rowView.frame = rowLayout.frame
-            
-            // 所有行使用相同的背景色（透明，显示默认背景）
             rowView.backgroundColor = .clear
             containerView.addSubview(rowView)
             
-            // 渲染行内的单元格
             var currentX: CGFloat = 0
             for (cellIndex, cellLayout) in rowLayout.children.enumerated() {
-                // 创建单元格容器
-                let cellView = UIView()
-                cellView.frame = CGRect(x: currentX, y: 0, width: cellLayout.frame.width, height: cellLayout.frame.height)
+                let cellView = createTableCell(
+                    cellLayout: cellLayout,
+                    x: currentX,
+                    padding: cellPadding,
+                    context: context
+                )
                 rowView.addSubview(cellView)
                 
-                // 渲染单元格内容（NSAttributedString）
-                if let attributedString = cellLayout.content as? NSAttributedString {
-                    // 检查是否包含链接
-                    var hasLink = false
-                    attributedString.enumerateAttribute(.link, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
-                        if value != nil {
-                            hasLink = true
-                            stop.pointee = true
-                        }
-                    }
-                    
-                    let textView: UIView
-                    let cellFrame = CGRect(
-                        x: cellPadding,
-                        y: cellPadding,
-                        width: cellLayout.frame.width - cellPadding * 2,
-                        height: cellLayout.frame.height - cellPadding * 2
-                    )
-                    
-                    if hasLink {
-                        // 如果包含链接，使用 UITextView 以支持点击
-                        let textView_ = NonSelectableTextView()
-                        textView_.attributedText = attributedString
-                        textView_.isEditable = false
-                        textView_.isScrollEnabled = false
-                        textView_.textContainerInset = .zero
-                        textView_.textContainer.lineFragmentPadding = 0
-                        textView_.backgroundColor = .clear
-                        textView_.frame = cellFrame
-                        
-                        // 让 UITextView 的文本垂直居中，与 UILabel 对齐
-                        centerTextViewVertically(textView_, attributedString: attributedString, frame: cellFrame.size)
-                        
-                        // 设置代理以处理链接点击
-                        let linkHandler = LinkHandler(onLinkTap: context.onLinkTap)
-                        textView_.delegate = linkHandler
-                        objc_setAssociatedObject(textView_, &AssociatedKeys.linkHandler, linkHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-                        
-                        textView = textView_
-                    } else {
-                        // 纯文本，使用 UILabel 性能更好
-                        let label = UILabel()
-                        label.attributedText = attributedString
-                        label.numberOfLines = 0
-                        label.frame = cellFrame
-                        textView = label
-                    }
-                    cellView.addSubview(textView)
-                }
-                
-                // 在单元格右侧添加垂直分隔线（除了最后一个单元格）
                 if cellIndex < rowLayout.children.count - 1 {
                     let divider = UIView()
                     divider.backgroundColor = context.theme.tableBorderColor
@@ -868,8 +768,6 @@ public class UIKitFrameRender {
                 currentX += cellLayout.frame.width
             }
             
-            // 在行下方添加水平分隔线（除了最后一行）
-            // 分隔线的位置应该在当前行的下方
             if rowIndex < children.count - 1 {
                 let divider = UIView()
                 divider.backgroundColor = context.theme.tableBorderColor
@@ -884,88 +782,91 @@ public class UIKitFrameRender {
         }
     }
     
-    // MARK: - 数学公式渲染
+    private static func createTableCell(
+        cellLayout: NodeLayout,
+        x: CGFloat,
+        padding: CGFloat,
+        context: UIKitRenderContext
+    ) -> UIView {
+        let cellView = UIView()
+        cellView.frame = CGRect(x: x, y: 0, width: cellLayout.frame.width, height: cellLayout.frame.height)
+        
+        if let attributedString = cellLayout.content as? NSAttributedString {
+                    let cellFrame = CGRect(
+                x: padding,
+                y: padding,
+                width: cellLayout.frame.width - padding * 2,
+                height: cellLayout.frame.height - padding * 2
+            )
+            
+            let features = detectAttributedStringFeatures(attributedString, context: context)
+            let textView: UIView
+            
+            if features.hasLink {
+                        let textView_ = NonSelectableTextView()
+                        textView_.attributedText = attributedString
+                        textView_.isEditable = false
+                        textView_.isScrollEnabled = false
+                        textView_.textContainerInset = .zero
+                        textView_.textContainer.lineFragmentPadding = 0
+                        textView_.backgroundColor = .clear
+                        textView_.frame = cellFrame
+                        
+                        centerTextViewVertically(textView_, attributedString: attributedString, frame: cellFrame.size)
+                setupLinkHandler(for: textView_, context: context)
+                        
+                        textView = textView_
+                    } else {
+                        let label = UILabel()
+                        label.attributedText = attributedString
+                        label.numberOfLines = 0
+                        label.frame = cellFrame
+                        textView = label
+                    }
+                    cellView.addSubview(textView)
+                }
+                
+        return cellView
+    }
+    
+    // MARK: - Math Rendering
     
     /// 渲染数学公式
     static func renderMath(_ node: MathNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
-        // 行内公式不应该调用这个方法，应该在 NSAttributedString 中作为附件处理
-        // 这里只处理块级公式
         assert(node.display, "行内数学公式应该使用 MathTextAttachment 在 NSAttributedString 中处理")
         
-        let containerView = UIView()
-        containerView.frame = CGRect(origin: .zero, size: frame.size)
+        let containerView = createEmptyView(size: frame.size)
         containerView.backgroundColor = context.theme.codeBackgroundColor
-        // 圆角和表格一样
         containerView.layer.cornerRadius = context.theme.codeBlockBorderRadius
         containerView.layer.masksToBounds = true
         
-        // 生成包含尺寸信息的缓存key（块级公式不包含尺寸，使用原始尺寸）
         let textColor = context.theme.textColor
-
         let fontSize = node.display ? 16.0 : 14.0
         let cacheKey = generateMathCacheKey(
             mathContent: node.content,
             textColor: textColor,
-            fontSize: fontSize,
+            fontSize: fontSize
         )
         let contentPadding = context.theme.toolbarPadding
         
-        // 先尝试从缓存获取图片
         if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0) {
-            // 缓存命中，直接使用缓存的图片
-            let imageView = UIImageView()
-            imageView.image = cachedImage
-            imageView.contentMode = .scaleAspectFit
-            
-            // 根据图片的实际显示尺寸（考虑scale）来设置imageView的frame
-            // UIImage.size 返回的是逻辑尺寸（点数），已经考虑了scale
-            let imageSize = cachedImage.size
-            let availableWidth = frame.size.width - contentPadding * 2
-            let availableHeight = frame.size.height - contentPadding * 2
-            
-            // 计算图片在可用空间内的实际显示尺寸（保持宽高比）
-            let imageAspectRatio = imageSize.width / imageSize.height
-            let displayWidth = min(availableWidth, imageSize.width)
-            let displayHeight = min(availableHeight, displayWidth / imageAspectRatio)
-            
-            // 居中显示
-            let imageX = contentPadding + (availableWidth - displayWidth) / 2
-            let imageY = contentPadding + (availableHeight - displayHeight) / 2
-            
-            imageView.frame = CGRect(
-                x: imageX,
-                y: imageY,
-                width: displayWidth,
-                height: displayHeight
-            )
-            containerView.addSubview(imageView)
-            
-            // 添加点击手势
-            if let onMathTap = context.onMathTap {
-                containerView.addTapAction {
-                    onMathTap(node)
-                }
-            }
-            
-            // 如果这里的imageView的frame和cachedImage对不上，则需要刷新当前cell。
-            // 计算实际需要的总高度（使用统一的计算方法）
-            // 执行到这这里可能是预渲染比较快，在render之前就渲染缓存完成了。
-            let actualHeight = UIKitFrameAsyncCalculator.calculateMathTotalHeight(
-                displayHeight: displayHeight,
+            addMathImageView(
+                cachedImage,
+                to: containerView,
+                frame: frame,
+                padding: contentPadding,
+                node: node,
                 context: context
             )
             
-            // 如果实际高度与当前高度不同，重新计算布局并触发回调
-            let currentHeight = containerView.frame.height
-            if abs(actualHeight - currentHeight) > 0.5 {
-                // 触发布局更新回调
-                context.onNodeLayoutChanged?(node)
+            if let onMathTap = context.onMathTap {
+                containerView.addTapAction { onMathTap(node) }
             }
             
             return containerView
         }
         
-        // 没有缓存时，先显示原始内容
+        // 没有缓存时显示占位符
         let contentLabel = UILabel()
         contentLabel.text = node.content
         contentLabel.font = context.theme.codeFont
@@ -977,17 +878,14 @@ public class UIKitFrameRender {
             width: frame.size.width - contentPadding * 2,
             height: frame.size.height - contentPadding * 2
         )
-        contentLabel.tag = 9001 // 用于后续移除
+        contentLabel.tag = RenderConstants.placeholderTag
         containerView.addSubview(contentLabel)
         
-        // 添加点击手势
         if let onMathTap = context.onMathTap {
-            containerView.addTapAction {
-                onMathTap(node)
-            }
+            containerView.addTapAction { onMathTap(node) }
         }
         
-        // fontSize 已经在上面声明过了，直接使用
+        // 异步渲染
         Task { @MainActor [weak containerView] in
             guard let containerView = containerView else { return }
             
@@ -999,53 +897,19 @@ public class UIKitFrameRender {
                 formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
             )
             
-            // 移除原始内容标签
-            containerView.viewWithTag(9001)?.removeFromSuperview()
+            containerView.viewWithTag(RenderConstants.placeholderTag)?.removeFromSuperview()
             
             if let image = image {
-                // 缓存已经放在MathHTMLRenderer层处理
-
-                // 创建 ImageView 显示图片
-                let imageView = UIImageView()
-                imageView.image = image
-                imageView.contentMode = .scaleAspectFit
-                
-                // 根据图片的实际显示尺寸（考虑scale）来设置imageView的frame
-                let imageSize = image.size
-                let availableWidth = frame.size.width - contentPadding * 2
-                let availableHeight = frame.size.height - contentPadding * 2
-                
-                // 计算图片在可用空间内的实际显示尺寸（保持宽高比）
-                let imageAspectRatio = imageSize.width / imageSize.height
-                let displayWidth = min(availableWidth, imageSize.width)
-                let displayHeight = min(availableHeight, displayWidth / imageAspectRatio)
-                
-                // 居中显示
-                let imageX = contentPadding + (availableWidth - displayWidth) / 2
-                let imageY = contentPadding + (availableHeight - displayHeight) / 2
-                
-                imageView.frame = CGRect(
-                    x: imageX,
-                    y: imageY,
-                    width: displayWidth,
-                    height: displayHeight
-                )
-                containerView.addSubview(imageView)
-                
-                // 计算实际需要的总高度（使用统一的计算方法）
-                let actualHeight = UIKitFrameAsyncCalculator.calculateMathTotalHeight(
-                    displayHeight: displayHeight,
+                addMathImageView(
+                    image,
+                    to: containerView,
+                    frame: frame,
+                    padding: contentPadding,
+                    node: node,
                     context: context
                 )
-                
-                // 如果实际高度与当前高度不同，重新计算布局并触发回调
-                let currentHeight = containerView.frame.height
-                if abs(actualHeight - currentHeight) > 0.5 {
-                    // 触发布局更新回调
-                    context.onNodeLayoutChanged?(node)
-                }
             } else {
-                // 渲染失败时，显示原始内容（已经显示了）
+                // 渲染失败，显示原始内容
                 let label = UILabel()
                 label.text = node.content
                 label.font = context.theme.codeFont
@@ -1064,24 +928,55 @@ public class UIKitFrameRender {
         return containerView
     }
     
-    // MARK: - Mermaid 渲染
+    private static func addMathImageView(
+        _ image: UIImage,
+        to containerView: UIView,
+        frame: CGRect,
+        padding: CGFloat,
+        node: MathNode,
+        context: UIKitRenderContext
+    ) {
+                let imageView = UIImageView()
+                imageView.image = image
+                imageView.contentMode = .scaleAspectFit
+                
+                let imageSize = image.size
+        let availableWidth = frame.size.width - padding * 2
+        let availableHeight = frame.size.height - padding * 2
+                
+                let imageAspectRatio = imageSize.width / imageSize.height
+                let displayWidth = min(availableWidth, imageSize.width)
+                let displayHeight = min(availableHeight, displayWidth / imageAspectRatio)
+                
+        let imageX = padding + (availableWidth - displayWidth) / 2
+        let imageY = padding + (availableHeight - displayHeight) / 2
+        
+        imageView.frame = CGRect(x: imageX, y: imageY, width: displayWidth, height: displayHeight)
+                containerView.addSubview(imageView)
+                
+                let actualHeight = UIKitFrameAsyncCalculator.calculateMathTotalHeight(
+                    displayHeight: displayHeight,
+                    context: context
+                )
+                
+        if abs(actualHeight - containerView.frame.height) > 0.5 {
+                    context.onNodeLayoutChanged?(node)
+        }
+    }
+    
+    // MARK: - Mermaid Rendering
     
     /// 渲染 Mermaid 图表
     static func renderMermaid(_ node: MermaidNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
-        let containerView = UIView()
-        containerView.frame = CGRect(origin: .zero, size: frame.size)
+        let containerView = createEmptyView(size: frame.size)
         containerView.backgroundColor = context.theme.codeBackgroundColor
-        // 圆角和表格一样
         containerView.layer.cornerRadius = 8
         containerView.layer.masksToBounds = true
         
         let padding = context.theme.codeBlockPadding
-        
-        // 转换颜色为十六进制（用于生成统一的 cacheKey）
         let textColor = context.theme.textColor
         let backgroundColor = context.theme.codeBackgroundColor
 
-        // 使用统一的 cacheKey 生成方法
         let cacheKey = generateMermaidCacheKey(
             mermaidCode: node.content,
             textColor: textColor,
@@ -1095,9 +990,8 @@ public class UIKitFrameRender {
         let switcherButtonWidth = context.theme.toolbarSwitcherButtonWidth
         let switcherButtonSpacing = context.theme.toolbarSwitcherButtonSpacing
         let switcherWidth = switcherButtonWidth * 2 + switcherButtonSpacing + toolbarPadding * 2
-        let topAreaHeight: CGFloat = max(toolbarHeight, switcherHeight)
         
-        // 添加预览/代码切换器（左侧）
+        // 添加切换器
         let modeSwitcher = MermaidViewModeSwitcher(
             theme: context.theme,
             previewText: context.getToolbarPreviewText(),
@@ -1105,18 +999,18 @@ public class UIKitFrameRender {
         )
         modeSwitcher.frame = CGRect(
             x: padding,
-            y: (topAreaHeight-switcherHeight)/2,
+            y: (toolbarHeight - switcherHeight) / 2,
             width: switcherWidth,
             height: switcherHeight
         )
         containerView.addSubview(modeSwitcher)
         
-        // 添加工具栏（右侧，如果有代理）
+        // 添加工具栏
         if context.toolbarActionDelegate != nil {
             let toolbar = UIKitToolbar(theme: context.theme)
             toolbar.frame = CGRect(
                 x: frame.size.width - toolbarWidth - toolbarPadding,
-                y: (topAreaHeight-toolbarHeight)/2,
+                y: 0,
                 width: toolbarWidth,
                 height: toolbarHeight
             )
@@ -1134,31 +1028,61 @@ public class UIKitFrameRender {
             containerView.addSubview(toolbar)
         }
         
-        // 创建内容容器（预览或代码）
-        let contentContainer = UIView()
-        contentContainer.frame = CGRect(
-            x: 0,
-            y: topAreaHeight,
+        // 内容容器
+        let contentContainer = createEmptyView(size: CGSize(
             width: frame.size.width,
-            height: frame.size.height - topAreaHeight
-        )
+            height: frame.size.height - toolbarHeight
+        ))
+        contentContainer.frame.origin.y = toolbarHeight
         containerView.addSubview(contentContainer)
         
-        // 预览视图（图片）
-        let previewView = UIView()
-        previewView.frame = contentContainer.bounds
+        // 预览视图
+        let previewView = createEmptyView(size: contentContainer.bounds.size)
         previewView.isHidden = false
         contentContainer.addSubview(previewView)
         
-        // 代码视图（文本）
-        let codeView = UIView()
-        codeView.frame = contentContainer.bounds
+        // 代码视图
+        let codeView = createMermaidCodeView(
+            size: contentContainer.bounds.size,
+            content: node.content,
+            padding: padding,
+            context: context
+        )
         codeView.isHidden = true
         contentContainer.addSubview(codeView)
         
-        // 代码文本视图
+        // 切换回调
+        modeSwitcher.onModeChanged = { isPreview in
+            previewView.isHidden = !isPreview
+            codeView.isHidden = isPreview
+        }
+        
+        // 渲染预览内容
+        renderMermaidPreview(
+            node: node,
+            previewView: previewView,
+            cacheKey: cacheKey,
+            padding: padding,
+            context: context
+        )
+        
+        if let onMermaidTap = context.onMermaidTap {
+            containerView.addTapAction { onMermaidTap(node) }
+        }
+        
+        return containerView
+    }
+    
+    private static func createMermaidCodeView(
+        size: CGSize,
+        content: String,
+        padding: CGFloat,
+        context: UIKitRenderContext
+    ) -> UIView {
+        let codeView = createEmptyView(size: size)
+        
         let codeTextView = UITextView()
-        codeTextView.text = node.content
+        codeTextView.text = content
         codeTextView.font = context.theme.codeFont
         codeTextView.textColor = context.theme.codeTextColor
         codeTextView.backgroundColor = .clear
@@ -1168,51 +1092,28 @@ public class UIKitFrameRender {
         codeTextView.frame = codeView.bounds
         codeView.addSubview(codeTextView)
         
-        // 切换模式回调
-        modeSwitcher.onModeChanged = { isPreview in
-            previewView.isHidden = !isPreview
-            codeView.isHidden = isPreview
-        }
-        
-        // 先尝试从缓存获取图片
+        return codeView
+    }
+    
+    private static func renderMermaidPreview(
+        node: MermaidNode,
+        previewView: UIView,
+        cacheKey: (String, String, String),
+        padding: CGFloat,
+        context: UIKitRenderContext
+    ) {
         if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0) {
-            // 缓存命中，直接使用缓存的图片
-            let imageView = UIImageView()
-            imageView.image = cachedImage
-            imageView.contentMode = .scaleAspectFit
-            imageView.frame = CGRect(
-                x: padding,
-                y: padding,
-                width: previewView.frame.size.width - padding * 2,
-                height: previewView.frame.size.height - padding * 2
-            )
-            previewView.addSubview(imageView)
-            
-            // 添加点击手势
-            if let onMermaidTap = context.onMermaidTap {
-                containerView.addTapAction {
-                    onMermaidTap(node)
-                }
-            }
-            // 如果这里的imageView的frame和cachedImage对不上，则需要刷新当前cell。
-            // 计算实际需要的总高度（使用统一的计算方法）
-            // 执行到这这里可能是预渲染比较快，在render之前就渲染缓存完成了。
-            // 注意：使用图片原始高度计算总高度，与 Calculator 中的预计算逻辑保持一致
-            // 如果计算出的总高度与当前容器高度不一致，说明预计算不准确，需要重新布局
-            let actualHeight = UIKitFrameAsyncCalculator.calculateMermaidTotalHeight(
-                imageHeight: cachedImage.size.height,
+            addMermaidImageView(
+                cachedImage,
+                to: previewView,
+                padding: padding,
+                node: node,
                 context: context
             )
-            let currentHeight = containerView.frame.height
-            
-            // 如果实际高度与当前高度不同，重新计算布局并触发回调
-            if abs(actualHeight - currentHeight) > 0.5 {
-                context.onNodeLayoutChanged?(node)
-            }
-            return containerView
+            return
         }
         
-        // 没有缓存时，预览视图先显示原始内容（代码视图本来就是原始内容）
+        // 显示占位符
         let placeholderLabel = UILabel()
         placeholderLabel.text = node.content
         placeholderLabel.font = context.theme.codeFont
@@ -1224,29 +1125,21 @@ public class UIKitFrameRender {
             width: previewView.frame.size.width - padding * 2,
             height: previewView.frame.size.height - padding * 2
         )
-        placeholderLabel.tag = 9002 // 用于后续移除
+        placeholderLabel.tag = RenderConstants.mermaidPlaceholderTag
         previewView.addSubview(placeholderLabel)
         
-        // 添加点击手势（仅在预览模式下）
-        if let onMermaidTap = context.onMermaidTap {
-            previewView.addTapAction {
-                onMermaidTap(node)
-            }
-        }
-        
-        // 异步渲染 Mermaid 图表（使用已转换的颜色值）
+        // 验证语法
         let validationResult = IMParseCore.mermaidToHTML(node.content, textColor: cacheKey.1, backgroundColor: cacheKey.2)
         
         guard validationResult.success else {
-            // 语法错误时，更新预览视图显示错误信息
             DispatchQueue.main.async {
                 placeholderLabel.text = "⚠️ Mermaid 语法错误\n\n\(node.content)"
                 placeholderLabel.textColor = .systemRed
             }
-            return containerView
+            return
         }
         
-        // 语法正确，异步渲染图片
+        // 异步渲染
         Task { @MainActor [weak previewView] in
             guard let previewView = previewView else { return }
             
@@ -1257,34 +1150,17 @@ public class UIKitFrameRender {
                 formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
             )
             
-            // 移除占位符
-            previewView.viewWithTag(9002)?.removeFromSuperview()
+            previewView.viewWithTag(RenderConstants.mermaidPlaceholderTag)?.removeFromSuperview()
             
             if let image = image {
-                // 缓存已经放在MermaidHTMLRenderer层处理
-
-                // 创建 ImageView 显示图片
-                let imageView = UIImageView()
-                imageView.image = image
-                imageView.contentMode = .scaleAspectFit
-                imageView.frame = CGRect(
-                    x: padding,
-                    y: padding,
-                    width: previewView.frame.size.width - padding * 2,
-                    height: previewView.frame.size.height - padding * 2
+                addMermaidImageView(
+                    image,
+                    to: previewView,
+                    padding: padding,
+                    node: node,
+                    context: context
                 )
-                previewView.addSubview(imageView)
-                
-                // 计算实际需要的总高度
-                let actualHeight = image.size.height + padding * 2 + topAreaHeight
-                let currentHeight = containerView.frame.height
-                
-                // 如果实际高度与当前高度不同，重新计算布局并触发回调
-                if abs(actualHeight - currentHeight) > 0.5 {
-                    context.onNodeLayoutChanged?(node)
-                }
             } else {
-                // 渲染失败时，显示原始内容（已经显示了）
                 let label = UILabel()
                 label.text = node.content
                 label.font = context.theme.codeFont
@@ -1299,15 +1175,38 @@ public class UIKitFrameRender {
                 previewView.addSubview(label)
             }
         }
-        
-        return containerView
     }
     
-    // MARK: - HTML 渲染
+    private static func addMermaidImageView(
+        _ image: UIImage,
+        to previewView: UIView,
+        padding: CGFloat,
+        node: MermaidNode,
+        context: UIKitRenderContext
+    ) {
+        let imageView = UIImageView()
+        imageView.image = image
+        imageView.contentMode = .scaleAspectFit
+        imageView.frame = CGRect(
+            x: padding,
+            y: padding,
+            width: previewView.frame.size.width - padding * 2,
+            height: previewView.frame.size.height - padding * 2
+        )
+        previewView.addSubview(imageView)
+        
+        let actualHeight = image.size.height + padding * 2 + context.theme.toolbarHeight
+        let currentHeight = previewView.superview?.superview?.frame.height ?? 0
+        
+        if abs(actualHeight - currentHeight) > 0.5 {
+            context.onNodeLayoutChanged?(node)
+        }
+    }
+    
+    // MARK: - HTML Rendering
     
     /// 渲染 HTML 内容
     static func renderHtml(_ node: HtmlNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
-        // 将 HTML 标签移除，只显示纯文本内容
         let textContent = stripHtmlTags(from: node.content)
         
         if textContent.isEmpty {
@@ -1324,7 +1223,6 @@ public class UIKitFrameRender {
         return label
     }
     
-    /// 移除 HTML 标签，提取纯文本内容
     static func stripHtmlTags(from html: String) -> String {
         let pattern = "<[^>]+>"
         let regex = try? NSRegularExpression(pattern: pattern, options: [])
@@ -1340,9 +1238,140 @@ public class UIKitFrameRender {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
-    // MARK: - 辅助方法
+    // MARK: - Emoji Rendering
     
-    /// 让 UITextView 的文本垂直居中，与 UILabel 对齐
+    /// 渲染 Emoji
+    static func renderEmoji(_ node: EmojiNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
+        let containerView = createEmptyView(size: frame.size)
+        
+        if let inlineImageLoaderDelegate = context.inlineImageLoaderDelegate {
+            let imageView = UIImageView()
+            imageView.contentMode = .scaleAspectFit
+            imageView.frame = containerView.bounds
+            containerView.addSubview(imageView)
+            
+            let label = UILabel()
+            label.text = node.content
+            label.font = context.currentFont ?? context.theme.font
+            label.textColor = context.currentTextColor ?? context.theme.textColor
+            label.frame = containerView.bounds
+            label.textAlignment = .center
+            label.isHidden = true
+            containerView.addSubview(label)
+            
+            let font = context.currentFont ?? context.theme.font
+            let descender = abs(font.descender)
+            let ascender = font.ascender
+            let maxDescenderAscender = max(descender, ascender)
+            let fontSize = font.capHeight + maxDescenderAscender * 2
+            
+            inlineImageLoaderDelegate.loadEmojiImage(content: node.content, size: fontSize) { image in
+                DispatchQueue.main.async {
+                    if let image = image {
+                        imageView.image = image
+                        label.isHidden = true
+                    } else {
+                        imageView.isHidden = true
+                        label.isHidden = false
+                    }
+                }
+            }
+            
+            return containerView
+        } else {
+            let label = UILabel()
+            label.text = node.content
+            label.font = context.currentFont ?? context.theme.font
+            label.textColor = context.currentTextColor ?? context.theme.textColor
+            label.frame = CGRect(origin: .zero, size: frame.size)
+            return label
+        }
+    }
+    
+    // MARK: - Mention Rendering
+    
+    /// 渲染 Mention
+    static func renderMention(_ node: MentionNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
+        let containerView = createEmptyView(size: frame.size)
+        containerView.backgroundColor = context.theme.mentionBackground
+        containerView.layer.cornerRadius = 4
+        containerView.clipsToBounds = true
+        
+        let label = UILabel()
+        label.text = "@\(node.name)"
+        label.font = context.theme.font
+        label.textColor = context.theme.mentionTextColor
+        label.numberOfLines = 1
+        
+        let padding: CGFloat = 2
+        let horizontalPadding: CGFloat = 6
+        label.frame = CGRect(
+            x: horizontalPadding,
+            y: padding,
+            width: frame.size.width - horizontalPadding * 2,
+            height: frame.size.height - padding * 2
+        )
+        
+        containerView.addSubview(label)
+        
+        if let onMentionTap = context.onMentionTap {
+            containerView.addTapAction { onMentionTap(node) }
+        }
+        
+        return containerView
+    }
+    
+    // MARK: - Style Application
+    
+    private static func applyCommonStyles(to view: UIView, from layout: NodeLayout) {
+        if let bgColor = layout.backgroundColor {
+            view.backgroundColor = bgColor
+        }
+        if layout.cornerRadius > 0 {
+            view.layer.cornerRadius = layout.cornerRadius
+            view.clipsToBounds = true
+        }
+        if let borderColor = layout.borderColor, layout.borderWidth > 0 {
+            view.layer.borderColor = borderColor.cgColor
+            view.layer.borderWidth = layout.borderWidth
+        }
+    }
+    
+    // MARK: - Child Views
+    
+    private static func addChildViewsIfNeeded(to view: UIView, from layout: NodeLayout, context: UIKitRenderContext) {
+        guard shouldAddChildren(for: layout) else { return }
+        
+        for childLayout in layout.children {
+            let childView = render(layout: childLayout, context: context)
+            childView.frame = childLayout.frame
+            view.addSubview(childView)
+        }
+    }
+    
+    private static func shouldAddChildren(for layout: NodeLayout) -> Bool {
+        guard let nodeWrapper = layout.node else {
+            return true
+        }
+        
+        switch nodeWrapper {
+        case .codeBlock, .image, .math, .mermaid, .html, .emoji, .mention, .horizontalRule, .table:
+            return false
+        case .paragraph, .heading, .list, .blockquote:
+            return false
+        default:
+            return true
+        }
+    }
+    
+    // MARK: - Helper Methods
+    
+    private static func createEmptyView(size: CGSize) -> UIView {
+        let view = UIView()
+        view.frame = CGRect(origin: .zero, size: size)
+        return view
+    }
+    
     static func centerTextViewVertically(_ textView: UITextView, attributedString: NSAttributedString, frame: CGSize) {
         let textSize = attributedString.boundingRect(
             with: CGSize(width: frame.width, height: .greatestFiniteMagnitude),
@@ -1357,100 +1386,5 @@ public class UIKitFrameRender {
             let verticalInset = (containerHeight - textHeight) / 2.0
             textView.textContainerInset = UIEdgeInsets(top: verticalInset, left: 0, bottom: verticalInset, right: 0)
         }
-    }
-    
-    // MARK: - Emoji & Mention 渲染
-    
-    /// 渲染 Emoji
-    static func renderEmoji(_ node: EmojiNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
-        let containerView = UIView()
-        containerView.frame = CGRect(origin: .zero, size: frame.size)
-        
-        // 如果有 emoji 图片加载代理，尝试加载图片
-        if let inlineImageLoaderDelegate = context.inlineImageLoaderDelegate {
-            // 创建图片视图
-            let imageView = UIImageView()
-            imageView.contentMode = .scaleAspectFit
-            imageView.frame = containerView.bounds
-            containerView.addSubview(imageView)
-            
-            // 创建文本标签作为后备（如果图片加载失败）
-            let label = UILabel()
-            label.text = node.content
-            label.font = context.currentFont ?? context.theme.font
-            label.textColor = context.currentTextColor ?? context.theme.textColor
-            label.frame = containerView.bounds
-            label.textAlignment = .center
-            label.isHidden = true // 初始隐藏，如果图片加载失败再显示
-            containerView.addSubview(label)
-            
-            // 计算字体尺寸
-            let font = context.currentFont ?? context.theme.font
-            let descender = abs(font.descender)
-            let ascender = font.ascender
-            let maxDescenderAscender = max(descender, ascender)
-            let fontSize = font.capHeight + maxDescenderAscender * 2
-            
-            // 尝试加载 emoji 图片
-            inlineImageLoaderDelegate.loadEmojiImage(content: node.content, size: fontSize) { image in
-                DispatchQueue.main.async {
-                    if let image = image {
-                        // 加载成功，显示图片
-                        imageView.image = image
-                        label.isHidden = true
-                    } else {
-                        // 加载失败，显示原始文本
-                        imageView.isHidden = true
-                        label.isHidden = false
-                    }
-                }
-            }
-            
-            return containerView
-        } else {
-            // 没有代理，直接显示原始文本
-            let label = UILabel()
-            label.text = node.content
-            label.font = context.currentFont ?? context.theme.font
-            label.textColor = context.currentTextColor ?? context.theme.textColor
-            label.frame = CGRect(origin: .zero, size: frame.size)
-            return label
-        }
-    }
-    
-    /// 渲染 Mention
-    static func renderMention(_ node: MentionNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
-        let containerView = UIView()
-        containerView.frame = CGRect(origin: .zero, size: frame.size)
-        containerView.backgroundColor = context.theme.mentionBackground
-        containerView.layer.cornerRadius = 4
-        containerView.clipsToBounds = true
-        
-        let label = UILabel()
-        label.text = "@\(node.name)"
-        label.font = context.theme.font
-        label.textColor = context.theme.mentionTextColor
-        label.numberOfLines = 1
-        
-        // Mention 有内边距：上下 2，左右 6
-        let padding: CGFloat = 2
-        let horizontalPadding: CGFloat = 6
-        label.frame = CGRect(
-            x: horizontalPadding,
-            y: padding,
-            width: frame.size.width - horizontalPadding * 2,
-            height: frame.size.height - padding * 2
-        )
-        
-        containerView.addSubview(label)
-        
-        // 添加点击手势
-        if let onMentionTap = context.onMentionTap {
-            containerView.addTapAction {
-                onMentionTap(node)
-            }
-        }
-        
-        return containerView
     }
 }

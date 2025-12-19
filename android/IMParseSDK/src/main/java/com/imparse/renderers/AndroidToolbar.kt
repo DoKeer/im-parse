@@ -57,6 +57,7 @@ class ToolbarConfiguration private constructor(val rawValue: Int) {
  */
 class AndroidToolbar(
     context: Context,
+    private val theme: AndroidTheme,
     private val configuration: ToolbarConfiguration = ToolbarConfiguration.DEFAULT
 ) : FrameLayout(context) {
     
@@ -76,9 +77,19 @@ class AndroidToolbar(
         // 透明背景，不需要圆角
         setBackgroundColor(Color.TRANSPARENT)
         
-        buttonSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 32f, resources.displayMetrics).toInt()
-        buttonSpacing = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 4f, resources.displayMetrics).toInt()
-        containerPadding = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, resources.displayMetrics).toInt()
+        // 从 theme 获取尺寸配置，如果没有则使用默认值
+        val metrics = resources.displayMetrics
+        buttonSize = theme.toolbarButtonSize?.let {
+            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), metrics).toInt()
+        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 32f, metrics).toInt()
+        
+        buttonSpacing = theme.toolbarButtonSpacing?.let {
+            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), metrics).toInt()
+        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 4f, metrics).toInt()
+        
+        containerPadding = theme.toolbarPadding?.let {
+            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), metrics).toInt()
+        } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 2f, metrics).toInt()
         
         // 根据配置创建按钮
         if (configuration.contains(ToolbarConfiguration.COPY)) {
@@ -160,16 +171,12 @@ class AndroidToolbar(
  */
 class MermaidViewModeSwitcher(
     context: Context,
+    private val theme: AndroidTheme,
     previewText: String = "预览",
-    codeText: String = "代码",
-    buttonWidth: Int? = null,
-    buttonSpacing: Int? = null,
-    padding: Int? = null,
-    switcherHeight: Int? = null,
-    textColor: Int = Color.BLACK
+    codeText: String = "代码"
 ) : FrameLayout(context) {
     
-    private val textColorValue: Int = textColor
+    private val textColorValue: Int = theme.textColor
     
     private var previewButton: Button? = null
     private var codeButton: Button? = null
@@ -184,21 +191,31 @@ class MermaidViewModeSwitcher(
             onModeChanged?.invoke(value)
         }
     
-    private val buttonWidthDp = buttonWidth ?: TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, 60f, resources.displayMetrics
-    ).toInt()
+    // 从 theme 获取尺寸配置，如果没有则使用默认值
+    private val metrics = resources.displayMetrics
     
-    private val buttonSpacingDp = buttonSpacing ?: TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, 4f, resources.displayMetrics
-    ).toInt()
+    // 公开属性，供外部访问用于布局计算
+    val buttonWidth: Int = theme.toolbarSwitcherButtonWidth?.let {
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), metrics).toInt()
+    } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 60f, metrics).toInt()
     
-    private val paddingDp = padding ?: TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, 8f, resources.displayMetrics
-    ).toInt()
+    val buttonSpacing: Int = theme.toolbarSwitcherButtonSpacing?.let {
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), metrics).toInt()
+    } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 4f, metrics).toInt()
     
-    private val switcherHeightDp = switcherHeight ?: TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, 32f, resources.displayMetrics
-    ).toInt()
+    val padding: Int = theme.contentPadding?.let {
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), metrics).toInt()
+    } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 2.0f, metrics).toInt()
+    
+    val switcherHeight: Int = theme.toolbarSwitcherHeight?.let {
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), metrics).toInt()
+    } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 32f, metrics).toInt()
+    
+    // 内部使用的别名（保持向后兼容）
+    private val buttonWidthDp = buttonWidth
+    private val buttonSpacingDp = buttonSpacing
+    private val paddingDp = padding
+    private val switcherHeightDp = switcherHeight
     
     // 计算未选中状态的颜色（降低透明度）
     private val unselectedTextColor: Int = Color.argb(

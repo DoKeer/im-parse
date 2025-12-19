@@ -23,24 +23,30 @@ class CustomTableLayout(
 ) : ViewGroup(context) {
     
     private val cellPadding = renderContext.theme.tableCellPadding
+    private val metrics = resources.displayMetrics
+    
+    // 缓存尺寸计算，避免重复调用 TypedValue.applyDimension
     private val maxCellWidth = renderContext.theme.tableMaxCellWidth?.let {
-        TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP,
-            it.toFloat(),
-            resources.displayMetrics
-        ).toInt()
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), metrics).toInt()
     } ?: Int.MAX_VALUE
     
     private val minCellWidth = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP,
         renderContext.theme.tableMinCellWidth?.toFloat() ?: 80f,
-        resources.displayMetrics
+        metrics
     ).toInt()
     
     private val borderWidth = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, 1f,
-        resources.displayMetrics
+        TypedValue.COMPLEX_UNIT_DIP, 1f, metrics
     ).toInt()
+    
+    private val fontSizePx = TypedValue.applyDimension(
+        TypedValue.COMPLEX_UNIT_SP,
+        renderContext.theme.fontSize,
+        metrics
+    )
+    
+    private val lineHeightPx = (fontSizePx * renderContext.theme.lineHeight).toInt()
     
     // 存储每列的偏好宽度
     private val columnPrefWidths = mutableListOf<Int>()
@@ -121,13 +127,7 @@ class CustomTableLayout(
             else -> android.view.Gravity.START
         }
         
-        // 设置行高
-        val fontSizePx = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP,
-            renderContext.theme.fontSize,
-            resources.displayMetrics
-        )
-        val lineHeightPx = (fontSizePx * renderContext.theme.lineHeight).toInt()
+        // 设置行高（使用缓存的值）
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
             textView.lineHeight = lineHeightPx
         } else {
@@ -189,11 +189,7 @@ class CustomTableLayout(
                 
                 // 计算文本宽度（考虑富文本）
                 val paint = TextPaint()
-                paint.textSize = TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_SP,
-                    renderContext.theme.fontSize,
-                    resources.displayMetrics
-                )
+                paint.textSize = fontSizePx
                 
                 // 检查是否包含附件（如行内公式）
                 var hasAttachment = false
@@ -266,6 +262,60 @@ class CustomTableLayout(
                     columnPrefWidths[cellIndex] = maxOf(columnPrefWidths[cellIndex], clampedWidth)
                 }
             }
+        }
+    }
+    
+    /**
+     * 计算最终列宽（根据容器宽度决定压缩或拉伸）
+     */
+    private fun calculateFinalColumnWidths(containerWidth: Int, widthMode: Int): List<Int> {
+        val totalPref = columnPrefWidths.sum()
+        
+        return if (totalPref < containerWidth) {
+            // 总宽度小于容器：先应用智能压缩，再拉伸
+            val (smartCompressed, compressedIndices) = applySmartCompression(containerWidth)
+            val smartCompressedTotal = smartCompressed.sum()
+            
+            if (smartCompressedTotal < containerWidth) {
+                // 智能压缩后仍小于容器，按权重拉伸（但保持压缩列的宽度）
+                stretchColumnWidths(containerWidth, smartCompressed, compressedIndices)
+            } else {
+                smartCompressed
+            }
+        } else {
+            // 总宽度大于容器：根据模式决定是否压缩
+            if (widthMode == MeasureSpec.AT_MOST) {
+                val compressed = compressColumnWidths(containerWidth)
+                val compressedTotal = compressed.sum()
+                // 如果压缩后仍超过容器很多，保持原始宽度（支持横向滚动）
+                if (compressedTotal > containerWidth * 1.2) {
+                    columnPrefWidths.toList()
+                } else {
+                    compressed
+                }
+            } else {
+                // EXACTLY 或 UNSPECIFIED：保持原始宽度，允许超出容器
+                columnPrefWidths.toList()
+            }
+        }
+    }
+    
+    /**
+     * 应用表格宽度调整（如果需要拉伸到容器宽度）
+     */
+    private fun applyTableWidthAdjustment(containerWidth: Int, widthMode: Int): Int {
+        val finalTotal = columnWidths.sum()
+        
+        return if (finalTotal < containerWidth && widthMode == MeasureSpec.EXACTLY) {
+            // 拉伸到容器宽度
+            val scale = containerWidth.toFloat() / finalTotal
+            for (i in columnWidths.indices) {
+                columnWidths[i] = (columnWidths[i] * scale).toInt()
+            }
+            containerWidth
+        } else {
+            // 使用内容宽度（可能超过容器）
+            finalTotal
         }
     }
     
@@ -463,126 +513,36 @@ class CustomTableLayout(
         // 计算每列的偏好宽度
         computeColumnPrefWidths()
         
-        val totalPref = columnPrefWidths.sum()
-        
-        // 决定是拉伸还是压缩
-        // 如果内容宽度超过容器，允许表格宽度超过容器（支持横向滚动）
+        // 计算最终列宽（支持压缩或拉伸）
         columnWidths.clear()
-        columnWidths.addAll(
-            if (totalPref < containerWidth) {
-                // 总宽度小于容器
-                // 先应用智能压缩处理特别长的列，然后再拉伸
-                val (smartCompressed, compressedIndices) = applySmartCompression(containerWidth)
-                val smartCompressedTotal = smartCompressed.sum()
-                
-                if (smartCompressedTotal < containerWidth) {
-                    // 智能压缩后仍然小于容器，按权重拉伸以填满容器
-                    // 但被压缩的列保持压缩后的宽度，不会被拉伸回去
-                    stretchColumnWidths(containerWidth, smartCompressed, compressedIndices)
-                } else {
-                    // 智能压缩后超过容器，使用压缩后的宽度
-                    smartCompressed
-                }
-            } else {
-                // 总宽度大于容器
-                // 优先保持原始宽度，允许横向滚动
-                // 只有在 AT_MOST 模式下且确实需要压缩时才压缩
-                if (widthMode == MeasureSpec.AT_MOST) {
-                    // AT_MOST 模式：尝试压缩，但如果压缩后仍然超过容器，保持原始宽度
-                val compressed = compressColumnWidths(containerWidth)
-                val compressedTotal = compressed.sum()
-                    // 如果压缩后仍然超过容器很多，保持原始宽度（支持横向滚动）
-                    if (compressedTotal > containerWidth * 1.2) {
-                        columnPrefWidths.toList()
-                    } else {
-                        compressed
-                    }
-                } else {
-                    // EXACTLY 或 UNSPECIFIED 模式：保持原始宽度，允许超出容器
-                    columnPrefWidths.toList()
-                }
-            }
-        )
+        columnWidths.addAll(calculateFinalColumnWidths(containerWidth, widthMode))
         
-        // 计算最终表格宽度
-        val finalTotal = columnWidths.sum()
+        // 计算最终表格宽度并应用拉伸（如果需要）
+        val tableWidth = applyTableWidthAdjustment(containerWidth, widthMode)
         
-        // 只有在内容宽度小于容器时才拉伸到容器宽度
-        // 如果内容宽度超过容器，使用内容宽度（支持横向滚动）
-        val tableWidth = if (finalTotal < containerWidth && widthMode == MeasureSpec.EXACTLY) {
-            // 拉伸到容器宽度
-            val scale = containerWidth.toFloat() / finalTotal
-            // 使用兼容的方式替换（replaceAll 需要 API 24）
-            for (i in columnWidths.indices) {
-                columnWidths[i] = (columnWidths[i] * scale).toInt()
-            }
-            containerWidth
-        } else {
-            // 使用内容宽度（可能超过容器）
-            finalTotal
-        }
+        // 测量所有行并计算总高度
+        val totalHeight = measureRows(tableWidth)
         
-        // 测量每个单元格
+        // 设置最终尺寸（可能超过容器宽度，支持横向滚动）
+        setMeasuredDimension(tableWidth, totalHeight)
+    }
+    
+    /**
+     * 测量所有行，返回总高度
+     */
+    private fun measureRows(tableWidth: Int): Int {
         var totalHeight = 0
         
         for ((rowIndex, rowView) in rowViews.withIndex()) {
             val rowContainer = rowView as LinearLayout
-            var maxRowHeight = 0
             
-            // 测量每个单元格：使用 EXACT width 和 UNSPECIFIED height
-            // TextView 会根据宽度自动 reflow，计算正确的高度
-            for ((cellIndex, cellView) in rowContainer.getChildren().withIndex()) {
-                if (cellIndex < columnWidths.size) {
-                    val cellWidth = columnWidths[cellIndex]
-                    
-                    // 重要：更新 TextView 的 LayoutParams 宽度，确保 TextView 知道自己的宽度
-                    // 这对于 TextView 正确测量和绘制内容至关重要
-                    if (cellView is TextView) {
-                        val params = cellView.layoutParams as? LinearLayout.LayoutParams
-                        if (params != null) {
-                            params.width = cellWidth
-                            params.height = ViewGroup.LayoutParams.WRAP_CONTENT
-                            cellView.layoutParams = params
-                        }
-                    }
-                    
-                    val cellWidthSpec = MeasureSpec.makeMeasureSpec(cellWidth, MeasureSpec.EXACTLY)
-                    val cellHeightSpec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-                    
-                    // 直接测量 TextView，它会根据宽度正确 reflow
-                    cellView.measure(cellWidthSpec, cellHeightSpec)
-                    maxRowHeight = maxOf(maxRowHeight, cellView.measuredHeight)
-                }
-            }
+            // 第一次测量：获取每个单元格的自然高度
+            val maxRowHeight = measureCellsForHeight(rowContainer)
             
-            // 统一行高：所有单元格使用相同的行高（取最大值）
-            // 这样确保同一行的所有单元格高度一致
-            for ((cellIndex, cellView) in rowContainer.getChildren().withIndex()) {
-                if (cellIndex < columnWidths.size) {
-                    val cellWidth = columnWidths[cellIndex]
-                    
-                    // 更新 LayoutParams 宽度，保持高度为 WRAP_CONTENT
-                    // TextView 需要 WRAP_CONTENT 来正确测量内容，但我们会用 EXACT height 来统一行高
-                    if (cellView is TextView) {
-                        val params = cellView.layoutParams as? LinearLayout.LayoutParams
-                        if (params != null) {
-                            params.width = cellWidth
-                            // 保持 WRAP_CONTENT，让 TextView 能够正确测量
-                            params.height = ViewGroup.LayoutParams.WRAP_CONTENT
-                            cellView.layoutParams = params
-                        }
-                    }
-                    
-                    val cellWidthSpec = MeasureSpec.makeMeasureSpec(cellWidth, MeasureSpec.EXACTLY)
-                    val cellHeightSpec = MeasureSpec.makeMeasureSpec(maxRowHeight, MeasureSpec.EXACTLY)
-                    
-                    // 第二次测量：使用 EXACT height，确保所有单元格高度一致
-                    // 虽然 LayoutParams 高度是 WRAP_CONTENT，但 measure 时使用 EXACTLY 来统一高度
-                    cellView.measure(cellWidthSpec, cellHeightSpec)
-                }
-            }
+            // 第二次测量：使用统一的行高重新测量所有单元格
+            remeasureCellsWithUnifiedHeight(rowContainer, maxRowHeight)
             
-            // 测量行容器（使用表格宽度，可能超过容器宽度）
+            // 测量行容器
             rowContainer.measure(
                 MeasureSpec.makeMeasureSpec(tableWidth, MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(maxRowHeight, MeasureSpec.EXACTLY)
@@ -600,8 +560,62 @@ class CustomTableLayout(
             }
         }
         
-        // 使用计算出的表格宽度（可能超过容器宽度，支持横向滚动）
-        setMeasuredDimension(tableWidth, totalHeight)
+        return totalHeight
+    }
+    
+    /**
+     * 第一次测量单元格，获取每个单元格的自然高度，返回最大高度
+     */
+    private fun measureCellsForHeight(rowContainer: LinearLayout): Int {
+        var maxRowHeight = 0
+        
+        for ((cellIndex, cellView) in rowContainer.getChildren().withIndex()) {
+            if (cellIndex < columnWidths.size) {
+                val cellWidth = columnWidths[cellIndex]
+                updateCellLayoutParams(cellView, cellWidth)
+                
+                // 使用 UNSPECIFIED height 获取自然高度
+                cellView.measure(
+                    MeasureSpec.makeMeasureSpec(cellWidth, MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+                )
+                maxRowHeight = maxOf(maxRowHeight, cellView.measuredHeight)
+            }
+        }
+        
+        return maxRowHeight
+    }
+    
+    /**
+     * 第二次测量单元格，使用统一的行高
+     */
+    private fun remeasureCellsWithUnifiedHeight(rowContainer: LinearLayout, rowHeight: Int) {
+        for ((cellIndex, cellView) in rowContainer.getChildren().withIndex()) {
+            if (cellIndex < columnWidths.size) {
+                val cellWidth = columnWidths[cellIndex]
+                updateCellLayoutParams(cellView, cellWidth)
+                
+                // 使用 EXACTLY height 统一行高
+                cellView.measure(
+                    MeasureSpec.makeMeasureSpec(cellWidth, MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(rowHeight, MeasureSpec.EXACTLY)
+                )
+            }
+        }
+    }
+    
+    /**
+     * 更新单元格的 LayoutParams
+     */
+    private fun updateCellLayoutParams(cellView: View, width: Int) {
+        if (cellView is TextView) {
+            val params = cellView.layoutParams as? LinearLayout.LayoutParams
+            if (params != null) {
+                params.width = width
+                params.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                cellView.layoutParams = params
+            }
+        }
     }
     
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {

@@ -103,7 +103,7 @@ public struct UIKitTheme {
     public var toolbarHeight: CGFloat
     /// 工具栏宽度（用于数学公式、Mermaid、表格的工具栏）
     public var toolbarWidth: CGFloat
-    /// 工具栏内边距
+    /// 工具栏内边距, 左右
     public var toolbarPadding: CGFloat
     /// 工具栏按钮尺寸（宽度和高度）
     public var toolbarButtonSize: CGFloat
