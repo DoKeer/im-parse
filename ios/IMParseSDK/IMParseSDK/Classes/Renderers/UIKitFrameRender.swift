@@ -681,7 +681,7 @@ public class UIKitFrameRender {
             headerBar.addSubview(titleLabel)
             
             // 添加工具栏（右侧）
-            let toolbar = UIKitToolbar(theme: context.theme)
+            let toolbar = UIKitToolbar(theme: context.theme, configuration: .codeBlock)
             toolbar.frame = CGRect(
                 x: contentAreaWidth - toolbarWidth - toolbarPadding,
                 y: toolbarPadding,

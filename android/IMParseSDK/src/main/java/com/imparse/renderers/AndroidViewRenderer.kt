@@ -344,7 +344,7 @@ class AndroidViewRenderer {
         
         val toolbarHeight = TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP,
-            context.theme.toolbarHeight?.toFloat() ?: 48f,
+            context.theme.toolbarHeight?.toFloat() ?: 36f,
             context.context.resources.displayMetrics
         ).toInt()
         val toolbarWidth = TypedValue.applyDimension(
@@ -370,8 +370,8 @@ class AndroidViewRenderer {
                 headerBarHeight
             )
             
-            // 添加工具栏（右侧）- 代码块不显示下载按钮
-            val toolbar = AndroidToolbar(context.context)
+            // 添加工具栏（右侧）- 代码块使用 CODE_BLOCK 配置（只显示复制和全屏）
+            val toolbar = AndroidToolbar(context.context, ToolbarConfiguration.CODE_BLOCK)
             toolbar.onCopy = {
                 context.toolbarActionDelegate.copyContent(node.content, "code")
             }
@@ -714,17 +714,14 @@ class AndroidViewRenderer {
             titleParams.gravity = Gravity.START or Gravity.CENTER_VERTICAL
             headerBar.addView(titleLabel, titleParams)
             
-            // 添加工具栏（右侧）
-            val toolbar = AndroidToolbar(context.context)
+            // 添加工具栏（右侧）- 表格使用 CODE_BLOCK 配置（只显示复制和全屏）
+            val toolbar = AndroidToolbar(context.context, ToolbarConfiguration.CODE_BLOCK)
             
             // 将表格内容转换为字符串（用于复制）
             val tableContent = convertTableToString(node)
             
             toolbar.onCopy = {
                 context.toolbarActionDelegate.copyContent(tableContent, "table")
-            }
-            toolbar.onDownload = {
-                context.toolbarActionDelegate.downloadContent(tableContent, "table", null)
             }
             toolbar.onFullscreen = {
                 context.toolbarActionDelegate.showFullscreen(tableContent, "table", null)
@@ -1010,9 +1007,9 @@ class AndroidViewRenderer {
         switcherParams.setMargins(padding, (topAreaHeight - switcherHeight) / 2, 0, 0)
         containerView.addView(modeSwitcher, switcherParams)
         
-        // 添加工具栏（右侧，如果有代理）
+        // 添加工具栏（右侧，如果有代理）- Mermaid 使用默认配置（显示所有按钮）
         if (context.toolbarActionDelegate != null) {
-            val toolbar = AndroidToolbar(context.context)
+            val toolbar = AndroidToolbar(context.context, ToolbarConfiguration.DEFAULT)
             toolbar.onCopy = {
                 context.toolbarActionDelegate.copyContent(node.content, "mermaid")
             }

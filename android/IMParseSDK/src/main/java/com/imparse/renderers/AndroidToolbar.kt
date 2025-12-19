@@ -13,10 +13,52 @@ import androidx.core.graphics.toColorInt
 import androidx.core.graphics.createBitmap
 
 /**
+ * 工具栏配置选项
+ */
+class ToolbarConfiguration private constructor(val rawValue: Int) {
+    companion object {
+        val COPY = ToolbarConfiguration(1 shl 0)
+        val DOWNLOAD = ToolbarConfiguration(1 shl 1)
+        val FULLSCREEN = ToolbarConfiguration(1 shl 2)
+        
+        /**
+         * 默认配置：显示所有按钮
+         */
+        val DEFAULT = ToolbarConfiguration(COPY.rawValue or DOWNLOAD.rawValue or FULLSCREEN.rawValue)
+        
+        /**
+         * 代码块配置：只显示复制和全屏按钮
+         */
+        val CODE_BLOCK = ToolbarConfiguration(COPY.rawValue or FULLSCREEN.rawValue)
+        
+        /**
+         * 创建配置组合
+         */
+        fun of(vararg configs: ToolbarConfiguration): ToolbarConfiguration {
+            var value = 0
+            for (config in configs) {
+                value = value or config.rawValue
+            }
+            return ToolbarConfiguration(value)
+        }
+    }
+    
+    /**
+     * 检查是否包含指定配置
+     */
+    fun contains(config: ToolbarConfiguration): Boolean {
+        return (rawValue and config.rawValue) != 0
+    }
+}
+
+/**
  * Android 工具栏组件
  * 用于数学公式、Mermaid、表格的工具栏按钮
  */
-class AndroidToolbar(context: Context) : FrameLayout(context) {
+class AndroidToolbar(
+    context: Context,
+    private val configuration: ToolbarConfiguration = ToolbarConfiguration.DEFAULT
+) : FrameLayout(context) {
     
     private var copyButton: ImageButton? = null
     private var downloadButton: ImageButton? = null
@@ -38,14 +80,33 @@ class AndroidToolbar(context: Context) : FrameLayout(context) {
         buttonSpacing = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 4f, resources.displayMetrics).toInt()
         containerPadding = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, resources.displayMetrics).toInt()
         
-        // 创建按钮 - 使用Material Design图标或Unicode符号
-        copyButton = createButton("📋", "复制")
-        downloadButton = createButton("⬇", "下载")
-        fullscreenButton = createButton("⛶", "全屏")
+        // 根据配置创建按钮
+        if (configuration.contains(ToolbarConfiguration.COPY)) {
+            copyButton = createButton(
+                drawableRes = com.imparse.R.drawable.document_on_document,
+                contentDescription = "复制"
+            )
+            copyButton?.setOnClickListener { onCopy?.invoke() }
+            addView(copyButton)
+        }
         
-        addView(copyButton)
-        addView(downloadButton)
-        addView(fullscreenButton)
+        if (configuration.contains(ToolbarConfiguration.DOWNLOAD)) {
+            downloadButton = createButton(
+                drawableRes = com.imparse.R.drawable.arrow_down_circle,
+                contentDescription = "下载"
+            )
+            downloadButton?.setOnClickListener { onDownload?.invoke() }
+            addView(downloadButton)
+        }
+        
+        if (configuration.contains(ToolbarConfiguration.FULLSCREEN)) {
+            fullscreenButton = createButton(
+                drawableRes = com.imparse.R.drawable.arrow_up_left_and_arrow_down_right,
+                contentDescription = "全屏"
+            )
+            fullscreenButton?.setOnClickListener { onFullscreen?.invoke() }
+            addView(fullscreenButton)
+        }
     }
     
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
@@ -61,7 +122,7 @@ class AndroidToolbar(context: Context) : FrameLayout(context) {
         downloadButton?.let { buttons.add(it) }
         copyButton?.let { buttons.add(it) }
         
-        // 从右往左布局按钮
+        // 从右往左布局按钮，只显示配置中启用的按钮
         var currentX = width - containerPadding
         for (button in buttons) {
             currentX -= buttonSize
@@ -75,18 +136,11 @@ class AndroidToolbar(context: Context) : FrameLayout(context) {
         }
     }
     
-    private fun createButton(iconText: String, contentDescription: String): ImageButton {
+    private fun createButton(drawableRes: Int, contentDescription: String): ImageButton {
         val button = ImageButton(context)
-        // 使用TextView作为图标容器，显示Unicode符号
-        val textView = TextView(context)
-        textView.text = iconText
-        textView.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 18f, resources.displayMetrics)
-        textView.gravity = Gravity.CENTER
-        textView.setTextColor("#666666".toColorInt())
         
-        // 创建Drawable
-        val drawable =
-            createBitmapFromTextView(textView, buttonSize, buttonSize).toDrawable(resources)
+        // 使用 drawable 资源
+        val drawable = ContextCompat.getDrawable(context, drawableRes)
         button.setImageDrawable(drawable)
         
         button.contentDescription = contentDescription
@@ -97,32 +151,7 @@ class AndroidToolbar(context: Context) : FrameLayout(context) {
         val params = FrameLayout.LayoutParams(buttonSize, buttonSize)
         button.layoutParams = params
         
-        when (iconText) {
-            "📋" -> {
-                button.setOnClickListener { onCopy?.invoke() }
-            }
-            "⬇" -> {
-                button.setOnClickListener { onDownload?.invoke() }
-            }
-            "⛶" -> {
-                button.setOnClickListener { onFullscreen?.invoke() }
-            }
-        }
-        
         return button
-    }
-    
-    private fun createBitmapFromTextView(textView: TextView, width: Int, height: Int): android.graphics.Bitmap {
-        textView.measure(
-            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
-        )
-        textView.layout(0, 0, width, height)
-        
-        val bitmap = createBitmap(width, height)
-        val canvas = android.graphics.Canvas(bitmap)
-        textView.draw(canvas)
-        return bitmap
     }
 }
 
