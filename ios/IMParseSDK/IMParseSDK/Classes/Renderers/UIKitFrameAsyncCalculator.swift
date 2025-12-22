@@ -912,14 +912,16 @@ public class UIKitFrameAsyncCalculator {
             // cachedSize 应该是逻辑尺寸（points），直接使用
             // 但为了确保正确性，如果缓存的尺寸是基于图片的，需要确保是逻辑尺寸
             // 如果图片的 scale 不正确，图片的 size 可能也不正确，所以这里直接使用
-            let totalHeight = calculateMathTotalHeight(displayHeight: cachedSize.height, context: context)
+            let imageFrame = calculateMathImageFrame(imageSize: cachedSize, context: context)
+            let totalHeight = imageFrame.minY*2+imageFrame.height
             return NodeLayout(
                 frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
                 node: .math(node)
             )
         }
         else if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0) {
-            let totalHeight = calculateMathTotalHeight(displayHeight: cachedImage.size.height, context: context)
+            let imageFrame = calculateMathImageFrame(imageSize: cachedImage.size, context: context)
+            let totalHeight = imageFrame.minY*2+imageFrame.height
             return NodeLayout(
                 frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
                 node: .math(node)
@@ -956,15 +958,23 @@ public class UIKitFrameAsyncCalculator {
         let font = context.theme.codeFont
         let attrString = NSAttributedString(string: node.content, attributes: [.font: font])
         let size = calculateTextSize(attrString, width: contentWidth)
-        var contentHeight = ceil(size.height)
+        let contentHeight = ceil(size.height) + padding * 2
+        // 图片高度
+        var imageSize = CGSizeZero
         // 取原文或Image最大的高度
         if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey.0) {
-            contentHeight = max(cachedSize.height, contentHeight)
+            imageSize = cachedSize
         }
         else if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0) {
-            contentHeight = max(cachedImage.size.height, contentHeight)
+            imageSize = cachedImage.size
         }
-        let totalHeight = contentHeight + padding * 2 + toolbarHeight
+        let toolbarPadding = context.theme.toolbarPadding
+        let switcherHeight = context.theme.toolbarSwitcherHeight
+        
+        let topAreaHeight: CGFloat = max(toolbarHeight, switcherHeight) + toolbarPadding * 2
+        
+        let imageFrame = UIKitFrameAsyncCalculator.calculateMermaidImageFrame(imageSize: imageSize, context: context)
+        let totalHeight = max(imageFrame.minY*2+imageFrame.height, contentHeight)+topAreaHeight
 
         return NodeLayout(
             frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
@@ -1073,18 +1083,40 @@ public class UIKitFrameAsyncCalculator {
     // MARK: - Math & Mermaid Total Height Calculation
     
     /// 计算 Math 节点的总高度
-    public static func calculateMathTotalHeight(displayHeight: CGFloat, context: UIKitRenderContext) -> CGFloat {
+    public static func calculateMathImageFrame(imageSize: CGSize, context: UIKitRenderContext) -> CGRect {
+        if imageSize == .zero {return CGRectZero}
         let contentPadding = context.theme.toolbarPadding
-        return displayHeight + contentPadding * 2
+        
+        let imageAspectRatio = imageSize.width / imageSize.height
+        // 容器尺寸
+        let availableWidth = context.width - contentPadding * 2
+        let availableHeight = availableWidth / imageAspectRatio
+        // 图片应该展示的尺寸
+        let displayWidth = min(availableWidth, imageSize.width)
+        let displayHeight = displayWidth / imageAspectRatio
+        
+        let imageX = contentPadding * 2 + (availableWidth - displayWidth) / 2
+        let imageY = contentPadding * 2 + (availableHeight - displayHeight) / 2
+        
+        return CGRect(x: imageX, y: imageY, width: displayWidth, height: displayHeight)
     }
     
-    /// 计算 Mermaid 节点的总高度
-    public static func calculateMermaidTotalHeight(imageHeight: CGFloat, context: UIKitRenderContext) -> CGFloat {
+    /// 计算 Mermaid 节点的图片的frame
+    public static func calculateMermaidImageFrame(imageSize: CGSize, context: UIKitRenderContext) -> CGRect {
+        if imageSize == .zero {return CGRectZero}
         let padding = context.theme.codeBlockPadding
-        let toolbarHeight = context.theme.toolbarHeight
-        let toolbarPadding = context.theme.toolbarPadding
-        let switcherHeight = context.theme.toolbarSwitcherHeight
-        let topAreaHeight: CGFloat = max(toolbarHeight, switcherHeight) + toolbarPadding * 2
-        return imageHeight + padding * 2 + topAreaHeight
+
+        let imageAspectRatio = imageSize.width / imageSize.height
+        // 容器尺寸
+        let availableWidth = context.width - padding * 2
+        let availableHeight = availableWidth / imageAspectRatio
+        // 图片应该展示的尺寸
+        let displayWidth = min(availableWidth, imageSize.width)
+        let displayHeight = displayWidth / imageAspectRatio
+        
+        let imageX = padding * 2 + (availableWidth - displayWidth) / 2
+        let imageY = padding * 2 + (availableHeight - displayHeight) / 2
+        
+        return CGRect(x: imageX, y: imageY, width: displayWidth, height: displayHeight)
     }
 }

@@ -62,7 +62,7 @@ public struct Message: Identifiable, Codable {
 
     /// 异步计算布局（使用 UIKitFrameAsyncCalculator）
     /// 这将在后台线程中执行完整的文本测量和布局计算
-    public mutating func calculateLayout(width: CGFloat, delegate:AnyObject?) {
+    public mutating func calculateLayout(width: CGFloat, context:UIKitRenderContext) {
         // 确保 AST 已解析
         if astJSON == nil {
             parse()
@@ -73,16 +73,6 @@ public struct Message: Identifiable, Codable {
               let rootNode = try? JSONDecoder().decode(RootNode.self, from: jsonData) else {
             return
         }
-        
-        let context = UIKitRenderContext(
-            theme: UIKitTheme.default, // 使用默认主题，实际项目中可能需要从配置获取
-            width: width,
-            imageLoaderDelegate: delegate as? UIKitImageLoaderDelegate,
-            formulaSizeCacheDelegate:delegate as? UIKitFormulaSizeCacheDelegate,
-            inlineImageLoaderDelegate: delegate as? UIKitInlineImageLoaderDelegate,
-            toolbarActionDelegate: delegate as? UIKitToolbarActionDelegate
-        )
-        
         // 计算布局
         self.layout = UIKitFrameAsyncCalculator.calculateLayout(ast: rootNode, context: context)
         self.estimatedHeight = self.layout?.frame.height

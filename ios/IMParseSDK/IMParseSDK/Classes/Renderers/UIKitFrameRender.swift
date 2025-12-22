@@ -937,26 +937,16 @@ public class UIKitFrameRender {
         imageView.image = image
         imageView.contentMode = .scaleAspectFit
         
-        let imageSize = image.size
-        let availableWidth = frame.size.width - padding * 2
-        let availableHeight = frame.size.height - padding * 2
-        
-        let imageAspectRatio = imageSize.width / imageSize.height
-        let displayWidth = min(availableWidth, imageSize.width)
-        let displayHeight = min(availableHeight, displayWidth / imageAspectRatio)
-        
-        let imageX = padding + (availableWidth - displayWidth) / 2
-        let imageY = padding + (availableHeight - displayHeight) / 2
-        
-        imageView.frame = CGRect(x: imageX, y: imageY, width: displayWidth, height: displayHeight)
-        containerView.addSubview(imageView)
-        
-        let actualHeight = UIKitFrameAsyncCalculator.calculateMathTotalHeight(
-            displayHeight: displayHeight,
+        let imageFrame = UIKitFrameAsyncCalculator.calculateMathImageFrame(
+            imageSize: image.size,
             context: context
         )
+        let totalHeight = imageFrame.minY*2+imageFrame.height
+
+        imageView.frame = imageFrame
+        containerView.addSubview(imageView)
         
-        if abs(actualHeight - containerView.frame.height) > 0.5 {
+        if abs(totalHeight - containerView.frame.height) > 0.5 {
             context.onNodeLayoutChanged?(node)
         }
     }
@@ -1184,22 +1174,20 @@ public class UIKitFrameRender {
         let imageView = UIImageView()
         imageView.image = image
         imageView.contentMode = .scaleAspectFit
-        imageView.frame = CGRect(
-            x: padding,
-            y: padding,
-            width: previewView.frame.size.width - padding * 2,
-            height: previewView.frame.size.height - padding * 2
-        )
         previewView.addSubview(imageView)
-        
-        // previewView的高度是容器高度减去Toolbar高度，所以这里不需要加ToolbarHeight
-        let currentHeight = previewView.frame.height
-        
+        let imageFrame = UIKitFrameAsyncCalculator.calculateMermaidImageFrame(imageSize: image.size, context: context)
+        imageView.frame = imageFrame
+        let totalHeight = imageFrame.minY*2+imageFrame.height
+
+        // 原文高度的计算
         let font = context.theme.codeFont
         let attrString = NSAttributedString(string: node.content, attributes: [.font: font])
         let size = UIKitFrameAsyncCalculator.calculateTextSize(attrString, width: previewView.frame.size.width - padding * 2)
-        let actualHeight = max(ceil(size.height), image.size.height) + padding * 2
+        // 对比原文和图片的高度
+        let actualHeight = max(ceil(size.height) + padding * 2, totalHeight)
         
+        // previewView的高度是容器高度减去Toolbar高度，所以这里不需要加ToolbarHeight
+        let currentHeight = previewView.frame.height
         if abs(actualHeight - currentHeight) > 0.5 {
             context.onNodeLayoutChanged?(node)
         }

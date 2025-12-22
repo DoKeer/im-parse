@@ -101,22 +101,25 @@ class UIKitFrameMessageListViewController: UIViewController {
         // Cell layout: 16 (left) + 16 (right) for container, inside: 16 (left) + 16 (right) for content
         // Total horizontal padding = 32 + 32 = 64
         let contentWidth = self.contentWidth
-        
+        self.sharedRenderContext.width = contentWidth
         // 在后台线程生成消息
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else {
+                return
+            }
             let generatedMessages = MessageDataGenerator.generateMessages(count: 6)
             
             // 解析消息并计算布局
             var parsedMessages = generatedMessages
             for i in 0..<parsedMessages.count {
                 // calculateLayout 会自动调用 parse
-                parsedMessages[i].calculateLayout(width: contentWidth, delegate: self)
+                parsedMessages[i].calculateLayout(width: contentWidth, context:self.sharedRenderContext)
             }
             
             // 回到主线程更新 UI
             DispatchQueue.main.async {
-                self?.messages = parsedMessages
-                self?.tableView.reloadData()
+                self.messages = parsedMessages
+                self.tableView.reloadData()
             }
         }
     }
@@ -157,21 +160,21 @@ extension UIKitFrameMessageListViewController: UITableViewDataSource {
         
         // 创建节点布局变化回调（在 viewController 中处理）
         let onNodeLayoutChanged: ((any Codable) -> Void)? = { [weak tableView, weak self] updatedNodeLayout in
+            guard let tableView = tableView,
+                  let self = self,
+                  indexPath.row < self.messages.count else { return }
+            
             DispatchQueue.main.async {
-                if let layouting = self?.layouting, layouting == true {
+                if self.layouting {
                     return
                 }
-                guard let tableView = tableView,
-                      let self = self,
-                      indexPath.row < self.messages.count else { return }
-                
+            
                 // 递归查找并替换匹配的节点
 //                    layout = updateNodeLayout(in: layout, with: updatedNodeLayout)
                 self.messages[indexPath.row].layout = nil;
-                self.messages[indexPath.row].calculateLayout(width: self.contentWidth, delegate: self)
+                self.messages[indexPath.row].calculateLayout(width: self.contentWidth, context: self.sharedRenderContext)
                 
                 tableView.reloadRows(at: [indexPath], with: .none)
-
             }
         }
         

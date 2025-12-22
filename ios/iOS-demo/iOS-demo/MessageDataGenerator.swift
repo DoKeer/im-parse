@@ -75,6 +75,54 @@ class MessageDataGenerator {
     private static func generateMarkdownTemplates() -> [String] {
         return [
             #"""
+            #### 📊 GitLab日报看板(deepbank/feedback)  
+            **报告时间：** 2025年12月22日 10:09:09 | **总任务数：** <font color=red>102</font> | [GitLab看板链接](https://gitlab.daikuan.qihoo.net/deepbank/feedback/-/boards/107)  
+              
+            #### 👥 团队任务  
+              
+            | 成员 | 总数 | 开放中 | 准备就绪 | 处理中 | 评审 | 阻塞中 |  
+            |------|------|----------|----------|----------|----------|----------|  
+            | 陈磊 | <font color=red>32</font> | <font color=red>31</font> | 0 | <font color=red>1</font> | 0 | 0 |  
+            | 肖宗鎏 | <font color=red>13</font> | <font color=red>13</font> | 0 | 0 | 0 | 0 |  
+            | 冯金福 | <font color=red>11</font> | <font color=red>6</font> | <font color=red>2</font> | <font color=red>3</font> | 0 | 0 |  
+            | 欧阳骏腾 | <font color=red>8</font> | <font color=red>8</font> | 0 | 0 | 0 | 0 |  
+            | 王桂雨 | <font color=red>7</font> | <font color=red>6</font> | <font color=red>1</font> | 0 | 0 | 0 |  
+            | 蔡文军 | <font color=red>4</font> | <font color=red>4</font> | 0 | 0 | 0 | 0 |  
+            | 张昕 | <font color=red>3</font> | <font color=red>2</font> | <font color=red>1</font> | 0 | 0 | 0 |  
+            |  曹建伟 | <font color=red>3</font> | <font color=red>3</font> | 0 | 0 | 0 | 0 |  
+            | 张启胜 | <font color=red>2</font> | <font color=red>1</font> | <font color=red>1</font> | 0 | 0 | 0 |  
+            | 马强强 | <font color=red>2</font> | <font color=red>2</font> | 0 | 0 | 0 | 0 |  
+            | 李思钰 | <font color=red>2</font> | <font color=red>2</font> | 0 | 0 | 0 | 0 |  
+            |  王海峰 | <font color=red>2</font> | <font color=red>1</font> | 0 | 0 | 0 | <font color=red>1</font> |  
+            | 王晴 | <font color=red>1</font> | <font color=red>1</font> | 0 | 0 | 0 | 0 |  
+            | 邓富华 | <font color=red>1</font> | <font color=red>1</font> | 0 | 0 | 0 | 0 |  
+            | 江哲 | <font color=red>1</font> | <font color=red>1</font> | 0 | 0 | 0 | 0 |  
+            | 王翔宇 | <font color=red>1</font> | <font color=red>1</font> | 0 | 0 | 0 | 0 |  
+            | 陈钧桐 | <font color=red>1</font> | 0 | <font color=red>1</font> | 0 | 0 | 0 |  
+            | 未分配 | <font color=red>8</font> | <font color=red>8</font> | 0 | 0 | 0 | 0 |  
+            | **总计** | <font color=red>102</font> | <font color=red>91</font> | <font color=red>6</font> | <font color=red>4</font> | 0 | <font color=red>1</font> |  
+              
+              
+            #### 🗓️ 里程碑 (Top5)  
+              
+            | 里程碑 | 截止日期 | 总数 | 开放中 | 准备就绪 | 处理中 | 评审 | 阻塞中 |  
+            |------|----------|------|------|----------|----------|----------|----------|  
+            | [2025-12-16](https://gitlab.daikuan.qihoo.net/deepbank/feedback/-/boards/107?milestone_title=2025-12-16) | 2025-12-16 | 0 | 0 | 0 | 0 | 0 | 0 |  
+            | [2025-12-23](https://gitlab.daikuan.qihoo.net/deepbank/feedback/-/boards/107?milestone_title=2025-12-23) | 2025-12-23 | <font color=red>13</font> | <font color=red>10</font> | <font color=red>3</font> | 0 | 0 | 0 |  
+            | [2025-12-30](https://gitlab.daikuan.qihoo.net/deepbank/feedback/-/boards/107?milestone_title=2025-12-30) | 2025-12-30 | <font color=red>5</font> | <font color=red>5</font> | 0 | 0 | 0 | 0 |  
+            | [2026-01-06](https://gitlab.daikuan.qihoo.net/deepbank/feedback/-/boards/107?milestone_title=2026-01-06) | 2026-01-06 | 0 | 0 | 0 | 0 | 0 | 0 |  
+            | [2026-01-13](https://gitlab.daikuan.qihoo.net/deepbank/feedback/-/boards/107?milestone_title=2026-01-13) | 2026-01-13 | <font color=red>1</font> | <font color=red>1</font> | 0 | 0 | 0 | 0 |  
+              
+              
+            #### 🎯 重点任务  
+              
+            | 成员 | 任务 | 里程碑 | 状态 | 截止时间 |  
+            |------|------|--------|------|------|  
+            | [@冯金福](https://gitlab.daikuan.qihoo.net/deepbank/feedback/-/issues/313) | 平台运营看板需要支持区分内外部用户 | 无 | 高优先级 |  |  
+            | [@陈磊](https://gitlab.daikuan.qihoo.net/deepbank/feedback/-/issues/154) | 清理无效项目 | 无 | 高优先级 |  |  
+            | [@王晴](https://gitlab.daikuan.qihoo.net/deepbank/feedback/-/issues/357) | 【AI工作台】AI审批官的界面图片预览中，如是非正向图片，预... | 无 | 超期 | 2025-12-18 |
+            """#,
+            #"""
             $$
             \int_{0}^{\infty} e^{-x^{2}} \, dx \approx \frac{\sqrt{\pi}}{2}
             $$
