@@ -933,6 +933,9 @@ public class UIKitFrameRender {
         node: MathNode,
         context: UIKitRenderContext
     ) {
+        // 移除旧的 imageView（如果存在），避免重复添加
+        containerView.subviews.compactMap { $0 as? UIImageView }.forEach { $0.removeFromSuperview() }
+        
         let imageView = UIImageView()
         imageView.image = image
         imageView.contentMode = .scaleAspectFit
@@ -960,7 +963,6 @@ public class UIKitFrameRender {
         containerView.layer.cornerRadius = 8
         containerView.layer.masksToBounds = true
         
-        let padding = context.theme.codeBlockPadding
         let textColor = context.theme.textColor
         let backgroundColor = context.theme.codeBackgroundColor
         
@@ -985,7 +987,7 @@ public class UIKitFrameRender {
             codeText: context.getToolbarCodeText()
         )
         modeSwitcher.frame = CGRect(
-            x: padding,
+            x: context.theme.codeBlockPadding,
             y: (toolbarHeight - switcherHeight) / 2,
             width: switcherWidth,
             height: switcherHeight
@@ -1032,7 +1034,6 @@ public class UIKitFrameRender {
         let codeView = createMermaidCodeView(
             size: contentContainer.bounds.size,
             content: node.content,
-            padding: padding,
             context: context
         )
         codeView.isHidden = true
@@ -1049,7 +1050,6 @@ public class UIKitFrameRender {
             node: node,
             previewView: previewView,
             cacheKey: cacheKey,
-            padding: padding,
             context: context
         )
         
@@ -1063,7 +1063,6 @@ public class UIKitFrameRender {
     private static func createMermaidCodeView(
         size: CGSize,
         content: String,
-        padding: CGFloat,
         context: UIKitRenderContext
     ) -> UIView {
         let codeView = createEmptyView(size: size)
@@ -1075,7 +1074,7 @@ public class UIKitFrameRender {
         codeTextView.backgroundColor = .clear
         codeTextView.isEditable = false
         codeTextView.isScrollEnabled = true
-        codeTextView.textContainerInset = UIEdgeInsets(top: padding, left: padding, bottom: padding, right: padding)
+        codeTextView.textContainerInset = UIEdgeInsets(top: context.theme.codeBlockPadding, left: context.theme.codeBlockPadding, bottom: context.theme.codeBlockPadding, right: context.theme.codeBlockPadding)
         codeTextView.frame = codeView.bounds
         codeView.addSubview(codeTextView)
         
@@ -1086,14 +1085,12 @@ public class UIKitFrameRender {
         node: MermaidNode,
         previewView: UIView,
         cacheKey: (String, String, String),
-        padding: CGFloat,
         context: UIKitRenderContext
     ) {
         if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0) {
             addMermaidImageView(
                 cachedImage,
                 to: previewView,
-                padding: padding,
                 node: node,
                 context: context
             )
@@ -1107,10 +1104,10 @@ public class UIKitFrameRender {
         placeholderLabel.textColor = context.theme.codeTextColor.withAlphaComponent(0.8)
         placeholderLabel.numberOfLines = 0
         placeholderLabel.frame = CGRect(
-            x: padding,
-            y: padding,
-            width: previewView.frame.size.width - padding * 2,
-            height: previewView.frame.size.height - padding * 2
+            x: context.theme.codeBlockPadding,
+            y: context.theme.codeBlockPadding,
+            width: previewView.frame.size.width - context.theme.codeBlockPadding * 2,
+            height: previewView.frame.size.height - context.theme.codeBlockPadding * 2
         )
         placeholderLabel.tag = RenderConstants.mermaidPlaceholderTag
         previewView.addSubview(placeholderLabel)
@@ -1143,7 +1140,6 @@ public class UIKitFrameRender {
                 addMermaidImageView(
                     image,
                     to: previewView,
-                    padding: padding,
                     node: node,
                     context: context
                 )
@@ -1154,10 +1150,10 @@ public class UIKitFrameRender {
                 label.textColor = context.theme.codeTextColor
                 label.numberOfLines = 0
                 label.frame = CGRect(
-                    x: padding,
-                    y: padding,
-                    width: previewView.frame.size.width - padding * 2,
-                    height: previewView.frame.size.height - padding * 2
+                    x: context.theme.codeBlockPadding,
+                    y: context.theme.codeBlockPadding,
+                    width: previewView.frame.size.width - context.theme.codeBlockPadding * 2,
+                    height: previewView.frame.size.height - context.theme.codeBlockPadding * 2
                 )
                 previewView.addSubview(label)
             }
@@ -1167,26 +1163,31 @@ public class UIKitFrameRender {
     private static func addMermaidImageView(
         _ image: UIImage,
         to previewView: UIView,
-        padding: CGFloat,
         node: MermaidNode,
         context: UIKitRenderContext
     ) {
+        // 移除旧的 imageView（如果存在），避免重复添加
+        previewView.subviews.compactMap { $0 as? UIImageView }.forEach { $0.removeFromSuperview() }
+        
         let imageView = UIImageView()
         imageView.image = image
         imageView.contentMode = .scaleAspectFit
         previewView.addSubview(imageView)
         let imageFrame = UIKitFrameAsyncCalculator.calculateMermaidImageFrame(imageSize: image.size, context: context)
         imageView.frame = imageFrame
-        let totalHeight = imageFrame.minY*2+imageFrame.height
+        let imageContentHeight = imageFrame.origin.y*2 + imageFrame.height
 
         // 原文高度的计算
+        let padding = context.theme.codeBlockPadding  // 文本计算用codeBlockPadding
         let font = context.theme.codeFont
         let attrString = NSAttributedString(string: node.content, attributes: [.font: font])
         let size = UIKitFrameAsyncCalculator.calculateTextSize(attrString, width: previewView.frame.size.width - padding * 2)
-        // 对比原文和图片的高度
-        let actualHeight = max(ceil(size.height) + padding * 2, totalHeight)
+        let textContentHeight = ceil(size.height) + padding * 2
         
-        // previewView的高度是容器高度减去Toolbar高度，所以这里不需要加ToolbarHeight
+        // 实际内容高度（不包含toolbar）= max(图片高度, 原文高度)
+        let actualHeight = max(textContentHeight, imageContentHeight)
+        
+        // previewView的高度是容器高度减去Toolbar高度
         let currentHeight = previewView.frame.height
         if abs(actualHeight - currentHeight) > 0.5 {
             context.onNodeLayoutChanged?(node)
