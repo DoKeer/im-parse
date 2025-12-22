@@ -8,6 +8,7 @@
 
 import UIKit
 import WebKit
+import CryptoKit
 
 
 // MARK: - 行内数学公式渲染工具方法
@@ -37,9 +38,12 @@ public func generateMathCacheKey(
     stringColor: String,
     fontSize: CGFloat
 ) -> (String, String){
-    let contentHash = mathContent.hashValue
+    // 使用 SHA256 生成稳定的哈希值（hashValue 在不同运行之间可能变化）
+    let data = Data(mathContent.utf8)
+    let hash = SHA256.hash(data: data)
+    let hashString = hash.compactMap { String(format: "%02x", $0) }.joined()
     // 块级公式：使用原始尺寸
-    return ("math:\(contentHash):\(stringColor):\(Int(fontSize))", stringColor)
+    return ("math:\(hashString):\(stringColor):\(Int(fontSize))", stringColor)
 }
 
 /// 数学公式 HTML 渲染器
@@ -328,6 +332,7 @@ public struct MathHTMLRenderer {
             // 缓存图片（优先使用 delegate）
             if let image = await self.captureWebView(webView, contentRect: contentRect) {
                 cacheDelegate?.saveFormulaImage(image, for: cacheKey)
+                cacheDelegate?.setCachedSize(image.size, for: cacheKey)
                 returnWebViewToPool(webView)
                 return image
             }
@@ -459,28 +464,6 @@ public struct MathHTMLRenderer {
             print("MathHTMLRenderer: Snapshot error: \(error.localizedDescription)")
             return nil
         }
-    }
-    
-    /// 裁剪图片到指定区域
-    @MainActor func cropImage(_ image: UIImage, to rect: CGRect) -> UIImage? {
-        guard let cgImage = image.cgImage else {
-            return nil
-        }
-        
-        // 转换为图片坐标系（UIImage 的坐标系原点在左上角）
-        let scale = image.scale
-        let cropRect = CGRect(
-            x: rect.origin.x * scale,
-            y: rect.origin.y * scale,
-            width: rect.size.width * scale,
-            height: rect.size.height * scale
-        )
-        
-        guard let croppedCGImage = cgImage.cropping(to: cropRect) else {
-            return nil
-        }
-        
-        return UIImage(cgImage: croppedCGImage, scale: scale, orientation: image.imageOrientation)
     }
     
     /// 从池中获取或创建 WebView（必须在主线程调用）

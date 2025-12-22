@@ -8,6 +8,7 @@
 
 import UIKit
 import WebKit
+import CryptoKit
 
 /// 生成缓存键（公开方法，供外部统一使用）
 /// - Parameters:
@@ -33,10 +34,12 @@ public func generateMermaidCacheKey(mermaidCode: String, textColor: UIColor, bac
 }
 
 public func generateMermaidCacheKey(mermaidCode: String, stringTextColor: String, stringBackgroundColor: String) -> (String, String, String) {
-    let hash = mermaidCode.hashValue
-    return ("mermaid_\(hash)_\(stringTextColor)_\(stringBackgroundColor)", stringTextColor, stringBackgroundColor)
+    // 使用 SHA256 生成稳定的哈希值（hashValue 在不同运行之间可能变化）
+    let data = Data(mermaidCode.utf8)
+    let hash = SHA256.hash(data: data)
+    let hashString = hash.compactMap { String(format: "%02x", $0) }.joined()
+    return ("mermaid_\(hashString)_\(stringTextColor)_\(stringBackgroundColor)", stringTextColor, stringBackgroundColor)
 }
-
 
 /// Mermaid 图表 HTML 渲染器
 /// 使用独立的 WKWebView 将 Mermaid 图表渲染为图片，支持 mermaid.js
@@ -236,6 +239,7 @@ public struct MermaidHTMLRenderer {
             webView.frame = CGRect(x: 0, y: 0, width: 800, height: 400)
             if let image = await captureWebView(webView, contentRect: nil) {
                 cacheDelegate?.saveFormulaImage(image, for: cacheKey)
+                cacheDelegate?.setCachedSize(image.size, for: cacheKey)
                 returnWebViewToPool(webView)
                 return image
             }
@@ -274,7 +278,7 @@ public struct MermaidHTMLRenderer {
         if let image = await captureWebView(webView, contentRect: contentRect) {
             // 缓存图片（优先使用 delegate）
             cacheDelegate?.saveFormulaImage(image, for: cacheKey)
-            
+            cacheDelegate?.setCachedSize(image.size, for: cacheKey)
             // 将 WebView 返回池中
             returnWebViewToPool(webView)
             

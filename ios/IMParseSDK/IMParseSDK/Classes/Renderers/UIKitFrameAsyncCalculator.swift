@@ -912,20 +912,19 @@ public class UIKitFrameAsyncCalculator {
             // cachedSize 应该是逻辑尺寸（points），直接使用
             // 但为了确保正确性，如果缓存的尺寸是基于图片的，需要确保是逻辑尺寸
             // 如果图片的 scale 不正确，图片的 size 可能也不正确，所以这里直接使用
-            let displayHeight = cachedSize.height
-            let totalHeight = calculateMathTotalHeight(displayHeight: displayHeight, context: context)
+            let totalHeight = calculateMathTotalHeight(displayHeight: cachedSize.height, context: context)
             return NodeLayout(
                 frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
                 node: .math(node)
             )
         }
-//        else if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0) {
-//            let totalHeight = cachedImage.size.height + padding * 2
-//            return NodeLayout(
-//                frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
-//                node: .math(node)
-//            )
-//        }
+        else if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0) {
+            let totalHeight = calculateMathTotalHeight(displayHeight: cachedImage.size.height, context: context)
+            return NodeLayout(
+                frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
+                node: .math(node)
+            )
+        }
         
         // 使用原文估算
         let contentWidth = width - padding * 2
@@ -944,8 +943,6 @@ public class UIKitFrameAsyncCalculator {
         let padding = context.theme.codeBlockPadding
         let toolbarHeight = context.theme.toolbarHeight
         // mermaid 节点toolbar的高度固定使用context.theme.toolbarHeight
-        let toolbarPadding = context.theme.toolbarPadding
-                
         let textColor = context.theme.textColor
         let backgroundColor = context.theme.codeBackgroundColor
         let cacheKey = generateMermaidCacheKey(
@@ -954,28 +951,21 @@ public class UIKitFrameAsyncCalculator {
             backgroundColor: backgroundColor
         )
         
-        if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey.0) {
-            let totalHeight = cachedSize.height + padding * 2 + toolbarHeight
-            return NodeLayout(
-                frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
-                node: .mermaid(node)
-            )
-        }
-//        else if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0) {
-//          let totalHeight = cachedImage.size.height + padding * 2
-//            return NodeLayout(
-//                frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
-//                node: .mermaid(node)
-//            )
-//        }
-        
         // 使用原文估算
         let contentWidth = width - padding * 2
         let font = context.theme.codeFont
         let attrString = NSAttributedString(string: node.content, attributes: [.font: font])
         let size = calculateTextSize(attrString, width: contentWidth)
-        let totalHeight = ceil(size.height) + padding * 2 + toolbarHeight
-        
+        var contentHeight = ceil(size.height)
+        // 取原文或Image最大的高度
+        if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey.0) {
+            contentHeight = max(cachedSize.height, contentHeight)
+        }
+        else if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0) {
+            contentHeight = max(cachedImage.size.height, contentHeight)
+        }
+        let totalHeight = contentHeight + padding * 2 + toolbarHeight
+
         return NodeLayout(
             frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
             node: .mermaid(node)
@@ -1031,7 +1021,7 @@ public class UIKitFrameAsyncCalculator {
     // MARK: - Helper Methods
     
     /// 计算文本尺寸
-    private static func calculateTextSize(_ attrString: NSAttributedString, width: CGFloat) -> CGSize {
+    public static func calculateTextSize(_ attrString: NSAttributedString, width: CGFloat) -> CGSize {
         let size = attrString.boundingRect(
             with: CGSize(width: width, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],

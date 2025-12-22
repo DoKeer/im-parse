@@ -118,30 +118,30 @@ public class UIKitFrameRender {
         switch node {
         case .paragraph, .heading:
             return renderContainer(layout: layout, context: context)
-            case .codeBlock(let cNode):
+        case .codeBlock(let cNode):
             return renderCodeBlock(cNode, frame: layout.frame, context: context)
-            case .image(let imgNode):
+        case .image(let imgNode):
             return renderImage(imgNode, frame: layout.frame, context: context)
-            case .list(let lNode):
+        case .list(let lNode):
             return renderList(lNode, layout: layout, context: context)
-            case .blockquote(let bNode):
+        case .blockquote(let bNode):
             return renderBlockquote(bNode, layout: layout, context: context)
         case .horizontalRule:
             return renderHorizontalRule(frame: layout.frame, context: context)
-            case .table(let tNode):
+        case .table(let tNode):
             return renderTable(tNode, layout: layout, context: context)
-            case .math(let mNode):
+        case .math(let mNode):
             return renderMath(mNode, frame: layout.frame, context: context)
-            case .mermaid(let mNode):
+        case .mermaid(let mNode):
             return renderMermaid(mNode, frame: layout.frame, context: context)
-            case .html(let hNode):
+        case .html(let hNode):
             return renderHtml(hNode, frame: layout.frame, context: context)
-            case .emoji(let eNode):
+        case .emoji(let eNode):
             return renderEmoji(eNode, frame: layout.frame, context: context)
-            case .mention(let mNode):
+        case .mention(let mNode):
             return renderMention(mNode, frame: layout.frame, context: context)
-            default:
-                if let attributedString = layout.content as? NSAttributedString {
+        default:
+            if let attributedString = layout.content as? NSAttributedString {
                 return renderAttributedString(attributedString, frame: layout.frame, context: context)
             }
             return createEmptyView(size: layout.frame.size)
@@ -195,9 +195,9 @@ public class UIKitFrameRender {
                 let text = attributedString.attributedSubstring(from: range).string
                 if text.hasPrefix("@") {
                     hasMention = true
+                }
             }
-        }
-        
+            
             if let attachment = attributes[.attachment] as? EmojiTextAttachment {
                 hasEmoji = true
                 emojiAttachments.append(attachment)
@@ -223,36 +223,36 @@ public class UIKitFrameRender {
         features: AttributedStringFeatures,
         context: UIKitRenderContext
     ) -> UITextView {
-            let textView = NonSelectableTextView()
-            textView.attributedText = attributedString
-            textView.isEditable = false
-            textView.isScrollEnabled = false
+        let textView = NonSelectableTextView()
+        textView.attributedText = attributedString
+        textView.isEditable = false
+        textView.isScrollEnabled = false
         textView.isUserInteractionEnabled = true
-            textView.textContainerInset = .zero
-            textView.textContainer.lineFragmentPadding = 0
-            textView.backgroundColor = .clear
-            textView.frame = CGRect(origin: .zero, size: frame.size)
-            
-            centerTextViewVertically(textView, attributedString: attributedString, frame: frame.size)
-            
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.backgroundColor = .clear
+        textView.frame = CGRect(origin: .zero, size: frame.size)
+        
+        centerTextViewVertically(textView, attributedString: attributedString, frame: frame.size)
+        
         if features.hasLink {
             setupLinkHandler(for: textView, context: context)
         }
         
         if features.hasMention, let onMentionTap = context.onMentionTap {
             setupMentionHandler(for: textView, attributedString: attributedString, context: context, onMentionTap: onMentionTap)
-            }
-            
-            return textView
+        }
+        
+        return textView
     }
     
     /// 创建简单标签
     private static func createSimpleLabel(attributedString: NSAttributedString, frame: CGRect) -> UILabel {
-            let label = UILabel()
-            label.attributedText = attributedString
-            label.numberOfLines = 0
-            label.frame = CGRect(origin: .zero, size: frame.size)
-            return label
+        let label = UILabel()
+        label.attributedText = attributedString
+        label.numberOfLines = 0
+        label.frame = CGRect(origin: .zero, size: frame.size)
+        return label
     }
     
     /// 设置链接处理器
@@ -331,23 +331,23 @@ public class UIKitFrameRender {
         headerBar.frame = CGRect(x: 0, y: 0, width: width, height: height)
         headerBar.backgroundColor = context.theme.codeBackgroundColor
         
-            let toolbar = UIKitToolbar(theme: context.theme, configuration: .codeBlock)
+        let toolbar = UIKitToolbar(theme: context.theme, configuration: .codeBlock)
         let toolbarWidth = context.theme.toolbarWidth
         let toolbarPadding = context.theme.toolbarPadding
-            toolbar.frame = CGRect(
+        toolbar.frame = CGRect(
             x: width - toolbarWidth - toolbarPadding,
-                y: toolbarPadding,
-                width: toolbarWidth,
+            y: toolbarPadding,
+            width: toolbarWidth,
             height: height - toolbarPadding * 2
-            )
-            
-            toolbar.onCopy = {
-                context.toolbarActionDelegate?.copyContent(node.content, type: "code")
-            }
-            toolbar.onFullscreen = {
-                context.toolbarActionDelegate?.showFullscreen(node.content, type: "code", image: nil)
-            }
-            headerBar.addSubview(toolbar)
+        )
+        
+        toolbar.onCopy = {
+            context.toolbarActionDelegate?.copyContent(node.content, type: "code")
+        }
+        toolbar.onFullscreen = {
+            context.toolbarActionDelegate?.showFullscreen(node.content, type: "code", image: nil)
+        }
+        headerBar.addSubview(toolbar)
         
         return headerBar
     }
@@ -483,22 +483,22 @@ public class UIKitFrameRender {
         node: ImageNode,
         context: UIKitRenderContext
     ) {
-                DispatchQueue.main.async {
-                    activityIndicator.stopAnimating()
-                    activityIndicator.removeFromSuperview()
-                    
-                    if let error = error {
-                        showImageError(in: containerView, message: "加载失败")
-                        return
-                    }
-                    
+        DispatchQueue.main.async {
+            activityIndicator.stopAnimating()
+            activityIndicator.removeFromSuperview()
+            
+            if let error = error {
+                showImageError(in: containerView, message: "加载失败")
+                return
+            }
+            
             guard let image = image else {
-                        showImageError(in: containerView, message: "无法解析图片")
-                        return
-                    }
-                    
-                    imageView.image = image
-                    updateImageAspectRatio(image: image, node: node, imageView: imageView, containerView: containerView, context: context)
+                showImageError(in: containerView, message: "无法解析图片")
+                return
+            }
+            
+            imageView.image = image
+            updateImageAspectRatio(image: image, node: node, imageView: imageView, containerView: containerView, context: context)
         }
     }
     
@@ -636,38 +636,38 @@ public class UIKitFrameRender {
     ) -> UIView {
         let headerBar = UIView()
         headerBar.frame = CGRect(x: 0, y: 0, width: width, height: height)
-            headerBar.backgroundColor = context.theme.tableHeaderBackground
+        headerBar.backgroundColor = context.theme.tableHeaderBackground
         
-            let titleLeftPadding = context.theme.tableCellPadding
-            let titleLabel = UILabel()
-            titleLabel.text = context.getTableTitle()
-            titleLabel.font = .systemFont(ofSize: 16, weight: .medium)
-            titleLabel.textColor = context.theme.textColor
-            titleLabel.textAlignment = .left
+        let titleLeftPadding = context.theme.tableCellPadding
+        let titleLabel = UILabel()
+        titleLabel.text = context.getTableTitle()
+        titleLabel.font = .systemFont(ofSize: 16, weight: .medium)
+        titleLabel.textColor = context.theme.textColor
+        titleLabel.textAlignment = .left
         titleLabel.frame = CGRect(x: titleLeftPadding, y: 0, width: 100, height: height)
-            headerBar.addSubview(titleLabel)
-            
-            let toolbar = UIKitToolbar(theme: context.theme, configuration: .codeBlock)
+        headerBar.addSubview(titleLabel)
+        
+        let toolbar = UIKitToolbar(theme: context.theme, configuration: .codeBlock)
         let toolbarWidth = context.theme.toolbarWidth
         let toolbarPadding = context.theme.toolbarPadding
-            toolbar.frame = CGRect(
+        toolbar.frame = CGRect(
             x: width - toolbarWidth - toolbarPadding,
-                y: toolbarPadding,
-                width: toolbarWidth,
+            y: toolbarPadding,
+            width: toolbarWidth,
             height: height - toolbarPadding * 2
-            )
-            
-            let tableContent = convertTableToString(node)
-            toolbar.onCopy = {
-                context.toolbarActionDelegate?.copyContent(tableContent, type: "table")
-            }
-            toolbar.onDownload = {
-                context.toolbarActionDelegate?.downloadContent(tableContent, type: "table", image: nil)
-            }
-            toolbar.onFullscreen = {
-                context.toolbarActionDelegate?.showFullscreen(tableContent, type: "table", image: nil)
-            }
-            headerBar.addSubview(toolbar)
+        )
+        
+        let tableContent = convertTableToString(node)
+        toolbar.onCopy = {
+            context.toolbarActionDelegate?.copyContent(tableContent, type: "table")
+        }
+        toolbar.onDownload = {
+            context.toolbarActionDelegate?.downloadContent(tableContent, type: "table", image: nil)
+        }
+        toolbar.onFullscreen = {
+            context.toolbarActionDelegate?.showFullscreen(tableContent, type: "table", image: nil)
+        }
+        headerBar.addSubview(toolbar)
         
         return headerBar
     }
@@ -792,7 +792,7 @@ public class UIKitFrameRender {
         cellView.frame = CGRect(x: x, y: 0, width: cellLayout.frame.width, height: cellLayout.frame.height)
         
         if let attributedString = cellLayout.content as? NSAttributedString {
-                    let cellFrame = CGRect(
+            let cellFrame = CGRect(
                 x: padding,
                 y: padding,
                 width: cellLayout.frame.width - padding * 2,
@@ -803,29 +803,29 @@ public class UIKitFrameRender {
             let textView: UIView
             
             if features.hasLink {
-                        let textView_ = NonSelectableTextView()
-                        textView_.attributedText = attributedString
-                        textView_.isEditable = false
-                        textView_.isScrollEnabled = false
-                        textView_.textContainerInset = .zero
-                        textView_.textContainer.lineFragmentPadding = 0
-                        textView_.backgroundColor = .clear
-                        textView_.frame = cellFrame
-                        
-                        centerTextViewVertically(textView_, attributedString: attributedString, frame: cellFrame.size)
-                setupLinkHandler(for: textView_, context: context)
-                        
-                        textView = textView_
-                    } else {
-                        let label = UILabel()
-                        label.attributedText = attributedString
-                        label.numberOfLines = 0
-                        label.frame = cellFrame
-                        textView = label
-                    }
-                    cellView.addSubview(textView)
-                }
+                let textView_ = NonSelectableTextView()
+                textView_.attributedText = attributedString
+                textView_.isEditable = false
+                textView_.isScrollEnabled = false
+                textView_.textContainerInset = .zero
+                textView_.textContainer.lineFragmentPadding = 0
+                textView_.backgroundColor = .clear
+                textView_.frame = cellFrame
                 
+                centerTextViewVertically(textView_, attributedString: attributedString, frame: cellFrame.size)
+                setupLinkHandler(for: textView_, context: context)
+                
+                textView = textView_
+            } else {
+                let label = UILabel()
+                label.attributedText = attributedString
+                label.numberOfLines = 0
+                label.frame = cellFrame
+                textView = label
+            }
+            cellView.addSubview(textView)
+        }
+        
         return cellView
     }
     
@@ -836,7 +836,7 @@ public class UIKitFrameRender {
         assert(node.display, "行内数学公式应该使用 MathTextAttachment 在 NSAttributedString 中处理")
         
         let containerView = createEmptyView(size: frame.size)
-     
+        
         let textColor = context.theme.textColor
         let fontSize = node.display ? 16.0 : 14.0
         let cacheKey = generateMathCacheKey(
@@ -933,31 +933,31 @@ public class UIKitFrameRender {
         node: MathNode,
         context: UIKitRenderContext
     ) {
-                let imageView = UIImageView()
-                imageView.image = image
-                imageView.contentMode = .scaleAspectFit
-                
-                let imageSize = image.size
+        let imageView = UIImageView()
+        imageView.image = image
+        imageView.contentMode = .scaleAspectFit
+        
+        let imageSize = image.size
         let availableWidth = frame.size.width - padding * 2
         let availableHeight = frame.size.height - padding * 2
-                
-                let imageAspectRatio = imageSize.width / imageSize.height
-                let displayWidth = min(availableWidth, imageSize.width)
-                let displayHeight = min(availableHeight, displayWidth / imageAspectRatio)
-                
+        
+        let imageAspectRatio = imageSize.width / imageSize.height
+        let displayWidth = min(availableWidth, imageSize.width)
+        let displayHeight = min(availableHeight, displayWidth / imageAspectRatio)
+        
         let imageX = padding + (availableWidth - displayWidth) / 2
         let imageY = padding + (availableHeight - displayHeight) / 2
         
         imageView.frame = CGRect(x: imageX, y: imageY, width: displayWidth, height: displayHeight)
-                containerView.addSubview(imageView)
-                
-                let actualHeight = UIKitFrameAsyncCalculator.calculateMathTotalHeight(
-                    displayHeight: displayHeight,
-                    context: context
-                )
-                
+        containerView.addSubview(imageView)
+        
+        let actualHeight = UIKitFrameAsyncCalculator.calculateMathTotalHeight(
+            displayHeight: displayHeight,
+            context: context
+        )
+        
         if abs(actualHeight - containerView.frame.height) > 0.5 {
-                    context.onNodeLayoutChanged?(node)
+            context.onNodeLayoutChanged?(node)
         }
     }
     
@@ -973,7 +973,7 @@ public class UIKitFrameRender {
         let padding = context.theme.codeBlockPadding
         let textColor = context.theme.textColor
         let backgroundColor = context.theme.codeBackgroundColor
-
+        
         let cacheKey = generateMermaidCacheKey(
             mermaidCode: node.content,
             textColor: textColor,
@@ -1192,8 +1192,13 @@ public class UIKitFrameRender {
         )
         previewView.addSubview(imageView)
         
-        let actualHeight = image.size.height + padding * 2 + context.theme.toolbarHeight
-        let currentHeight = previewView.superview?.superview?.frame.height ?? 0
+        // previewView的高度是容器高度减去Toolbar高度，所以这里不需要加ToolbarHeight
+        let currentHeight = previewView.frame.height
+        
+        let font = context.theme.codeFont
+        let attrString = NSAttributedString(string: node.content, attributes: [.font: font])
+        let size = UIKitFrameAsyncCalculator.calculateTextSize(attrString, width: previewView.frame.size.width - padding * 2)
+        let actualHeight = max(ceil(size.height), image.size.height) + padding * 2
         
         if abs(actualHeight - currentHeight) > 0.5 {
             context.onNodeLayoutChanged?(node)
