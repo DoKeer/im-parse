@@ -1086,37 +1086,57 @@ public class UIKitFrameAsyncCalculator {
     // MARK: - Math & Mermaid Total Height Calculation
     
     /// 计算 Math 节点的frame
+    /// 期望的是数学公式图片如果imageSize.width <= context.width按照原始大小展示
+    /// 如果imageSize.width > context.width 则按照比例缩放
     public static func calculateMathImageFrame(imageSize: CGSize, context: UIKitRenderContext) -> CGRect {
-        if imageSize == .zero {return CGRectZero}
+        if imageSize == .zero { return CGRectZero }
         
-        let imageAspectRatio = imageSize.width / imageSize.height
-        // 容器尺寸
         let availableWidth = context.width
-        let availableHeight = availableWidth / imageAspectRatio
-        // 图片应该展示的尺寸
-        let displayWidth = min(availableWidth, imageSize.width)
-        let displayHeight = displayWidth / imageAspectRatio
+        let displayWidth: CGFloat
+        let displayHeight: CGFloat
         
+        if imageSize.width <= availableWidth {
+            // 按照原始大小展示
+            displayWidth = imageSize.width
+            displayHeight = imageSize.height
+        } else {
+            // 按照比例缩放
+            let imageAspectRatio = imageSize.width / imageSize.height
+            displayWidth = availableWidth
+            displayHeight = displayWidth / imageAspectRatio
+        }
+        
+        // 居中显示
         let imageX = (availableWidth - displayWidth) / 2
-        let imageY = (availableHeight - displayHeight) / 2
+        let imageY: CGFloat = 0 // 垂直方向从顶部开始
         
         return CGRect(x: imageX, y: imageY, width: displayWidth, height: displayHeight)
     }
     
     /// 计算 Mermaid 节点的图片的frame
+    /// 期望的是图片如果imageSize.width <= context.width按照原始大小展示
+    /// 如果imageSize.width > context.width 则按照比例缩放
     public static func calculateMermaidImageFrame(imageSize: CGSize, context: UIKitRenderContext) -> CGRect {
-        if imageSize == .zero {return CGRectZero}
-
-        let imageAspectRatio = imageSize.width / imageSize.height
-        // 容器尺寸
-        let availableWidth = context.width
-        let availableHeight = availableWidth / imageAspectRatio
-        // 图片应该展示的尺寸
-        let displayWidth = min(availableWidth, imageSize.width)
-        let displayHeight = displayWidth / imageAspectRatio
+        if imageSize == .zero { return CGRectZero }
         
+        let availableWidth = context.width
+        let displayWidth: CGFloat
+        let displayHeight: CGFloat
+        
+        if imageSize.width <= availableWidth {
+            // 按照原始大小展示
+            displayWidth = imageSize.width
+            displayHeight = imageSize.height
+        } else {
+            // 按照比例缩放
+            let imageAspectRatio = imageSize.width / imageSize.height
+            displayWidth = availableWidth
+            displayHeight = displayWidth / imageAspectRatio
+        }
+        
+        // 居中显示
         let imageX = (availableWidth - displayWidth) / 2
-        let imageY = (availableHeight - displayHeight) / 2
+        let imageY: CGFloat = 0 // 垂直方向从顶部开始
         
         return CGRect(x: imageX, y: imageY, width: displayWidth, height: displayHeight)
     }

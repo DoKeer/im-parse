@@ -265,7 +265,7 @@ fn default_code_block_min_width() -> f32 { 200.0 }
 fn default_table_cell_padding() -> f32 { 8.0 }
 fn default_table_border_color() -> String { "#dddddd".to_string() }
 fn default_table_header_background() -> String { "#f4f4f4".to_string() }
-fn default_table_max_cell_width() -> f32 { 400.0 }
+fn default_table_max_cell_width() -> f32 { 1366.0 }
 fn default_table_min_cell_width() -> f32 { 80.0 }
 fn default_blockquote_border_width() -> f32 { 4.0 }
 fn default_blockquote_border_color() -> String { "#dddddd".to_string() }

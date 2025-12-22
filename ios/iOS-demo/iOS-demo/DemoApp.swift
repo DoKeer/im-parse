@@ -7,6 +7,7 @@
 
 import SwiftUI
 import IMParseSDK
+import Kingfisher
 
 @main
 struct IMParseDemoApp: App {
@@ -62,6 +63,16 @@ struct MainTabView: View {
                     .foregroundColor(.secondary)
                     .padding(.bottom, 30)
                 
+                Button {
+                    ImageCache.default.clearCache()
+                } label: {
+                    Text("清理缓存")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding(.bottom, 30)
+                }
+
+
                 // 导航按钮 - 使用 NavigationLink 实现导航
                 NavigationLink(value: DemoPage.uikitFrame) {
                     HStack {
