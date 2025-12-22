@@ -1107,18 +1107,22 @@ public class UIKitFrameAsyncCalculator {
         if imageSize == .zero { return CGRectZero }
         
         let availableWidth = context.width
-        let displayWidth: CGFloat
-        let displayHeight: CGFloat
+        var displayWidth: CGFloat
+        var displayHeight: CGFloat
         
         if imageSize.width <= availableWidth {
             // 按照原始大小展示
-            displayWidth = imageSize.width
-            displayHeight = imageSize.height
+            displayWidth = imageSize.width/2
+            displayHeight = imageSize.height/2
         } else {
             // 按照比例缩放
             let imageAspectRatio = imageSize.width / imageSize.height
-            displayWidth = availableWidth
+            displayWidth = availableWidth*0.7
             displayHeight = displayWidth / imageAspectRatio
+            if displayHeight > imageSize.height/2 {
+                displayWidth = imageSize.width/2
+                displayHeight = imageSize.height/2
+            }
         }
         
         // 居中显示
