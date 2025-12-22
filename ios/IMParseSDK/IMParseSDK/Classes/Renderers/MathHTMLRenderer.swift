@@ -49,14 +49,21 @@ public func generateMathCacheKey(
 /// 数学公式 HTML 渲染器
 /// 使用独立的 WKWebView 将 HTML 渲染为图片，支持 KaTeX CSS
 @MainActor
-public struct MathHTMLRenderer {
+public class MathHTMLRenderer {
     public static let shared = MathHTMLRenderer()
     
     // 可选的缓存代理（优先使用，避免内存占用）
     public weak var formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate?
-        
-    // 使用共享的 WebView 池（与 MermaidHTMLRenderer 共享，减少资源占用）
-    @MainActor private let webViewPool = SharedWebViewPool.shared
+    
+    // 各自持有的 WebView 实例
+    private var webView: WKWebView?
+    
+    // 渲染队列（串行执行）
+    private let renderQueue = RenderQueue.shared
+    
+    // 正在处理的任务（key: cacheKey, value: Task），用于避免重复渲染相同内容
+    private static var pendingTasks: [String: Task<UIImage?, Never>] = [:]
+    private static let pendingTasksLock = NSLock()
     
     // KaTeX CSS（优先从本地加载，降级到 CDN）
     static let katexCSSURL = "https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"
@@ -64,12 +71,6 @@ public struct MathHTMLRenderer {
     
     // 本地资源管理器
     private let resourceManager = LocalResourceManager.shared
-    
-    // 复用控制：存储正在进行的渲染任务（key: cacheKey, value: Task）
-    // 相同 cacheKey 的多个请求会共享同一个渲染任务
-    private static var pendingRenderTasks: [String: Task<UIImage?, Never>] = [:]
-    private static let renderTaskLock = NSLock()
- 
 
     /// 渲染 HTML 为图片
     /// - Parameters:
@@ -101,40 +102,41 @@ public struct MathHTMLRenderer {
             return cachedImage
         }
         
-        // 检查是否有正在进行的渲染任务（复用控制）
-        let existingTask: Task<UIImage?, Never>? = renderTaskLock.withLock {
-            return pendingRenderTasks[cacheKey.0]
+        // 检查是否有正在处理的任务（避免重复渲染）
+        let existingTask: Task<UIImage?, Never>? = pendingTasksLock.withLock {
+            return pendingTasks[cacheKey.0]
         }
         
         if let existingTask = existingTask {
-            // 等待现有任务完成并返回结果
+            // 等待现有任务完成
             return await existingTask.value
+        }
+        
+        // 缓存未命中，生成 HTML
+        let result = IMParseCore.mathToHTML(mathContent, display: display)
+        guard result.success, let html = result.astJSON else {
+            return nil
+        }
+        
+        // 验证 HTML 是否有效（检查是否包含 KaTeX 相关类）
+        if html.isEmpty || (!html.contains("katex") && !html.contains("math-container")) {
+            // HTML 无效或不包含数学公式内容
+            print("MathHTMLRenderer: Invalid HTML content")
+            return nil
         }
         
         // 创建新的渲染任务
         let renderTask = Task<UIImage?, Never> { @MainActor in
-            // 异步渲染公式图片
-            let result = IMParseCore.mathToHTML(mathContent, display: display)
-            guard result.success, let html = result.astJSON else {
+            // 在入队前再次检查缓存（队列中的任务可能已经完成并缓存了结果）
+            if let cachedImage = cacheDelegate?.getFormulaImage(for: cacheKey.0) {
                 // 清理任务
-                renderTaskLock.withLock {
-                    pendingRenderTasks.removeValue(forKey: cacheKey.0)
+                pendingTasksLock.withLock {
+                    pendingTasks.removeValue(forKey: cacheKey.0)
                 }
-                return nil
+                return cachedImage
             }
             
-            // 缓存未命中，验证 HTML 是否有效（检查是否包含 KaTeX 相关类）
-            if html.isEmpty || (!html.contains("katex") && !html.contains("math-container")) {
-                // HTML 无效或不包含数学公式内容
-                print("MathHTMLRenderer: Invalid HTML content")
-                // 清理任务
-                renderTaskLock.withLock {
-                    pendingRenderTasks.removeValue(forKey: cacheKey.0)
-                }
-                return nil
-            }
-            
-            // HTML 有效，进行渲染（必须在主线程）
+            // 缓存仍未命中，进行渲染
             let image = await MathHTMLRenderer.shared.renderHTML(
                 html: html,
                 display: display,
@@ -145,16 +147,16 @@ public struct MathHTMLRenderer {
             )
             
             // 清理任务
-            renderTaskLock.withLock {
-                pendingRenderTasks.removeValue(forKey: cacheKey.0)
+            pendingTasksLock.withLock {
+                pendingTasks.removeValue(forKey: cacheKey.0)
             }
             
             return image
         }
         
         // 存储任务
-        renderTaskLock.withLock {
-            pendingRenderTasks[cacheKey.0] = renderTask
+        pendingTasksLock.withLock {
+            pendingTasks[cacheKey.0] = renderTask
         }
         
         // 等待任务完成
@@ -191,70 +193,66 @@ public struct MathHTMLRenderer {
         // 确保在主线程
         assert(Thread.isMainThread, "renderHTML must be called on main thread")
         
-        // 等待渲染队列中的可用槽位（限制并发数）
-        await SharedWebViewPool.shared.waitForRenderSlot()
-        defer {
-            Task { @MainActor in
-                await SharedWebViewPool.shared.releaseRenderSlot()
-            }
-        }
-        
-        // 从池中获取或创建 WebView（必须在主线程）
-        let webView = getOrCreateWebView()
-        
-        // 构建完整的 HTML（包含 KaTeX CSS）
-        let fullHTML = buildFullHTML(html: html, display: display, textColor: textColor, fontSize: fontSize)
-        
-        // 设置 WebView 配置（使用较大的初始尺寸，确保内容能完全渲染）
-        // 宽度设置为 2000pt 以容纳较长的公式（不会影响最终截图尺寸）
-        // 高度根据显示模式设置：块级公式通常更高（分数、矩阵等）
-        webView.frame = CGRect(x: 0, y: 0, width: 2000, height: display ? 500 : 200)
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
-        
-        // 使用关联对象存储处理状态，防止重复执行
-        objc_setAssociatedObject(webView, &MathAssociatedKeys.processing, false, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-        
-        // 加载 HTML
-        webView.loadHTMLString(fullHTML, baseURL: nil)
-        
-        // 等待页面加载完成
-        await withCheckedContinuation { continuation in
-            // 使用 WKNavigationDelegate 监听加载完成
-            let delegate = MathWebViewDelegate {
-                continuation.resume()
-            }
-            
-            // 保存 delegate 引用（避免被释放）
-            objc_setAssociatedObject(webView, &MathAssociatedKeys.delegate, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-            webView.navigationDelegate = delegate
-        }
-        
-        // 检查是否已经处理过
-        if let hasProcessed = objc_getAssociatedObject(webView, &MathAssociatedKeys.processing) as? Bool, hasProcessed {
-            return nil
-        }
-        
-        // 标记为已处理
-        objc_setAssociatedObject(webView, &MathAssociatedKeys.processing, true, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-        
-        // 立即清除 delegate，防止再次触发
-        webView.navigationDelegate = nil
-        objc_setAssociatedObject(webView, &MathAssociatedKeys.delegate, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-        
-        // 等待 KaTeX CSS 加载和渲染完成
-        // iOS 14 兼容性：增加轮询检测
-        let ready = await self.waitForKaTeXReady(webView: webView, maxAttempts: 10)
-        
-        if !ready {
-            print("MathHTMLRenderer: KaTeX CSS failed to load (timeout or iOS 14 compatibility issue)")
-            // 即使 CSS 未加载，也尝试渲染（可能只是样式问题）
-        }
-        
-        // 获取数学公式容器的精确边界（相对于视口）
-        // 注意：getBoundingClientRect() 返回的是实际渲染尺寸（包括字体、行高等）
-        // 使用 Math.ceil() 向上取整，避免因浮点数截断导致内容被裁剪
-        do {
+        // 使用渲染队列串行执行
+        return await withCheckedContinuation { continuation in
+            renderQueue.enqueue {
+                // 获取或创建 WebView（必须在主线程）
+                let webView = await self.getOrCreateWebView()
+                
+                // 构建完整的 HTML（包含 KaTeX CSS）
+                let fullHTML = self.buildFullHTML(html: html, display: display, textColor: textColor, fontSize: fontSize)
+                
+                // 设置 WebView 配置（使用较大的初始尺寸，确保内容能完全渲染）
+                // 宽度设置为 2000pt 以容纳较长的公式（不会影响最终截图尺寸）
+                // 高度根据显示模式设置：块级公式通常更高（分数、矩阵等）
+                webView.frame = CGRect(x: 0, y: 0, width: 2000, height: display ? 500 : 200)
+                webView.isOpaque = false
+                webView.backgroundColor = .clear
+                
+                // 使用关联对象存储处理状态，防止重复执行
+                objc_setAssociatedObject(webView, &MathAssociatedKeys.processing, false, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                
+                // 加载 HTML
+                webView.loadHTMLString(fullHTML, baseURL: nil)
+                
+                // 等待页面加载完成
+                await withCheckedContinuation { navContinuation in
+                    // 使用 WKNavigationDelegate 监听加载完成
+                    let delegate = MathWebViewDelegate {
+                        navContinuation.resume()
+                    }
+                    
+                    // 保存 delegate 引用（避免被释放）
+                    objc_setAssociatedObject(webView, &MathAssociatedKeys.delegate, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                    webView.navigationDelegate = delegate
+                }
+                
+                // 检查是否已经处理过
+                if let hasProcessed = objc_getAssociatedObject(webView, &MathAssociatedKeys.processing) as? Bool, hasProcessed {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                // 标记为已处理
+                objc_setAssociatedObject(webView, &MathAssociatedKeys.processing, true, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                
+                // 立即清除 delegate，防止再次触发
+                webView.navigationDelegate = nil
+                objc_setAssociatedObject(webView, &MathAssociatedKeys.delegate, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                
+                // 等待 KaTeX CSS 加载和渲染完成
+                // iOS 14 兼容性：增加轮询检测
+                let ready = await self.waitForKaTeXReady(webView: webView, maxAttempts: 10)
+                
+                if !ready {
+                    print("MathHTMLRenderer: KaTeX CSS failed to load (timeout or iOS 14 compatibility issue)")
+                    // 即使 CSS 未加载，也尝试渲染（可能只是样式问题）
+                }
+                
+                // 获取数学公式容器的精确边界（相对于视口）
+                // 注意：getBoundingClientRect() 返回的是实际渲染尺寸（包括字体、行高等）
+                // 使用 Math.ceil() 向上取整，避免因浮点数截断导致内容被裁剪
+                do {
             let result = try await webView.evaluateJavaScript("""
                 (function() {
                     // 先查找 .katex 元素（KaTeX 生成的元素）
@@ -290,59 +288,59 @@ public struct MathHTMLRenderer {
                 })();
             """)
             
-            guard let sizeDict = result as? [String: CGFloat],
-                  let width = sizeDict["width"],
-                  let height = sizeDict["height"] else {
-                // 尺寸获取失败
-                returnWebViewToPool(webView)
-                return nil
-            }
-            
-            // 获取内容在 WebView 中的精确位置和尺寸
-            // 同时考虑 scroll 尺寸，确保完整捕获内容
-            let positionResult = try? await webView.evaluateJavaScript("""
-                (function() {
-                    const katexElement = document.querySelector('.katex') || document.querySelector('.math-container');
-                    if (katexElement) {
-                        const rect = katexElement.getBoundingClientRect();
-                        const scrollWidth = katexElement.scrollWidth;
-                        const scrollHeight = katexElement.scrollHeight;
-                        return {
-                            x: Math.max(0, Math.floor(rect.left)),
-                            y: Math.max(0, Math.floor(rect.top)),
-                            width: Math.ceil(Math.max(rect.width, scrollWidth)),
-                            height: Math.ceil(Math.max(rect.height, scrollHeight))
-                        };
+                    guard let sizeDict = result as? [String: CGFloat],
+                          let width = sizeDict["width"],
+                          let height = sizeDict["height"] else {
+                        // 尺寸获取失败
+                        continuation.resume(returning: nil)
+                        return
                     }
-                    return { x: 0, y: 0, width: \(width), height: \(height) };
-                })();
-            """)
-            
-            var contentRect = CGRect(x: 0, y: 0, width: width, height: height)
-            
-            if let positionDict = positionResult as? [String: CGFloat],
-               let x = positionDict["x"],
-               let y = positionDict["y"],
-               let w = positionDict["width"],
-               let h = positionDict["height"] {
-                contentRect = CGRect(x: x, y: y, width: w, height: h)
+                    
+                    // 获取内容在 WebView 中的精确位置和尺寸
+                    // 同时考虑 scroll 尺寸，确保完整捕获内容
+                    let positionResult = try? await webView.evaluateJavaScript("""
+                        (function() {
+                            const katexElement = document.querySelector('.katex') || document.querySelector('.math-container');
+                            if (katexElement) {
+                                const rect = katexElement.getBoundingClientRect();
+                                const scrollWidth = katexElement.scrollWidth;
+                                const scrollHeight = katexElement.scrollHeight;
+                                return {
+                                    x: Math.max(0, Math.floor(rect.left)),
+                                    y: Math.max(0, Math.floor(rect.top)),
+                                    width: Math.ceil(Math.max(rect.width, scrollWidth)),
+                                    height: Math.ceil(Math.max(rect.height, scrollHeight))
+                                };
+                            }
+                            return { x: 0, y: 0, width: \(width), height: \(height) };
+                        })();
+                    """)
+                    
+                    var contentRect = CGRect(x: 0, y: 0, width: width, height: height)
+                    
+                    if let positionDict = positionResult as? [String: CGFloat],
+                       let x = positionDict["x"],
+                       let y = positionDict["y"],
+                       let w = positionDict["width"],
+                       let h = positionDict["height"] {
+                        contentRect = CGRect(x: x, y: y, width: w, height: h)
+                    }
+                    
+                    // 使用精确的内容区域直接截图（不调整 WebView 尺寸）
+                    // 缓存图片（优先使用 delegate）
+                    if let image = await self.captureWebView(webView, contentRect: contentRect) {
+                        cacheDelegate?.saveFormulaImage(image, for: cacheKey)
+                        cacheDelegate?.setCachedSize(image.size, for: cacheKey)
+                        continuation.resume(returning: image)
+                        return
+                    }
+                    
+                    continuation.resume(returning: nil)
+                } catch {
+                    print("MathHTMLRenderer: JavaScript evaluation error: \(error)")
+                    continuation.resume(returning: nil)
+                }
             }
-            
-            // 使用精确的内容区域直接截图（不调整 WebView 尺寸）
-            // 缓存图片（优先使用 delegate）
-            if let image = await self.captureWebView(webView, contentRect: contentRect) {
-                cacheDelegate?.saveFormulaImage(image, for: cacheKey)
-                cacheDelegate?.setCachedSize(image.size, for: cacheKey)
-                returnWebViewToPool(webView)
-                return image
-            }
-            
-            returnWebViewToPool(webView)
-            return nil
-        } catch {
-            print("MathHTMLRenderer: JavaScript evaluation error: \(error)")
-            returnWebViewToPool(webView)
-            return nil
         }
     }
     
@@ -466,16 +464,55 @@ public struct MathHTMLRenderer {
         }
     }
     
-    /// 从池中获取或创建 WebView（必须在主线程调用）
-    @MainActor func getOrCreateWebView() -> WKWebView {
-        // 使用共享的 WebView 池
-        return webViewPool.getOrCreateWebView()
+    /// 获取或创建 WebView（必须在主线程调用）
+    @MainActor func getOrCreateWebView() async -> WKWebView {
+        // 确保在主线程
+        assert(Thread.isMainThread, "getOrCreateWebView must be called on main thread")
+        
+        if let existingWebView = webView {
+            // 清理之前的加载和状态
+            existingWebView.stopLoading()
+            existingWebView.navigationDelegate = nil
+            clearAssociatedObjects(for: existingWebView)
+            return existingWebView
+        }
+        
+        // 创建新的 WebView（必须在主线程）
+        let config = WKWebViewConfiguration()
+        
+        // 配置 WKPreferences
+        let preferences = WKPreferences()
+        if #available(iOS 14.0, *) {
+            // iOS 14+ 默认启用 JavaScript
+        } else {
+            preferences.javaScriptEnabled = true
+        }
+        config.preferences = preferences
+        
+        config.allowsInlineMediaPlayback = true
+        
+        // iOS 11+ 注册自定义 Scheme Handler（本地资源加载）
+        if #available(iOS 11.0, *) {
+            let schemeHandler = LocalResourceSchemeHandler()
+            config.setURLSchemeHandler(schemeHandler, forURLScheme: LocalResourceManager.customScheme)
+        }
+        
+        let newWebView = WKWebView(frame: .zero, configuration: config)
+        newWebView.isOpaque = false
+        newWebView.backgroundColor = .clear
+        newWebView.scrollView.backgroundColor = .clear
+        newWebView.scrollView.isScrollEnabled = false
+        
+        webView = newWebView
+        print("MathHTMLRenderer: Created new WebView")
+        
+        return newWebView
     }
     
-    /// 将 WebView 返回池中（必须在主线程调用）
-    @MainActor func returnWebViewToPool(_ webView: WKWebView) {
-        // 使用共享的 WebView 池
-        webViewPool.returnWebView(webView)
+    /// 清除 WebView 的关联对象
+    private func clearAssociatedObjects(for webView: WKWebView) {
+        // 关联对象使用静态变量地址作为键，不同文件的 AssociatedKeys 地址不同，不会冲突
+        // 每个渲染器在获取 WebView 后会重新设置自己的关联对象，所以不需要手动清除
     }
     
     // MARK: - HTML 工具方法
@@ -628,7 +665,7 @@ public struct MathHTMLRenderer {
                     color: #000000;
                     background: #ffffff;
                     padding: 20px;
-                    max-width: 800px;
+                    max-width: 1366px;
                     margin: 0 auto;
                 }
                 .katex {

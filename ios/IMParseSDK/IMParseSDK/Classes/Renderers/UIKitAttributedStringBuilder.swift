@@ -151,9 +151,9 @@ public class UIKitAttributedStringBuilder {
                     return NSAttributedString(attachment: mathAttachment)
                 }
                 
-                // 缓存未命中，返回原文富文本
+                // 缓存未命中，返回原文富文本，并添加标记以便在渲染时处理
                 let color = context.currentTextColor ?? context.theme.textColor
-                let attrString = NSAttributedString(
+                let mutableAttrString = NSMutableAttributedString(
                     string: mathNode.content,
                     attributes: [
                         .font: font,
@@ -161,29 +161,21 @@ public class UIKitAttributedStringBuilder {
                     ]
                 )
                 
-                // 触发异步加载（参考块级公式的逻辑）
+                // 添加自定义属性，标记需要渲染的行内公式
                 if context.formulaSizeCacheDelegate != nil {
-                    // 在后台线程异步加载
-                    // 注意：需要捕获必要的变量，避免在闭包中访问 context（可能已被释放）
-                    let mathContent = mathNode.content
-                    let formulaSizeCacheDelegate = context.formulaSizeCacheDelegate
-                    let onNodeLayoutChanged = context.onNodeLayoutChanged
-                    Task {
-                        if let _ = await MathHTMLRenderer.renderInlineMath(
-                            mathContent: mathContent,
-                            textColor: textColor,
-                            fontSize: fontSize,
-                            formulaSizeCacheDelegate: formulaSizeCacheDelegate
-                        ) {
-                            // 在主线程触发布局更新回调
-                            await MainActor.run {
-                                onNodeLayoutChanged?(mathNode)
-                            }
-                        }
-                    }
+                    let renderInfo = InlineMathRenderInfo(
+                        mathNode: mathNode,
+                        textColor: textColor,
+                        fontSize: fontSize
+                    )
+                    mutableAttrString.addAttribute(
+                        .inlineMathRenderInfo,
+                        value: renderInfo,
+                        range: NSRange(location: 0, length: mutableAttrString.length)
+                    )
                 }
                 
-                return attrString
+                return mutableAttrString
             } else {
                 // 块级数学公式不应该在这里处理，应该在混合布局中单独处理
                 return NSAttributedString()

@@ -111,8 +111,35 @@ class LocalResourceSchemeHandler: NSObject, WKURLSchemeHandler {
         
         // 如果缓存未命中，从 Bundle 加载
         if data == nil {
-            guard let bundle = Bundle(for: type(of: self)).url(forResource: finalFileName, withExtension: nil),
-                  let loadedData = try? Data(contentsOf: bundle) else {
+            // 尝试多个 Bundle 位置查找资源
+            // 1. 首先尝试 framework bundle（使用 resources 时资源在这里）
+            // 2. 然后尝试 resource bundle（使用 resource_bundles 时会创建 IMParseSDK_IMParseSDK.bundle）
+            // 3. 最后尝试主 bundle（fallback）
+            var loadedData: Data?
+            var resourceURL: URL?
+            
+            // 方法1: 从 framework bundle 查找
+            let frameworkBundle = Bundle(for: type(of: self))
+            if let url = frameworkBundle.url(forResource: finalFileName, withExtension: nil) {
+                resourceURL = url
+            }
+            // 方法2: 从 resource bundle 查找（CocoaPods resource_bundles 会创建 IMParseSDK_IMParseSDK.bundle）
+            else if let resourceBundlePath = frameworkBundle.path(forResource: "IMParseSDK_IMParseSDK", ofType: "bundle"),
+                     let resourceBundle = Bundle(path: resourceBundlePath),
+                     let url = resourceBundle.url(forResource: finalFileName, withExtension: nil) {
+                resourceURL = url
+            }
+            // 方法3: 从主 bundle 查找（fallback）
+            else if let url = Bundle.main.url(forResource: finalFileName, withExtension: nil) {
+                resourceURL = url
+            }
+            
+            // 加载数据
+            if let url = resourceURL, let fileData = try? Data(contentsOf: url) {
+                loadedData = fileData
+            }
+            
+            guard let finalLoadedData = loadedData else {
                 // 字体文件缺失时静默失败，让浏览器从 CDN 加载（CSS 会自动处理）
                 // 关键资源缺失时打印警告
                 if isCriticalResource {
@@ -127,7 +154,7 @@ class LocalResourceSchemeHandler: NSObject, WKURLSchemeHandler {
                 return
             }
             
-            data = loadedData
+            data = finalLoadedData
             
             // 保存到内存缓存（只缓存关键资源，字体文件不缓存以节省内存）
             if isCriticalResource || !isFontFile {
@@ -279,11 +306,30 @@ class LocalResourceManager {
     
     /// 检查本地资源是否存在
     func hasLocalResources() -> Bool {
-        let bundle = Bundle(for: LocalResourceSchemeHandler.self)
+        let frameworkBundle = Bundle(for: LocalResourceSchemeHandler.self)
+        
+        // 尝试多个 Bundle 位置查找资源
+        func findResource(_ name: String) -> Bool {
+            // 方法1: 从 framework bundle 查找
+            if frameworkBundle.url(forResource: name, withExtension: nil) != nil {
+                return true
+            }
+            // 方法2: 从 resource bundle 查找
+            if let resourceBundlePath = frameworkBundle.path(forResource: "IMParseSDK_IMParseSDK", ofType: "bundle"),
+               let resourceBundle = Bundle(path: resourceBundlePath),
+               resourceBundle.url(forResource: name, withExtension: nil) != nil {
+                return true
+            }
+            // 方法3: 从主 bundle 查找
+            if Bundle.main.url(forResource: name, withExtension: nil) != nil {
+                return true
+            }
+            return false
+        }
         
         // 检查关键文件是否存在
-        let mermaidExists = bundle.url(forResource: "mermaid.min.js", withExtension: nil) != nil
-        let katexExists = bundle.url(forResource: "katex.min.css", withExtension: nil) != nil
+        let mermaidExists = findResource("mermaid.min.js")
+        let katexExists = findResource("katex.min.css")
         
         return mermaidExists || katexExists
     }

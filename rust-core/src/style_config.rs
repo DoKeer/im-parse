@@ -260,12 +260,12 @@ fn default_paragraph_spacing() -> f32 { 16.0 }
 fn default_list_item_spacing() -> f32 { 8.0 }
 fn default_code_block_padding() -> f32 { 16.0 }
 fn default_code_block_border_radius() -> f32 { 8.0 }
-fn default_code_block_max_width() -> f32 { 800.0 }
+fn default_code_block_max_width() -> f32 { 1366.0 }
 fn default_code_block_min_width() -> f32 { 200.0 }
 fn default_table_cell_padding() -> f32 { 8.0 }
 fn default_table_border_color() -> String { "#dddddd".to_string() }
 fn default_table_header_background() -> String { "#f4f4f4".to_string() }
-fn default_table_max_cell_width() -> f32 { 1366.0 }
+fn default_table_max_cell_width() -> f32 { 800.0 }
 fn default_table_min_cell_width() -> f32 { 80.0 }
 fn default_blockquote_border_width() -> f32 { 4.0 }
 fn default_blockquote_border_color() -> String { "#dddddd".to_string() }
@@ -280,7 +280,7 @@ fn default_card_padding() -> f32 { 16.0 }
 fn default_card_border_radius() -> f32 { 8.0 }
 fn default_hr_color() -> String { "#dddddd".to_string() }
 fn default_line_height() -> f32 { 1.0 }
-fn default_max_content_width() -> f32 { 800.0 }
+fn default_max_content_width() -> f32 { 1366.0 }
 fn default_content_padding() -> f32 { 2.0 }
 fn default_toolbar_height() -> f32 { 36.0 }
 fn default_toolbar_width() -> f32 { 120.0 }

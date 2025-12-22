@@ -27,9 +27,14 @@ private struct AttributedStringFeatures {
     let hasMention: Bool
     let hasEmoji: Bool
     let emojiAttachments: [EmojiTextAttachment]
+    let inlineMathRenderInfos: [(range: NSRange, info: InlineMathRenderInfo)]
     
     var needsInteraction: Bool {
         hasLink || hasMention || hasEmoji
+    }
+    
+    var needsInlineMathRender: Bool {
+        !inlineMathRenderInfos.isEmpty
     }
 }
 
@@ -164,6 +169,15 @@ public class UIKitFrameRender {
     static func renderAttributedString(_ attributedString: NSAttributedString, frame: CGRect, context: UIKitRenderContext) -> UIView {
         let features = detectAttributedStringFeatures(attributedString, context: context)
         
+        // 处理需要渲染的行内公式
+        if features.needsInlineMathRender {
+            handleInlineMathRendering(
+                attributedString: attributedString,
+                features: features,
+                context: context
+            )
+        }
+        
         if features.needsInteraction {
             return createInteractiveTextView(
                 attributedString: attributedString,
@@ -176,12 +190,44 @@ public class UIKitFrameRender {
         }
     }
     
+    /// 处理行内公式的异步渲染
+    private static func handleInlineMathRendering(
+        attributedString: NSAttributedString,
+        features: AttributedStringFeatures,
+        context: UIKitRenderContext
+    ) {
+        guard let formulaSizeCacheDelegate = context.formulaSizeCacheDelegate else { return }
+        
+        for (_, renderInfo) in features.inlineMathRenderInfos {
+            let mathNode = renderInfo.mathNode
+            let textColor = renderInfo.textColor
+            let fontSize = renderInfo.fontSize
+            let onNodeLayoutChanged = context.onNodeLayoutChanged
+            
+            Task {
+                // 异步渲染行内公式
+                if let _ = await MathHTMLRenderer.renderInlineMath(
+                    mathContent: mathNode.content,
+                    textColor: textColor,
+                    fontSize: fontSize,
+                    formulaSizeCacheDelegate: formulaSizeCacheDelegate
+                ) {
+                    // 渲染成功，在主线程触发布局更新回调
+                    await MainActor.run {
+                        onNodeLayoutChanged?(mathNode)
+                    }
+                }
+            }
+        }
+    }
+    
     /// 一次遍历检测所有特性（性能优化）
     private static func detectAttributedStringFeatures(_ attributedString: NSAttributedString, context: UIKitRenderContext) -> AttributedStringFeatures {
         var hasLink = false
         var hasMention = false
         var hasEmoji = false
         var emojiAttachments: [EmojiTextAttachment] = []
+        var inlineMathRenderInfos: [(range: NSRange, info: InlineMathRenderInfo)] = []
         
         let fullRange = NSRange(location: 0, length: attributedString.length)
         
@@ -203,8 +249,9 @@ public class UIKitFrameRender {
                 emojiAttachments.append(attachment)
             }
             
-            if hasLink && hasMention && hasEmoji {
-                stop.pointee = true
+            // 检测需要渲染的行内公式
+            if let renderInfo = attributes[.inlineMathRenderInfo] as? InlineMathRenderInfo {
+                inlineMathRenderInfos.append((range: range, info: renderInfo))
             }
         }
         
@@ -212,7 +259,8 @@ public class UIKitFrameRender {
             hasLink: hasLink,
             hasMention: hasMention,
             hasEmoji: hasEmoji,
-            emojiAttachments: emojiAttachments
+            emojiAttachments: emojiAttachments,
+            inlineMathRenderInfos: inlineMathRenderInfos
         )
     }
     
@@ -800,6 +848,16 @@ public class UIKitFrameRender {
             )
             
             let features = detectAttributedStringFeatures(attributedString, context: context)
+            
+            // 处理需要渲染的行内公式
+            if features.needsInlineMathRender {
+                handleInlineMathRendering(
+                    attributedString: attributedString,
+                    features: features,
+                    context: context
+                )
+            }
+            
             let textView: UIView
             
             if features.hasLink {
@@ -1174,7 +1232,6 @@ public class UIKitFrameRender {
         imageView.contentMode = .scaleAspectFit
         previewView.addSubview(imageView)
         let imageFrame = UIKitFrameAsyncCalculator.calculateMermaidImageFrame(imageSize: image.size, context: context)
-        imageView.frame = imageFrame
         let imageContentHeight = imageFrame.origin.y*2 + imageFrame.height
 
         // 原文高度的计算
@@ -1187,6 +1244,8 @@ public class UIKitFrameRender {
         // 实际内容高度（不包含toolbar）= max(图片高度, 原文高度)
         let actualHeight = max(textContentHeight, imageContentHeight)
         
+        imageView.frame = CGRect(x: imageFrame.origin.x, y: (actualHeight-imageContentHeight)/2, width: imageFrame.size.width, height: imageFrame.size.height)
+
         // previewView的高度是容器高度减去Toolbar高度
         let currentHeight = previewView.frame.height
         if abs(actualHeight - currentHeight) > 0.5 {

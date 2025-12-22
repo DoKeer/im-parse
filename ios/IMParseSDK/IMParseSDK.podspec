@@ -30,12 +30,15 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
                         'IMParseSDK/Classes/Models/StyleConfig.swift',
                         'IMParseSDK/IMParseSDK.h',
                         'IMParseSDK/Classes/Utils/LocalResourceSchemeHandler.swift',
-                        'IMParseSDK/Classes/Utils/SharedWebViewPool.swift',
-                        'IMParseSDK/Classes/Utils/MathWebViewPool.swift',
-                        'IMParseSDK/Classes/Utils/MermaidWebViewPool.swift'
+                        'IMParseSDK/Classes/Utils/RenderQueue.swift'
 
     core.public_header_files = 'IMParseSDK/IMParseSDK.h', 'IMParseSDK/Classes/Core/**/*.h'
     core.frameworks = 'Foundation'
+    
+    # 资源文件配置（Mermaid.js、KaTeX CSS 和字体文件）
+    # 使用 resources 会将资源复制到 framework bundle 中
+    # LocalResourceSchemeHandler 可以通过 Bundle(for: type(of: self)) 找到资源
+    core.resources = 'IMParseSDK/Resources/**/*.{js,css,woff2,woff,ttf,otf}'
     
     # Rust 核心库配置
     if File.exist?(xcframework_path)
@@ -84,9 +87,6 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
                               'IMParseSDK/Classes/Renderers/UIKitAutoLayoutAsyncCalculator.swift',
                               'IMParseSDK/Classes/Renderers/UIKitToolbar.swift'
     
-    # 添加资源文件（Mermaid.js 和 KaTeX CSS）
-    autolayout.resources = 'IMParseSDK/Resources/**/*.{js,css,woff2,woff,ttf,otf}'
-    
     autolayout.frameworks = 'UIKit', 'WebKit'
   end
 
@@ -105,10 +105,6 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
                          'IMParseSDK/Classes/Renderers/UIKitRenderHelpers.swift',
                          'IMParseSDK/Classes/Renderers/UIKitToolbar.swift'
     
-    # 添加资源文件（Mermaid.js 和 KaTeX CSS）
-    frame.resources = 'IMParseSDK/Resources/**/*.{js,css,woff2,woff,ttf,otf}'
-    
-    frame.frameworks = 'UIKit', 'WebKit'
   end
 
   # ==================== SwiftUI Subspec ====================
@@ -122,8 +118,6 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
                            'IMParseSDK/Classes/Renderers/MermaidHTMLRenderer.swift',
                            'IMParseSDK/Classes/Renderers/UIKitToolbar.swift'
     
-    # 添加资源文件（Mermaid.js 和 KaTeX CSS）
-    swiftui.resources = 'IMParseSDK/Resources/**/*.{js,css,woff2,woff,ttf,otf}'
     
     swiftui.frameworks = 'SwiftUI', 'UIKit', 'WebKit'
   end

@@ -433,12 +433,27 @@ public class UIKitFrameAsyncCalculator {
             let mathAttachment = MathTextAttachment(mathNode: node, image: cachedImage, font: font)
             attrString.append(NSAttributedString(attachment: mathAttachment))
         } else {
-            // 缓存未命中，使用原文
+            // 缓存未命中，使用原文，并添加标记以便在渲染时处理
             let color = context.currentTextColor ?? context.theme.textColor
-            let mathString = NSAttributedString(
+            let mathString = NSMutableAttributedString(
                 string: node.content,
                 attributes: [.font: font, .foregroundColor: color]
             )
+            
+            // 添加自定义属性，标记需要渲染的行内公式
+            if context.formulaSizeCacheDelegate != nil {
+                let renderInfo = InlineMathRenderInfo(
+                    mathNode: node,
+                    textColor: textColor,
+                    fontSize: fontSize
+                )
+                mathString.addAttribute(
+                    .inlineMathRenderInfo,
+                    value: renderInfo,
+                    range: NSRange(location: 0, length: mathString.length)
+                )
+            }
+            
             attrString.append(mathString)
         }
     }

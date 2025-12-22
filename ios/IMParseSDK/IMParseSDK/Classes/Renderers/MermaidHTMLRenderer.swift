@@ -44,20 +44,21 @@ public func generateMermaidCacheKey(mermaidCode: String, stringTextColor: String
 /// Mermaid 图表 HTML 渲染器
 /// 使用独立的 WKWebView 将 Mermaid 图表渲染为图片，支持 mermaid.js
 @MainActor
-public struct MermaidHTMLRenderer {
+public class MermaidHTMLRenderer {
     static let shared = MermaidHTMLRenderer()
     
     // 可选的缓存代理（优先使用，避免内存占用）
     public weak var formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate?
     
-    // 使用共享的 WebView 池（与 MathHTMLRenderer 共享，减少资源占用）
-    private let webViewPool = SharedWebViewPool.shared
+    // 各自持有的 WebView 实例
+    private var webView: WKWebView?
     
-    // 复用控制：存储正在进行的渲染任务（key: cacheKey, value: Task）
-    // 相同 cacheKey 的多个请求会共享同一个渲染任务
-    private static var pendingRenderTasks: [String: Task<UIImage?, Never>] = [:]
-    private static let renderTaskLock = NSLock()
-
+    // 渲染队列（串行执行）
+    private let renderQueue = RenderQueue.shared
+    
+    // 正在处理的任务（key: cacheKey, value: Task），用于避免重复渲染相同内容
+    private static var pendingTasks: [String: Task<UIImage?, Never>] = [:]
+    private static let pendingTasksLock = NSLock()
     
     /// 渲染 Mermaid 图表为图片
     /// - Parameters:
@@ -84,32 +85,37 @@ public struct MermaidHTMLRenderer {
             return cachedImage
         }
         
-        // 检查是否有正在进行的渲染任务（复用控制）
-        let existingTask: Task<UIImage?, Never>? = renderTaskLock.withLock {
-            return pendingRenderTasks[cacheKey.0]
+        // 检查是否有正在处理的任务（避免重复渲染）
+        let existingTask: Task<UIImage?, Never>? = pendingTasksLock.withLock {
+            return pendingTasks[cacheKey.0]
         }
         
         if let existingTask = existingTask {
-            // 等待现有任务完成并返回结果
+            // 等待现有任务完成
             return await existingTask.value
+        }
+        
+        // 缓存未命中，先验证语法
+        let result = IMParseCore.mermaidToHTML(mermaidCode, textColor: textColor, backgroundColor: backgroundColor)
+        
+        guard result.success, let _ = result.astJSON else {
+            // 语法错误或生成失败，直接返回 nil
+            print("MermaidHTMLRenderer: Syntax error or generation failed: \(result.error?.message ?? "Unknown error")")
+            return nil
         }
         
         // 创建新的渲染任务
         let renderTask = Task<UIImage?, Never> { @MainActor in
-            // 缓存未命中，先验证语法
-            let result = IMParseCore.mermaidToHTML(mermaidCode, textColor: textColor, backgroundColor: backgroundColor)
-            
-            guard result.success, let _ = result.astJSON else {
-                // 语法错误或生成失败，直接返回 nil
-                print("MermaidHTMLRenderer: Syntax error or generation failed: \(result.error?.message ?? "Unknown error")")
+            // 在入队前再次检查缓存（队列中的任务可能已经完成并缓存了结果）
+            if let cachedImage = cacheDelegate?.getFormulaImage(for: cacheKey.0) {
                 // 清理任务
-                renderTaskLock.withLock {
-                    pendingRenderTasks.removeValue(forKey: cacheKey.0)
+                pendingTasksLock.withLock {
+                    pendingTasks.removeValue(forKey: cacheKey.0)
                 }
-                return nil
+                return cachedImage
             }
             
-            // 语法正确，进行渲染（必须在主线程）
+            // 缓存仍未命中，进行渲染
             let image = await MermaidHTMLRenderer.shared.renderMermaid(
                 mermaidCode: mermaidCode,
                 textColor: textColor,
@@ -119,16 +125,16 @@ public struct MermaidHTMLRenderer {
             )
             
             // 清理任务
-            renderTaskLock.withLock {
-                pendingRenderTasks.removeValue(forKey: cacheKey.0)
+            pendingTasksLock.withLock {
+                pendingTasks.removeValue(forKey: cacheKey.0)
             }
             
             return image
         }
         
         // 存储任务
-        renderTaskLock.withLock {
-            pendingRenderTasks[cacheKey.0] = renderTask
+        pendingTasksLock.withLock {
+            pendingTasks[cacheKey.0] = renderTask
         }
         
         // 等待任务完成
@@ -147,146 +153,141 @@ public struct MermaidHTMLRenderer {
         // 确保在主线程
         assert(Thread.isMainThread, "renderMermaid must be called on main thread")
         
-        // 等待渲染队列中的可用槽位（限制并发数）
-        await SharedWebViewPool.shared.waitForRenderSlot()
-        defer {
-            Task { @MainActor in
-                await SharedWebViewPool.shared.releaseRenderSlot()
-            }
-        }
-        
-        // 从池中获取或创建 WebView（必须在主线程）
-        let webView = getOrCreateWebView()
-        
-        // 检测是否为 Gantt 图表（需要更宽的渲染空间）
-        let isGantt = mermaidCode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("gantt")
-        
-        // 构建完整的 HTML（包含 mermaid.js）
-        let fullHTML = buildFullHTML(mermaidCode: mermaidCode, textColor: textColor, backgroundColor: backgroundColor, isGantt: isGantt)
-        
-        // 设置 WebView 配置（Gantt 图表需要更宽的渲染空间以避免横坐标拥挤）
-        let webViewWidth: CGFloat = isGantt ? 1600 : 1000
-        let webViewHeight: CGFloat = isGantt ? 800 : 600
-        webView.frame = CGRect(x: 0, y: 0, width: webViewWidth, height: webViewHeight)
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
-        
-        // 使用关联对象存储处理状态，防止重复执行
-        objc_setAssociatedObject(webView, &MermaidAssociatedKeys.processing, false, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-        
-        // 加载 HTML
-        webView.loadHTMLString(fullHTML, baseURL: nil)
-        
-        // 等待页面加载完成
-        await withCheckedContinuation { continuation in
-            // 使用 WKNavigationDelegate 监听加载完成
-            let delegate = MermaidWebViewDelegate {
-                continuation.resume()
-            }
-            
-            // 保存 delegate 引用（避免被释放）
-            objc_setAssociatedObject(webView, &MermaidAssociatedKeys.delegate, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-            webView.navigationDelegate = delegate
-        }
-        
-        // 检查是否已经处理过
-        if let hasProcessed = objc_getAssociatedObject(webView, &MermaidAssociatedKeys.processing) as? Bool, hasProcessed {
-            return nil
-        }
-        
-        // 标记为已处理
-        objc_setAssociatedObject(webView, &MermaidAssociatedKeys.processing, true, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-        
-        // 立即清除 delegate，防止再次触发
-        webView.navigationDelegate = nil
-        objc_setAssociatedObject(webView, &MermaidAssociatedKeys.delegate, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-        
-        // 等待 mermaid.js 加载和渲染完成
-        // iOS 14 需要更多时间从 CDN 加载脚本，使用轮询检测
-        let ready = await waitForMermaidReady(webView: webView, maxAttempts: 20)
-        
-        if !ready {
-            print("MermaidHTMLRenderer: Mermaid.js failed to load (timeout or iOS 14 compatibility issue)")
-            returnWebViewToPool(webView)
-            return nil
-        }
-        
-        // Mermaid 已就绪，获取图表的精确边界
-        let sizeResult = try? await webView.evaluateJavaScript("""
-            (function() {
-                const mermaidElement = document.querySelector('.mermaid');
-                if (mermaidElement) {
-                    const rect = mermaidElement.getBoundingClientRect();
-                    return {
-                        width: Math.ceil(rect.width),
-                        height: Math.ceil(rect.height)
-                    };
+        // 使用渲染队列串行执行
+        return await withCheckedContinuation { continuation in
+            renderQueue.enqueue {
+                // 获取或创建 WebView（必须在主线程）
+                let webView = await self.getOrCreateWebView()
+                
+                // 检测是否为 Gantt 图表（需要更宽的渲染空间）
+                let isGantt = mermaidCode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("gantt")
+                
+                // 构建完整的 HTML（包含 mermaid.js）
+                let fullHTML = self.buildFullHTML(mermaidCode: mermaidCode, textColor: textColor, backgroundColor: backgroundColor, isGantt: isGantt)
+                
+                // 设置 WebView 配置（Gantt 图表需要更宽的渲染空间以避免横坐标拥挤）
+                let webViewWidth: CGFloat = isGantt ? 1600 : 1366
+                let webViewHeight: CGFloat = isGantt ? 800 : 600
+                webView.frame = CGRect(x: 0, y: 0, width: webViewWidth, height: webViewHeight)
+                webView.isOpaque = false
+                webView.backgroundColor = .clear
+                
+                // 使用关联对象存储处理状态，防止重复执行
+                objc_setAssociatedObject(webView, &MermaidAssociatedKeys.processing, false, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                
+                // 加载 HTML
+                webView.loadHTMLString(fullHTML, baseURL: nil)
+                
+                // 等待页面加载完成
+                await withCheckedContinuation { navContinuation in
+                    // 使用 WKNavigationDelegate 监听加载完成
+                    let delegate = MermaidWebViewDelegate {
+                        navContinuation.resume()
+                    }
+                    
+                    // 保存 delegate 引用（避免被释放）
+                    objc_setAssociatedObject(webView, &MermaidAssociatedKeys.delegate, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                    webView.navigationDelegate = delegate
                 }
-                // 回退到 body
-                const body = document.body;
-                const rect = body.getBoundingClientRect();
-                return {
-                    width: Math.max(Math.ceil(rect.width), 400),
-                    height: Math.max(Math.ceil(rect.height), 300)
-                };
-            })();
-        """)
-        
-        guard let sizeDict = sizeResult as? [String: CGFloat],
-              let width = sizeDict["width"],
-              let height = sizeDict["height"] else {
-            // 使用默认尺寸
-            webView.frame = CGRect(x: 0, y: 0, width: 800, height: 400)
-            if let image = await captureWebView(webView, contentRect: nil) {
-                cacheDelegate?.saveFormulaImage(image, for: cacheKey)
-                cacheDelegate?.setCachedSize(image.size, for: cacheKey)
-                returnWebViewToPool(webView)
-                return image
-            }
-            returnWebViewToPool(webView)
-            return nil
-        }
-        
-        // 获取内容在 WebView 中的精确位置和尺寸
-        let positionResult = try? await webView.evaluateJavaScript("""
-            (function() {
-                const mermaidElement = document.querySelector('.mermaid');
-                if (mermaidElement) {
-                    const rect = mermaidElement.getBoundingClientRect();
-                    return {
-                        x: Math.max(0, Math.floor(rect.left)),
-                        y: Math.max(0, Math.floor(rect.top)),
-                        width: Math.ceil(rect.width),
-                        height: Math.ceil(rect.height)
-                    };
+                
+                // 检查是否已经处理过
+                if let hasProcessed = objc_getAssociatedObject(webView, &MermaidAssociatedKeys.processing) as? Bool, hasProcessed {
+                    continuation.resume(returning: nil)
+                    return
                 }
-                return { x: 0, y: 0, width: \(width), height: \(height) };
-            })();
-        """)
+                
+                // 标记为已处理
+                objc_setAssociatedObject(webView, &MermaidAssociatedKeys.processing, true, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                
+                // 立即清除 delegate，防止再次触发
+                webView.navigationDelegate = nil
+                objc_setAssociatedObject(webView, &MermaidAssociatedKeys.delegate, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                
+                // 等待 mermaid.js 加载和渲染完成
+                // iOS 14 需要更多时间从 CDN 加载脚本，使用轮询检测
+                let ready = await self.waitForMermaidReady(webView: webView, maxAttempts: 20)
         
-        var contentRect = CGRect(x: 0, y: 0, width: width, height: height)
+                if !ready {
+                    print("MermaidHTMLRenderer: Mermaid.js failed to load (timeout or iOS 14 compatibility issue)")
+                    continuation.resume(returning: nil)
+                    return
+                }
         
-        if let positionDict = positionResult as? [String: CGFloat],
-           let x = positionDict["x"],
-           let y = positionDict["y"],
-           let w = positionDict["width"],
-           let h = positionDict["height"] {
-            contentRect = CGRect(x: x, y: y, width: w, height: h)
+                // Mermaid 已就绪，获取图表的精确边界
+                let sizeResult = try? await webView.evaluateJavaScript("""
+                    (function() {
+                        const mermaidElement = document.querySelector('.mermaid');
+                        if (mermaidElement) {
+                            const rect = mermaidElement.getBoundingClientRect();
+                            return {
+                                width: Math.ceil(rect.width),
+                                height: Math.ceil(rect.height)
+                            };
+                        }
+                        // 回退到 body
+                        const body = document.body;
+                        const rect = body.getBoundingClientRect();
+                        return {
+                            width: Math.max(Math.ceil(rect.width), 400),
+                            height: Math.max(Math.ceil(rect.height), 300)
+                        };
+                    })();
+                """)
+        
+                guard let sizeDict = sizeResult as? [String: CGFloat],
+                      let width = sizeDict["width"],
+                      let height = sizeDict["height"] else {
+                    // 使用默认尺寸
+                    webView.frame = CGRect(x: 0, y: 0, width: 800, height: 400)
+                    if let image = await self.captureWebView(webView, contentRect: nil) {
+                        cacheDelegate?.saveFormulaImage(image, for: cacheKey)
+                        cacheDelegate?.setCachedSize(image.size, for: cacheKey)
+                        continuation.resume(returning: image)
+                        return
+                    }
+                    continuation.resume(returning: nil)
+                    return
+                }
+        
+                // 获取内容在 WebView 中的精确位置和尺寸
+                let positionResult = try? await webView.evaluateJavaScript("""
+                    (function() {
+                        const mermaidElement = document.querySelector('.mermaid');
+                        if (mermaidElement) {
+                            const rect = mermaidElement.getBoundingClientRect();
+                            return {
+                                x: Math.max(0, Math.floor(rect.left)),
+                                y: Math.max(0, Math.floor(rect.top)),
+                                width: Math.ceil(rect.width),
+                                height: Math.ceil(rect.height)
+                            };
+                        }
+                        return { x: 0, y: 0, width: \(width), height: \(height) };
+                    })();
+                """)
+                
+                var contentRect = CGRect(x: 0, y: 0, width: width, height: height)
+                
+                if let positionDict = positionResult as? [String: CGFloat],
+                   let x = positionDict["x"],
+                   let y = positionDict["y"],
+                   let w = positionDict["width"],
+                   let h = positionDict["height"] {
+                    contentRect = CGRect(x: x, y: y, width: w, height: h)
+                }
+                
+                // 使用精确的内容区域直接截图（不调整 WebView 尺寸）
+                if let image = await self.captureWebView(webView, contentRect: contentRect) {
+                    // 缓存图片（优先使用 delegate）
+                    cacheDelegate?.saveFormulaImage(image, for: cacheKey)
+                    cacheDelegate?.setCachedSize(image.size, for: cacheKey)
+                    continuation.resume(returning: image)
+                    return
+                }
+                
+                continuation.resume(returning: nil)
+            }
         }
-        
-        // 使用精确的内容区域直接截图（不调整 WebView 尺寸）
-        if let image = await captureWebView(webView, contentRect: contentRect) {
-            // 缓存图片（优先使用 delegate）
-            cacheDelegate?.saveFormulaImage(image, for: cacheKey)
-            cacheDelegate?.setCachedSize(image.size, for: cacheKey)
-            // 将 WebView 返回池中
-            returnWebViewToPool(webView)
-            
-            return image
-        }
-        
-        returnWebViewToPool(webView)
-        return nil
     }
     
     /// 轮询等待 Mermaid.js 加载完成（iOS 14 兼容性修复）
@@ -500,16 +501,56 @@ public struct MermaidHTMLRenderer {
         }
     }
     
-    /// 从池中获取或创建 WebView（必须在主线程调用）
-    private func getOrCreateWebView() -> WKWebView {
-        // 使用共享的 WebView 池
-        return webViewPool.getOrCreateWebView()
+    /// 获取或创建 WebView（必须在主线程调用）
+    @MainActor
+    private func getOrCreateWebView() async -> WKWebView {
+        // 确保在主线程
+        assert(Thread.isMainThread, "getOrCreateWebView must be called on main thread")
+        
+        if let existingWebView = webView {
+            // 清理之前的加载和状态
+            existingWebView.stopLoading()
+            existingWebView.navigationDelegate = nil
+            clearAssociatedObjects(for: existingWebView)
+            return existingWebView
+        }
+        
+        // 创建新的 WebView（必须在主线程）
+        let config = WKWebViewConfiguration()
+        
+        // 配置 WKPreferences
+        let preferences = WKPreferences()
+        if #available(iOS 14.0, *) {
+            // iOS 14+ 默认启用 JavaScript
+        } else {
+            preferences.javaScriptEnabled = true
+        }
+        config.preferences = preferences
+        
+        config.allowsInlineMediaPlayback = true
+        
+        // iOS 11+ 注册自定义 Scheme Handler（本地资源加载）
+        if #available(iOS 11.0, *) {
+            let schemeHandler = LocalResourceSchemeHandler()
+            config.setURLSchemeHandler(schemeHandler, forURLScheme: LocalResourceManager.customScheme)
+        }
+        
+        let newWebView = WKWebView(frame: .zero, configuration: config)
+        newWebView.isOpaque = false
+        newWebView.backgroundColor = .clear
+        newWebView.scrollView.backgroundColor = .clear
+        newWebView.scrollView.isScrollEnabled = false
+        
+        webView = newWebView
+        print("MermaidHTMLRenderer: Created new WebView")
+        
+        return newWebView
     }
     
-    /// 将 WebView 返回池中（必须在主线程调用）
-    private func returnWebViewToPool(_ webView: WKWebView) {
-        // 使用共享的 WebView 池
-        webViewPool.returnWebView(webView)
+    /// 清除 WebView 的关联对象
+    private func clearAssociatedObjects(for webView: WKWebView) {
+        // 关联对象使用静态变量地址作为键，不同文件的 AssociatedKeys 地址不同，不会冲突
+        // 每个渲染器在获取 WebView 后会重新设置自己的关联对象，所以不需要手动清除
     }
     
 

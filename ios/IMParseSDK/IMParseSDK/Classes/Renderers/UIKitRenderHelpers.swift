@@ -16,6 +16,21 @@ internal struct AssociatedKeys {
     static var tapHandler: UInt8 = 0
 }
 
+// MARK: - 自定义 AttributedString 属性键
+
+/// 行内数学公式待渲染标记
+/// 值类型: InlineMathRenderInfo
+internal extension NSAttributedString.Key {
+    static let inlineMathRenderInfo = NSAttributedString.Key("com.imparse.inlineMathRenderInfo")
+}
+
+/// 行内数学公式渲染信息
+internal struct InlineMathRenderInfo {
+    let mathNode: MathNode
+    let textColor: UIColor
+    let fontSize: CGFloat
+}
+
 // MARK: - Emoji 文本附件
 
 /// Emoji 文本附件，用于在 NSAttributedString 中嵌入 emoji 节点
@@ -288,38 +303,55 @@ internal class MentionStatusImageAttachment: NSTextAttachment {
 internal class MathTextAttachment: NSTextAttachment {
     let mathNode: MathNode
     private let font: UIFont // 保存字体，用于计算 attachmentBounds
-    
+    private var cacheImageBounds: CGRect = CGRectZero // 保存图片尺寸
+
     /// 初始化行内数学公式附件
     /// - Parameters:
     ///   - mathNode: 数学公式节点
-    ///   - image: 已加载的公式图片（必须提供）
+    ///   - image: 已加载的公式图片（必须提供，应该比需要的大）
     ///   - font: 当前字体（用于计算 bounds）
     init(mathNode: MathNode, image: UIImage, font: UIFont) {
         self.mathNode = mathNode
         self.font = font
         super.init(data: nil, ofType: nil)
         
-        // 设置图片
-        self.image = image
+        // 计算目标显示尺寸（基于字体行高，考虑屏幕 scale）
+        let screenScale = UIScreen.main.scale
+        let targetHeight = font.capHeight * 2.5 // 要放大1.5倍
+        let imageAspectRatio = image.size.width / image.size.height
+        let targetWidth = targetHeight * imageAspectRatio
         
-        // 计算垂直居中的 bounds
-        let imageSize = image.size
-        let yOffset = (font.capHeight - imageSize.height) / 2
-        self.bounds = CGRect(origin: CGPoint(x: 0, y: yOffset), size: imageSize)
+        // 缩放图片到目标尺寸（考虑屏幕 scale，确保清晰度）
+        let scaledImage: UIImage
+        if image.size.width > targetWidth || image.size.height > targetHeight {
+            // 图片比需要的大，需要缩放
+            // 使用 UIGraphicsImageRenderer 进行高质量缩放，保持屏幕 scale
+            let format = UIGraphicsImageRendererFormat.default()
+            format.scale = screenScale // 使用屏幕 scale，确保在高分辨率屏幕上清晰
+            let renderer = UIGraphicsImageRenderer(size: CGSize(width: targetWidth, height: targetHeight), format: format)
+            scaledImage = renderer.image { _ in
+                image.draw(in: CGRect(origin: .zero, size: CGSize(width: targetWidth, height: targetHeight)))
+            }
+        } else {
+            // 图片已经足够小，直接使用
+            scaledImage = image
+        }
+        
+        // 设置缩放后的图片
+        self.image = scaledImage
+        // 计算垂直居中的 bounds（使用缩放后的尺寸）
+        let displaySize = scaledImage.size
+        let yOffset = (font.capHeight - displaySize.height) / 2
+        self.cacheImageBounds = CGRect(origin: CGPoint(x: 0, y: yOffset), size: displaySize)
     }
     
     /// 动态计算 attachment 的 bounds，确保与文本垂直居中
+    /// 考虑屏幕 scale，确保在高分辨率屏幕上显示清晰
     override func attachmentBounds(for textContainer: NSTextContainer?, proposedLineFragment lineFrag: CGRect, glyphPosition position: CGPoint, characterIndex charIndex: Int) -> CGRect {
-        // 获取图片的实际尺寸
-        guard let imageSize = self.image?.size else {
-            return bounds
-        }
-        
-        // 计算垂直居中的偏移量
-        let yOffset = (font.capHeight - imageSize.height) / 2
-        
-        // 返回调整后的 bounds
-        return CGRect(origin: CGPoint(x: 0, y: yOffset), size: imageSize)
+        // 获取图片的实际尺寸（逻辑尺寸，points）
+        // 图片已经在初始化时缩放到正确尺寸，直接使用即可
+        return self.cacheImageBounds
+
     }
     
     required init?(coder: NSCoder) {
