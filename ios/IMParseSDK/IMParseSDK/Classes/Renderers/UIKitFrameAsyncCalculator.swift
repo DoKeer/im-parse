@@ -687,7 +687,6 @@ public class UIKitFrameAsyncCalculator {
     
     private static func calculateTableLayout(_ node: TableNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
         let toolbarHeight = context.theme.toolbarHeight
-        let toolbarPadding = context.theme.toolbarPadding
         // headerBarHeight 高度就用context.theme.toolbarHeight 不用加上下padding
         let headerBarHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight : 0
         let cellPadding = context.theme.tableCellPadding

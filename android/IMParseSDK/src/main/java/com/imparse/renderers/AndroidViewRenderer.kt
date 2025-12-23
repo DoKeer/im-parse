@@ -1108,7 +1108,7 @@ class AndroidViewRenderer {
         // 添加点击手势（仅在预览模式下）
         if (context.onMermaidTap != null) {
             previewView.setOnClickListener {
-                context.onMermaidTap?.invoke(node)
+                context.onMermaidTap.invoke(node)
             }
         }
         
