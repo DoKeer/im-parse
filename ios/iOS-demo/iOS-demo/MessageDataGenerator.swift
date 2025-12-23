@@ -75,8 +75,21 @@ class MessageDataGenerator {
     private static func generateMarkdownTemplates() -> [String] {
         return [
             #"""
-            多层嵌套对数 $\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$
+            
+            $$\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$$
 
+            **a $b$ c**
+
+            多层嵌套对数 $\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$
+            伽玛函数：$\Gamma(z) = \int_0^\infty t^{z-1}e^{-t} dt = (z-1)!$ （$z \in \mathbb{C}, \Re(z)>0$）
+
+
+            $$\Gamma(z) = \int_0^\infty t^{z-1}e^{-t} dt = (z-1)!$$ （$z \in \mathbb{C}, \Re(z)>0$）
+
+            曲率张量：$R^\rho{}{\sigma\mu\nu} = \partial\mu\Gamma^\rho{}{\nu\sigma} - \partial\nu\Gamma^\rho{}{\mu\sigma} + \Gamma^\rho{}{\mu\lambda}\Gamma^\lambda{}{\nu\sigma} - \Gamma^\rho{}{\nu\lambda}\Gamma^\lambda{}_{\mu\sigma}$
+
+            $$R^\rho{}{\sigma\mu\nu} = \partial\mu\Gamma^\rho{}{\nu\sigma} - \partial\nu\Gamma^\rho{}{\mu\sigma} + \Gamma^\rho{}{\mu\lambda}\Gamma^\lambda{}{\nu\sigma} - \Gamma^\rho{}{\nu\lambda}\Gamma^\lambda{}_{\mu\sigma}$$
+            
             #### 📊 GitLab日报看板(deepbank/feedback)  
             **报告时间：** 2025年12月22日 10:09:09 | **总任务数：** <font color=red>102</font> | [GitLab看板链接](https://gitlab.daikuan.qihoo.net/deepbank/feedback/-/boards/107)  
               
