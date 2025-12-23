@@ -4,6 +4,28 @@ use crate::ParseError;
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd, HeadingLevel};
 
 /// Markdown 解析器
+/// 
+/// # 架构
+/// 
+/// 解析器采用两阶段设计：
+/// 1. **语法解析**：pulldown-cmark Events → AST
+/// 2. **语义处理**：识别和处理特殊节点（Math、Mermaid等）
+/// 
+/// ## 关键组件
+/// 
+/// - `parse()`: 主入口，协调整个解析流程
+/// - `collect_inline_content()`: 收集行内内容（段落、标题、表格单元格）
+/// - `collect_block_content()`: 收集块级内容（引用块）
+/// - `collect_list_item_content()`: 收集列表项内容
+/// - `flush_text_buffer()`: 统一处理文本累积和公式识别
+/// - `parse_code_block()`: 统一的代码块解析（包括Mermaid）
+/// 
+/// ## 特殊节点处理
+/// 
+/// - **Math节点**：支持行内公式 `$...$` 和块级公式 `$$...$$`
+/// - **Mermaid节点**：识别 ```mermaid 代码块
+/// 
+/// 公式识别采用文本累积策略，解决pulldown-cmark对LaTeX反斜杠的拆分问题。
 pub struct MarkdownParser {
     options: Options,
 }
@@ -27,15 +49,68 @@ impl MarkdownParser {
 
         let mut events = parser.into_iter().peekable();
         let mut current_inline_styles: Vec<InlineStyle> = Vec::new();
-        let mut in_paragraph = false;
 
         while let Some(event) = events.next() {
             match event {
                 Event::Start(tag) => {
                     match tag {
                         Tag::Paragraph => {
-                            builder.start_paragraph();
-                            in_paragraph = true;
+                            // 收集段落内容，使用文本累积策略
+                            let mut children = Vec::new();
+                            self.collect_inline_content(&mut events, &mut children, &mut current_inline_styles);
+                            
+                            // 处理收集到的子节点
+                            // 检查是否包含块级公式，如果是，需要将块级公式提升到段落外
+                            if !children.is_empty() {
+                                let has_block_math = children.iter().any(|node| {
+                                    if let ASTNode::Math(math) = node {
+                                        math.display
+                                    } else {
+                                        false
+                                    }
+                                });
+                                
+                                if has_block_math {
+                                    // 如果段落中有块级公式，需要拆分
+                                    let mut pending_para_children = Vec::new();
+                                    
+                                    for child in children {
+                                        if let ASTNode::Math(math) = &child {
+                                            if math.display {
+                                                // 遇到块级公式，先将之前累积的内容作为段落添加
+                                                if !pending_para_children.is_empty() {
+                                                    builder.start_paragraph();
+                                                    if let Some(para) = &mut builder.current_paragraph {
+                                                        para.children.extend(pending_para_children.drain(..));
+                                                    }
+                                                    builder.end_paragraph();
+                                                }
+                                                // 添加块级公式节点
+                                                builder.add_math(math.content.clone(), true);
+                                                continue;
+                                            }
+                                        }
+                                        // 其他节点累积到待处理列表
+                                        pending_para_children.push(child);
+                                    }
+                                    
+                                    // 处理剩余的段落内容
+                                    if !pending_para_children.is_empty() {
+                                        builder.start_paragraph();
+                                        if let Some(para) = &mut builder.current_paragraph {
+                                            para.children.extend(pending_para_children);
+                                        }
+                                        builder.end_paragraph();
+                                    }
+                                } else {
+                                    // 没有块级公式，正常创建段落
+                                    builder.start_paragraph();
+                                    if let Some(para) = &mut builder.current_paragraph {
+                                        para.children.extend(children);
+                                    }
+                                    builder.end_paragraph();
+                                }
+                            }
                         }
                         Tag::Heading { level, .. } => {
                             // 收集标题内容
@@ -50,28 +125,11 @@ impl MarkdownParser {
                             builder.add_blockquote(children);
                         }
                         Tag::CodeBlock(kind) => {
-                            let language = match kind {
-                                CodeBlockKind::Fenced(lang) => {
-                                    if lang.is_empty() {
-                                        None
-                                    } else {
-                                        Some(lang.to_string())
-                                    }
-                                }
-                                CodeBlockKind::Indented => None,
-                            };
-                            // 收集代码块内容
-                            let content = self.collect_code_block_content(&mut events);
-                            
-                            // 检查是否是 Mermaid
-                            if let Some(ref lang) = language {
-                                if lang.to_lowercase() == "mermaid" {
-                                    builder.add_mermaid(content);
-                                } else {
-                                    builder.add_code_block(language, content);
-                                }
-                            } else {
-                                builder.add_code_block(language, content);
+                            let node = self.parse_code_block(&mut events, kind);
+                            match node {
+                                ASTNode::CodeBlock(cb) => builder.add_code_block(cb.language, cb.content),
+                                ASTNode::Mermaid(m) => builder.add_mermaid(m.content),
+                                _ => unreachable!(),
                             }
                         }
                         Tag::List(Some(1)) => {
@@ -144,45 +202,6 @@ impl MarkdownParser {
                 }
                 Event::End(tag) => {
                     match tag {
-                        TagEnd::Paragraph => {
-                            // 检查当前段落是否只包含块级公式
-                            // 需要收集所有文本节点的内容，因为 pulldown-cmark 可能会将公式拆分成多个节点
-                            // 注意：pulldown-cmark 可能会将 LaTeX 中的某些内容误解析为 Markdown 格式（如斜体）
-                            // 所以我们需要更宽松的检查：只要文本内容看起来像块级公式，就尝试提取
-                            let should_convert_to_block_math = if let Some(para) = &builder.current_paragraph {
-                                // 收集所有文本内容（包括嵌套在样式节点中的文本）
-                                let mut full_text = String::new();
-                                self.collect_all_text_nodes(&para.children, &mut full_text);
-                                
-                                // 检查是否是块级公式
-                                let trimmed = full_text.trim();
-                                if trimmed.starts_with("$$") && trimmed.ends_with("$$") && trimmed.len() > 4 {
-                                    let inner = trimmed[2..trimmed.len()-2].trim();
-                                    // 确保内部没有嵌套的 $$
-                                    !inner.contains("$$")
-                                } else {
-                                    false
-                                }
-                            } else {
-                                false
-                            };
-                            
-                            if should_convert_to_block_math {
-                                // 获取块级公式内容
-                                if let Some(para) = builder.current_paragraph.take() {
-                                    // 收集所有文本内容（包括嵌套在样式节点中的文本）
-                                    let mut full_text = String::new();
-                                    self.collect_all_text_nodes(&para.children, &mut full_text);
-                                    let trimmed = full_text.trim();
-                                    let inner = trimmed[2..trimmed.len()-2].trim();
-                                    builder.add_math(inner.to_string(), true);
-                                }
-                                in_paragraph = false;
-                            } else {
-                                builder.end_paragraph();
-                                in_paragraph = false;
-                            }
-                        }
                         TagEnd::Heading(_) => {
                             // 已经在 Start 时处理
                         }
@@ -218,14 +237,6 @@ impl MarkdownParser {
                         }
                         _ => {}
                     }
-                }
-                Event::Text(text) => {
-                    let content = text.to_string();
-                    // 如果在段落内，只检查行内公式；如果不在段落内，检查块级公式
-                    // 但实际上，Event::Text 通常只在段落内出现，所以这里应该检查行内公式
-                    // 块级公式 $$...$$ 如果独立成行，会被当作段落处理，所以也需要检查
-                    let is_block_level = !in_paragraph;
-                    self.process_text_with_math(&mut builder, content, &current_inline_styles, is_block_level);
                 }
                 Event::Code(text) => {
                     builder.add_code(text.to_string());
@@ -271,6 +282,8 @@ impl MarkdownParser {
         children: &mut Vec<ASTNode>,
         current_styles: &mut Vec<InlineStyle>,
     ) {
+        let mut text_buffer: Vec<TextFragment> = Vec::new();
+        
         while let Some(event) = events.peek() {
             match event {
                 // 终止条件：遇到这些结束标记时退出
@@ -283,6 +296,8 @@ impl MarkdownParser {
                 | Event::End(TagEnd::TableHead)
                 | Event::End(TagEnd::TableRow)
                 | Event::End(TagEnd::Table) => {
+                    // 在退出前处理累积的文本
+                    self.flush_text_buffer(&mut text_buffer, children);
                     break;
                 }
                 // 处理块级标签的开始（这些不应该在行内内容中出现）
@@ -292,6 +307,7 @@ impl MarkdownParser {
                 | Event::Start(Tag::List(_))
                 | Event::Start(Tag::CodeBlock(_))
                 | Event::Start(Tag::Table(_)) => {
+                    self.flush_text_buffer(&mut text_buffer, children);
                     break;
                 }
                 _ => {
@@ -299,23 +315,37 @@ impl MarkdownParser {
                         match event {
                             Event::Text(text) => {
                                 let content = text.to_string();
-                                // 处理行内数学公式
-                                self.process_inline_text_with_math(children, content, current_styles);
+                                // 累积文本和当前样式
+                                text_buffer.push(TextFragment {
+                                    content,
+                                    styles: current_styles.clone(),
+                                });
                             }
                             Event::Code(code) => {
+                                // 先处理累积的文本
+                                self.flush_text_buffer(&mut text_buffer, children);
+                                // 添加 Code 节点
                                 children.push(ASTNode::Code(CodeNode {
                                     content: code.to_string(),
                                 }));
                             }
                             Event::SoftBreak => {
-                                // 软换行：添加换行符文本节点
-                                self.process_inline_text_with_math(children, "\n".to_string(), current_styles);
+                                // 软换行：累积到文本缓冲区
+                                text_buffer.push(TextFragment {
+                                    content: "\n".to_string(),
+                                    styles: current_styles.clone(),
+                                });
                             }
                             Event::HardBreak => {
-                                // 硬换行：添加换行符文本节点
-                                self.process_inline_text_with_math(children, "\n".to_string(), current_styles);
+                                // 硬换行：累积到文本缓冲区
+                                text_buffer.push(TextFragment {
+                                    content: "\n".to_string(),
+                                    styles: current_styles.clone(),
+                                });
                             }
                             Event::Html(html) => {
+                                // 先处理累积的文本
+                                self.flush_text_buffer(&mut text_buffer, children);
                                 // 在行内上下文中添加 HTML 节点
                                 children.push(ASTNode::Html(HtmlNode {
                                     content: html.to_string(),
@@ -359,6 +389,175 @@ impl MarkdownParser {
                 }
             }
         }
+        
+        // 处理剩余的文本缓冲区
+        self.flush_text_buffer(&mut text_buffer, children);
+    }
+
+    /// 处理累积的文本缓冲区，统一解析块级和行内公式
+    /// 
+    /// 这是公式识别的核心函数。采用两阶段策略：
+    /// 1. 先识别块级公式 `$$...$$`
+    /// 2. 再识别行内公式 `$...$`
+    /// 
+    /// 通过文本累积解决pulldown-cmark将LaTeX反斜杠拆分成多个Event的问题。
+    fn flush_text_buffer(
+        &self,
+        buffer: &mut Vec<TextFragment>,
+        children: &mut Vec<ASTNode>,
+    ) {
+        if buffer.is_empty() {
+            return;
+        }
+        
+        // 1. 合并所有文本内容
+        let full_text = buffer.iter()
+            .map(|f| f.content.as_str())
+            .collect::<String>();
+        
+        if full_text.is_empty() {
+            buffer.clear();
+            return;
+        }
+        
+        // 2. 先处理块级公式 $$...$$
+        let block_parts = self.split_block_math(&full_text);
+        
+        if let Some(block_parts) = block_parts {
+            // 找到了块级公式
+            let mut current_pos = 0;
+            
+            for part in block_parts {
+                match part {
+                    TextPart::Math(content) => {
+                        // 块级数学公式节点
+                        let content_len = content.chars().count();
+                        children.push(ASTNode::Math(MathNode { content, display: true }));
+                        // 更新当前位置（包括 $$ 符号）
+                        current_pos += content_len + 4; // +4 for the $$ signs
+                    }
+                    TextPart::Text(text) => {
+                        if !text.is_empty() {
+                            // 对这段文本继续处理行内公式
+                            let inline_parts = self.split_inline_math(&text);
+                            let text_start = current_pos;
+                            
+                            for inline_part in inline_parts {
+                                match inline_part {
+                                    TextPart::Math(inline_content) => {
+                                        let content_len = inline_content.chars().count();
+                                        children.push(ASTNode::Math(MathNode { content: inline_content, display: false }));
+                                        current_pos += content_len + 2;
+                                    }
+                                    TextPart::Text(inline_text) => {
+                                        if !inline_text.is_empty() {
+                                            self.process_text_fragment_with_styles(
+                                                &inline_text,
+                                                buffer,
+                                                text_start,
+                                                current_pos,
+                                                children
+                                            );
+                                            current_pos += inline_text.chars().count();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // 没有块级公式，只处理行内公式
+            let parts = self.split_inline_math(&full_text);
+            let mut current_pos = 0;
+            
+            for part in parts {
+                match part {
+                    TextPart::Math(content) => {
+                        // 行内数学公式节点
+                        let content_len = content.chars().count();
+                        children.push(ASTNode::Math(MathNode { content, display: false }));
+                        // 更新当前位置（包括 $ 符号）
+                        current_pos += content_len + 2; // +2 for the $ signs
+                    }
+                    TextPart::Text(text) => {
+                        if !text.is_empty() {
+                            self.process_text_fragment_with_styles(
+                                &text,
+                                buffer,
+                                0,
+                                current_pos,
+                                children
+                            );
+                            current_pos += text.chars().count();
+                        }
+                    }
+                }
+            }
+        }
+        
+        buffer.clear();
+    }
+    
+    /// 处理文本片段，应用样式
+    fn process_text_fragment_with_styles(
+        &self,
+        text: &str,
+        buffer: &[TextFragment],
+        buffer_start_pos: usize,
+        text_start: usize,
+        children: &mut Vec<ASTNode>,
+    ) {
+        let text_end = text_start + text.chars().count();
+        
+        // 找出覆盖这段文本的样式片段
+        let mut text_fragments_in_range = Vec::new();
+        let mut accumulated_offset = buffer_start_pos;
+        
+        for fragment in buffer.iter() {
+            let fragment_start = accumulated_offset;
+            let fragment_end = fragment_start + fragment.content.chars().count();
+            
+            // 检查这个片段是否与当前文本范围有交集
+            if fragment_end > text_start && fragment_start < text_end {
+                let overlap_start = fragment_start.max(text_start);
+                let overlap_end = fragment_end.min(text_end);
+                
+                if overlap_start < overlap_end {
+                    // 计算在原始文本中的位置
+                    let local_start = overlap_start - text_start;
+                    let local_end = overlap_end - text_start;
+                    
+                    // 提取对应的文本片段
+                    let chars: Vec<char> = text.chars().collect();
+                    if local_end <= chars.len() {
+                        let fragment_text: String = chars[local_start..local_end].iter().collect();
+                        text_fragments_in_range.push((fragment_text, fragment.styles.clone()));
+                    }
+                }
+            }
+            
+            accumulated_offset = fragment_end;
+            
+            if accumulated_offset >= text_end {
+                break;
+            }
+        }
+        
+        // 如果没有找到匹配的样式片段，使用无样式的文本
+        if text_fragments_in_range.is_empty() {
+            let styled_nodes = self.build_styled_nodes(text.to_string(), &[]);
+            children.extend(styled_nodes);
+        } else {
+            // 构建带样式的节点
+            for (fragment_text, styles) in text_fragments_in_range {
+                if !fragment_text.is_empty() {
+                    let styled_nodes = self.build_styled_nodes(fragment_text, &styles);
+                    children.extend(styled_nodes);
+                }
+            }
+        }
     }
 
     fn collect_block_content<'a>(
@@ -379,24 +578,9 @@ impl MarkdownParser {
                     let mut para_children = Vec::new();
                     self.collect_inline_content(events, &mut para_children, &mut current_styles);
                     
-                    // 检查是否是块级公式
-                    // 注意：pulldown-cmark 可能会将 LaTeX 中的某些内容误解析为 Markdown 格式
-                    // 所以我们需要收集所有文本内容（包括嵌套在样式节点中的文本）
-                    let should_convert_to_block_math = {
-                        let mut full_text = String::new();
-                        self.collect_all_text_nodes(&para_children, &mut full_text);
-                        
-                        let trimmed = full_text.trim();
-                        trimmed.starts_with("$$") && trimmed.ends_with("$$") && trimmed.len() > 4
-                            && !trimmed[2..trimmed.len()-2].trim().contains("$$")
-                    };
-                    
-                    if should_convert_to_block_math {
-                        let mut full_text = String::new();
-                        self.collect_all_text_nodes(&para_children, &mut full_text);
-                        let trimmed = full_text.trim();
-                        let inner = trimmed[2..trimmed.len()-2].trim();
-                        children.push(ASTNode::Math(MathNode { content: inner.to_string(), display: true }));
+                    if self.is_block_math_paragraph(&para_children) {
+                        let content = self.extract_block_math_content(&para_children);
+                        children.push(ASTNode::Math(MathNode { content, display: true }));
                     } else if !para_children.is_empty() {
                         children.push(ASTNode::Paragraph(ParagraphNode { children: para_children }));
                     }
@@ -484,28 +668,10 @@ impl MarkdownParser {
                     }));
                 }
                 Event::Start(Tag::CodeBlock(kind)) => {
-                    let language = match kind {
-                        CodeBlockKind::Fenced(lang) => {
-                            if lang.is_empty() {
-                                None
-                            } else {
-                                Some(lang.to_string())
-                            }
-                        }
-                        CodeBlockKind::Indented => None,
-                    };
+                    let kind_clone = kind.clone();
                     events.next();
-                    let content = self.collect_code_block_content(events);
-                    
-                    if let Some(ref lang) = language {
-                        if lang.to_lowercase() == "mermaid" {
-                            children.push(ASTNode::Mermaid(MermaidNode { content }));
-                        } else {
-                            children.push(ASTNode::CodeBlock(CodeBlockNode { language, content }));
-                        }
-                    } else {
-                        children.push(ASTNode::CodeBlock(CodeBlockNode { language, content }));
-                    }
+                    let node = self.parse_code_block(events, kind_clone);
+                    children.push(node);
                 }
                 Event::Start(Tag::Heading { level, .. }) => {
                     let heading_level = self.heading_level_to_u8(*level);
@@ -610,39 +776,12 @@ impl MarkdownParser {
                 }
                 Event::Start(Tag::Paragraph) => {
                     events.next();
-                    // 创建一个段落节点来收集内容
                     let mut para_children = Vec::new();
-                    let mut para_styles = Vec::new();
-                    // 收集段落内容直到段落结束
-                    while let Some(event) = events.peek() {
-                        match event {
-                            Event::End(TagEnd::Paragraph) => {
-                                events.next();
-                                break;
-                            }
-                            _ => {
-                                self.collect_inline_content(events, &mut para_children, &mut para_styles);
-                            }
-                        }
-                    }
-                    // 检查是否是块级公式
-                    // 注意：pulldown-cmark 可能会将 LaTeX 中的某些内容误解析为 Markdown 格式
-                    // 所以我们需要收集所有文本内容（包括嵌套在样式节点中的文本）
-                    let should_convert_to_block_math = {
-                        let mut full_text = String::new();
-                        self.collect_all_text_nodes(&para_children, &mut full_text);
-                        
-                        let trimmed = full_text.trim();
-                        trimmed.starts_with("$$") && trimmed.ends_with("$$") && trimmed.len() > 4
-                            && !trimmed[2..trimmed.len()-2].trim().contains("$$")
-                    };
+                    self.collect_inline_content(events, &mut para_children, current_styles);
                     
-                    if should_convert_to_block_math {
-                        let mut full_text = String::new();
-                        self.collect_all_text_nodes(&para_children, &mut full_text);
-                        let trimmed = full_text.trim();
-                        let inner = trimmed[2..trimmed.len()-2].trim();
-                        children.push(ASTNode::Math(MathNode { content: inner.to_string(), display: true }));
+                    if self.is_block_math_paragraph(&para_children) {
+                        let content = self.extract_block_math_content(&para_children);
+                        children.push(ASTNode::Math(MathNode { content, display: true }));
                     } else if !para_children.is_empty() {
                         children.push(ASTNode::Paragraph(ParagraphNode { children: para_children }));
                     }
@@ -734,29 +873,10 @@ impl MarkdownParser {
                     }));
                 }
                 Event::Start(Tag::CodeBlock(kind)) => {
-                    // 先保存 kind 的值，因为 events.next() 会消费事件
-                    let language = match kind {
-                        CodeBlockKind::Fenced(lang) => {
-                            if lang.is_empty() {
-                                None
-                            } else {
-                                Some(lang.to_string())
-                            }
-                        }
-                        CodeBlockKind::Indented => None,
-                    };
+                    let kind_clone = kind.clone();
                     events.next();
-                    let content = self.collect_code_block_content(events);
-                    
-                    if let Some(ref lang) = language {
-                        if lang.to_lowercase() == "mermaid" {
-                            children.push(ASTNode::Mermaid(MermaidNode { content }));
-                        } else {
-                            children.push(ASTNode::CodeBlock(CodeBlockNode { language, content }));
-                        }
-                    } else {
-                        children.push(ASTNode::CodeBlock(CodeBlockNode { language, content }));
-                    }
+                    let node = self.parse_code_block(events, kind_clone);
+                    children.push(node);
                 }
                 Event::Start(Tag::BlockQuote(_)) => {
                     events.next();
@@ -896,84 +1016,36 @@ impl MarkdownParser {
         
         content.trim_end().to_string()
     }
-
-    /// 处理文本，检测数学公式（块级和行内）
-    fn process_text_with_math(
+    
+    /// 解析代码块（包括 Mermaid）
+    fn parse_code_block<'a>(
         &self,
-        builder: &mut ASTBuilder,
-        content: String,
-        styles: &[InlineStyle],
-        is_block_level: bool,
-    ) {
-        // 首先检查块级数学公式 $$...$$
-        // 如果不在段落内，或者整个内容只有块级公式，则检查块级公式
-        if is_block_level {
-            if let Some(parts) = self.split_block_math(&content) {
-                for part in parts {
-                    match part {
-                        TextPart::Math(content) => {
-                            builder.add_math(content, true);
-                        }
-                        TextPart::Text(text) => {
-                            if !text.is_empty() {
-                                self.add_text_with_styles(builder, text, styles);
-                            }
-                        }
-                    }
-                }
-                return;
-            }
-        }
-        // 注意：段落内如果整个内容只有块级公式的情况，在段落结束时处理
-
-        // 处理行内数学公式 $...$
-        self.process_inline_text_with_math_in_builder(builder, content, styles);
-    }
-
-    /// 处理行内文本，检测数学公式
-    fn process_inline_text_with_math(
-        &self,
-        children: &mut Vec<ASTNode>,
-        content: String,
-        styles: &[InlineStyle],
-    ) {
-        let parts = self.split_inline_math(&content);
-        for part in parts {
-            match part {
-                TextPart::Math(content) => {
-                    children.push(ASTNode::Math(MathNode { content, display: false }));
-                }
-                TextPart::Text(text) => {
-                    if !text.is_empty() {
-                        let styled_nodes = self.build_styled_nodes(text, styles);
-                        children.extend(styled_nodes);
-                    }
+        events: &mut std::iter::Peekable<impl Iterator<Item = Event<'a>>>,
+        kind: CodeBlockKind,
+    ) -> ASTNode {
+        let language = match kind {
+            CodeBlockKind::Fenced(lang) => {
+                if lang.is_empty() {
+                    None
+                } else {
+                    Some(lang.to_string())
                 }
             }
-        }
-    }
-
-    /// 处理行内文本，检测数学公式（用于 builder）
-    fn process_inline_text_with_math_in_builder(
-        &self,
-        builder: &mut ASTBuilder,
-        content: String,
-        styles: &[InlineStyle],
-    ) {
-        let parts = self.split_inline_math(&content);
-        for part in parts {
-            match part {
-                TextPart::Math(content) => {
-                    builder.add_inline_math(content);
-                }
-                TextPart::Text(text) => {
-                    if !text.is_empty() {
-                        self.add_text_with_styles(builder, text, styles);
-                    }
-                }
+            CodeBlockKind::Indented => None,
+        };
+        
+        let content = self.collect_code_block_content(events);
+        
+        // 检查是否是 Mermaid
+        if let Some(ref lang) = language {
+            if lang.to_lowercase() == "mermaid" {
+                return ASTNode::Mermaid(MermaidNode { content });
             }
         }
+        
+        ASTNode::CodeBlock(CodeBlockNode { language, content })
     }
+
 
     /// 分割块级数学公式 $$...$$
     fn split_block_math(&self, text: &str) -> Option<Vec<TextPart>> {
@@ -1126,36 +1198,6 @@ impl MarkdownParser {
         parts
     }
 
-    fn add_text_with_styles(
-        &self,
-        builder: &mut ASTBuilder,
-        content: String,
-        styles: &[InlineStyle],
-    ) {
-        if styles.is_empty() {
-            builder.add_text(content);
-            return;
-        }
-
-        // 递归构建样式节点
-        let node = self.build_styled_node(content.clone(), styles);
-        if let Some(para) = &mut builder.current_paragraph {
-            if let Some(node) = node {
-                para.children.push(node);
-            } else {
-                para.children.push(ASTNode::Text(TextNode { content }));
-            }
-        } else {
-            builder.start_paragraph();
-            if let Some(para) = &mut builder.current_paragraph {
-                if let Some(node) = node {
-                    para.children.push(node);
-                } else {
-                    para.children.push(ASTNode::Text(TextNode { content }));
-                }
-            }
-        }
-    }
 
     fn build_styled_nodes(&self, content: String, styles: &[InlineStyle]) -> Vec<ASTNode> {
         if styles.is_empty() {
@@ -1224,6 +1266,24 @@ impl MarkdownParser {
             }
         }
     }
+    
+    /// 检查段落子节点是否构成块级公式
+    fn is_block_math_paragraph(&self, children: &[ASTNode]) -> bool {
+        let mut full_text = String::new();
+        self.collect_all_text_nodes(children, &mut full_text);
+        
+        let trimmed = full_text.trim();
+        trimmed.starts_with("$$") && trimmed.ends_with("$$") && trimmed.len() > 4
+            && !trimmed[2..trimmed.len()-2].trim().contains("$$")
+    }
+    
+    /// 从段落子节点中提取块级公式内容
+    fn extract_block_math_content(&self, children: &[ASTNode]) -> String {
+        let mut full_text = String::new();
+        self.collect_all_text_nodes(children, &mut full_text);
+        let trimmed = full_text.trim();
+        trimmed[2..trimmed.len()-2].trim().to_string()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1232,6 +1292,13 @@ enum InlineStyle {
     Em,
     Strike,
     Link(String),
+}
+
+/// 文本片段（用于累积文本和样式）
+#[derive(Debug, Clone)]
+struct TextFragment {
+    content: String,
+    styles: Vec<InlineStyle>,
 }
 
 /// 文本部分（用于数学公式解析）
