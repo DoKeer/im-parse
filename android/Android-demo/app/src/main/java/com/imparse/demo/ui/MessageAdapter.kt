@@ -27,6 +27,14 @@ class MessageAdapter(
     com.imparse.renderers.AndroidRenderContext.FormulaSizeCacheDelegate,
     com.imparse.renderers.AndroidRenderContext.ToolbarActionDelegate {
     
+    /**
+     * 更新消息列表
+     */
+    fun submitList(newMessages: List<Message>) {
+        messages = newMessages
+        notifyDataSetChanged()
+    }
+    
     // 共享的渲染上下文，所有 cell 共用
     private val sharedRenderContext: com.imparse.renderers.AndroidRenderContext by lazy {
         com.imparse.renderers.AndroidRenderContext(

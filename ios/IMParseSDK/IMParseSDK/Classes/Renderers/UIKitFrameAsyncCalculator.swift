@@ -1110,18 +1110,14 @@ public class UIKitFrameAsyncCalculator {
         var displayHeight: CGFloat
         
         if imageSize.width <= availableWidth {
-            // 按照原始大小展示
-            displayWidth = imageSize.width/2
-            displayHeight = imageSize.height/2
+            // 图片比容器窄，按照原始大小展示，不拉伸
+            displayWidth = imageSize.width
+            displayHeight = imageSize.height
         } else {
-            // 按照比例缩放
+            // 图片宽度比容器宽，保持长宽比压缩图片
             let imageAspectRatio = imageSize.width / imageSize.height
-            displayWidth = availableWidth*0.7
+            displayWidth = availableWidth
             displayHeight = displayWidth / imageAspectRatio
-            if displayHeight > imageSize.height/2 {
-                displayWidth = imageSize.width/2
-                displayHeight = imageSize.height/2
-            }
         }
         
         // 居中显示

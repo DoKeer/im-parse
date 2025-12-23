@@ -500,7 +500,7 @@ class AndroidMathHTMLRenderer private constructor() {
                     
                     // 使用 html2canvas 截图，使用实际内容尺寸
                     // 使用更高的 scale 以支持高密度屏幕（视网膜屏幕）
-                    const renderScale = Math.max(window.devicePixelRatio || 2, 2) * 1.5;
+                    const renderScale = Math.min(window.devicePixelRatio , 3);
                     html2canvas(mathElement, {
                         backgroundColor: null,
                         scale: renderScale,

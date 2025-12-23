@@ -434,27 +434,7 @@ public class MathHTMLRenderer {
         config.snapshotWidth = NSNumber(value: Double(targetRect.width * scale))
         do {
             // 验证生成的图片尺寸
-            var image = try await webView.takeSnapshot(with: config)
-            
-            // 确保图片的 scale 属性正确设置为屏幕的 scale
-            // 如果返回的图片 scale 不正确，需要重新创建 UIImage 以确保 scale 正确
-            if image.scale != scale {
-                // 重新创建 UIImage 以确保 scale 正确
-                if let cgImage = image.cgImage {
-                    image = UIImage(cgImage: cgImage, scale: scale, orientation: image.imageOrientation)
-                }
-            }
-            
-            let expectedWidth = targetRect.width * scale
-            let expectedHeight = targetRect.height * scale
-            let actualWidth = image.size.width * image.scale
-            let actualHeight = image.size.height * image.scale
-            
-            // 如果尺寸差异较大（超过 5%），打印警告日志
-            if abs(actualWidth - expectedWidth) > expectedWidth * 0.05 ||
-               abs(actualHeight - expectedHeight) > expectedHeight * 0.05 {
-                print("MathHTMLRenderer: Unexpected image size - expected: \(Int(expectedWidth))×\(Int(expectedHeight)), actual: \(Int(actualWidth))×\(Int(actualHeight))")
-            }
+            let image = try await webView.takeSnapshot(with: config)
             
             // 返回成功获取的图片
             return image

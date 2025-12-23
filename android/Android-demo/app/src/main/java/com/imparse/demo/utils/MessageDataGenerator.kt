@@ -76,6 +76,10 @@ object MessageDataGenerator {
         return listOf(
             """
             $$
+            \int_0^1 x^2 \, dx
+            $$
+            
+            $$
             \int_{0}^{\infty} e^{-x^{2}} \, dx \approx \frac{\sqrt{\pi}}{2}
             $$
             

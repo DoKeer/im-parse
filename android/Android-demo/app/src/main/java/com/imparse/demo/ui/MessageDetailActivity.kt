@@ -68,15 +68,20 @@ class MessageDetailActivity : AppCompatActivity() {
         Log.d("StyleConfigTest", "====================================")
     }
     
-    private fun setupRecyclerView() {
-        binding.recyclerView.layoutManager = LinearLayoutManager(this)
-        
-        // 计算内容宽度：屏幕宽度 - 左右边距（32dp * 2 = 64dp）
+    /**
+     * 计算内容宽度：屏幕宽度 - 左右边距（32dp * 2 = 64dp）
+     */
+    private fun calculateContentWidth(): Int {
         val screenWidth = resources.displayMetrics.widthPixels
         val marginDp = 64
         val marginPx = (marginDp * resources.displayMetrics.density).toInt()
-        val contentWidth = screenWidth - marginPx
+        return screenWidth - marginPx
+    }
+    
+    private fun setupRecyclerView() {
+        binding.recyclerView.layoutManager = LinearLayoutManager(this)
         
+        val contentWidth = calculateContentWidth()
         adapter = MessageAdapter(emptyList(), contentWidth, this)
         binding.recyclerView.adapter = adapter
     }
@@ -95,12 +100,8 @@ class MessageDetailActivity : AppCompatActivity() {
             // 回到主线程更新 UI
             withContext(Dispatchers.Main) {
                 messages = parsedMessages
-                val screenWidth = resources.displayMetrics.widthPixels
-                val marginDp = 64
-                val marginPx = (marginDp * resources.displayMetrics.density).toInt()
-                val contentWidth = screenWidth - marginPx
-                adapter = MessageAdapter(messages, contentWidth, this@MessageDetailActivity)
-                binding.recyclerView.adapter = adapter
+                // 只需要更新 adapter 的数据，不需要重新创建 adapter
+                adapter.submitList(messages)
             }
         }
     }

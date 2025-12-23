@@ -512,11 +512,11 @@ class AndroidMermaidHTMLRenderer private constructor() {
                         AndroidBridge.onCaptureError('Element has zero size');
                         return JSON.stringify({ error: 'Zero size' });
                     }
-                    
+                    const renderScale = Math.min(window.devicePixelRatio , 3);
                     // 使用 html2canvas 截图
                     html2canvas(mermaidElement, {
                         backgroundColor: null,
-                        scale: window.devicePixelRatio || 2,
+                        scale: renderScale,
                         useCORS: true,
                         logging: false,
                         width: rect.width,

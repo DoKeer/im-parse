@@ -222,16 +222,45 @@ object MathFormulaRenderer {
             // 缓存命中，直接显示图片
             val imageView = ImageView(context.context)
             imageView.setImageBitmap(cachedImage)
-            // 使用 FIT_CENTER 保持宽高比，并确保图片在容器中居中显示
-            imageView.scaleType = ImageView.ScaleType.FIT_CENTER
             imageView.adjustViewBounds = true
             
-            val params = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
+            // 根据图片宽度和容器宽度决定布局方式
+            // 需要在布局完成后才能获取容器宽度，所以使用监听器
+            containerView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                val containerWidth = containerView.width
+                if (containerWidth > 0) {
+                    val imageWidth = cachedImage.width
+                    val imageHeight = cachedImage.height
+                    
+                    if (imageWidth > containerWidth) {
+                        // 图片宽度比容器宽，保持长宽比压缩图片
+                        imageView.scaleType = ImageView.ScaleType.FIT_CENTER
+                        val params = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        params.gravity = android.view.Gravity.CENTER
+                        imageView.layoutParams = params
+                    } else {
+                        // 图片比容器窄，展示原图，不拉伸
+                        imageView.scaleType = ImageView.ScaleType.CENTER
+                        val params = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        )
+                        params.gravity = android.view.Gravity.CENTER
+                        imageView.layoutParams = params
+                    }
+                }
+            }
+            
+            // 初始布局参数（会在布局监听器中更新）
+            val initialParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
             )
-            params.gravity = android.view.Gravity.CENTER
-            containerView.addView(imageView, params)
+            initialParams.gravity = android.view.Gravity.CENTER
+            containerView.addView(imageView, initialParams)
             
             // 添加点击手势
             if (context.onMathTap != null) {
@@ -267,12 +296,12 @@ object MathFormulaRenderer {
         
         // 创建 ImageView（初始隐藏）
         val imageView = ImageView(context.context)
-        imageView.scaleType = ImageView.ScaleType.FIT_CENTER
         imageView.adjustViewBounds = true
         imageView.visibility = View.INVISIBLE
+        // 初始布局参数（会在布局监听器中更新）
         val imageParams = FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
         )
         imageParams.gravity = android.view.Gravity.CENTER
         containerView.addView(imageView, imageParams)
@@ -297,6 +326,57 @@ object MathFormulaRenderer {
                     // 隐藏原文，显示图片
                     originalTextView.visibility = View.GONE
                     imageView.setImageBitmap(image)
+                    
+                    // 根据图片宽度和容器宽度决定布局方式
+                    val containerWidth = containerView.width
+                    val imageWidth = image.width
+                    
+                    if (containerWidth > 0) {
+                        if (imageWidth > containerWidth) {
+                            // 图片宽度比容器宽，保持长宽比压缩图片
+                            imageView.scaleType = ImageView.ScaleType.FIT_CENTER
+                            val params = FrameLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            params.gravity = android.view.Gravity.CENTER
+                            imageView.layoutParams = params
+                        } else {
+                            // 图片比容器窄，展示原图，不拉伸
+                            imageView.scaleType = ImageView.ScaleType.CENTER
+                            val params = FrameLayout.LayoutParams(
+                                ViewGroup.LayoutParams.WRAP_CONTENT,
+                                ViewGroup.LayoutParams.WRAP_CONTENT
+                            )
+                            params.gravity = android.view.Gravity.CENTER
+                            imageView.layoutParams = params
+                        }
+                    } else {
+                        // 容器宽度还未确定，使用监听器等待布局完成
+                        containerView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                            val width = containerView.width
+                            if (width > 0) {
+                                if (imageWidth > width) {
+                                    imageView.scaleType = ImageView.ScaleType.FIT_CENTER
+                                    val params = FrameLayout.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        ViewGroup.LayoutParams.MATCH_PARENT
+                                    )
+                                    params.gravity = android.view.Gravity.CENTER
+                                    imageView.layoutParams = params
+                                } else {
+                                    imageView.scaleType = ImageView.ScaleType.CENTER
+                                    val params = FrameLayout.LayoutParams(
+                                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                                        ViewGroup.LayoutParams.WRAP_CONTENT
+                                    )
+                                    params.gravity = android.view.Gravity.CENTER
+                                    imageView.layoutParams = params
+                                }
+                            }
+                        }
+                    }
+                    
                     imageView.visibility = View.VISIBLE
                     
                     // 保存图片到缓存
