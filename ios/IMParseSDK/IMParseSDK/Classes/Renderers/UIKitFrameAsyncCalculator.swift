@@ -1105,17 +1105,36 @@ public class UIKitFrameAsyncCalculator {
     public static func calculateMathImageFrame(imageSize: CGSize, context: UIKitRenderContext) -> CGRect {
         if imageSize == .zero { return CGRectZero }
         
+        // 防御性检查：如果传入的尺寸看起来是像素尺寸（异常大），转换为逻辑尺寸
+        // 正常情况下，数学公式图片的逻辑尺寸应该不会超过屏幕宽度太多
+        // 如果 imageSize.width > 1000，可能是像素尺寸，需要除以 scale 转换
+        let screenScale = UIScreen.main.scale
+        var logicalSize = imageSize
+        
+        // 检查：如果尺寸异常大（可能是像素尺寸），尝试转换为逻辑尺寸
+        // 阈值：如果宽度超过 1000 points，可能是像素尺寸
+        if imageSize.width > 1000 {
+            let potentialLogicalWidth = imageSize.width / screenScale
+            let potentialLogicalHeight = imageSize.height / screenScale
+            
+            // 如果转换后的尺寸更合理（在正常范围内），使用转换后的尺寸
+            if potentialLogicalWidth <= context.width * 2 && potentialLogicalHeight <= 1000 {
+                logicalSize = CGSize(width: potentialLogicalWidth, height: potentialLogicalHeight)
+                print("UIKitFrameAsyncCalculator: Converted pixel size to logical size - original: \(imageSize), converted: \(logicalSize), scale: \(screenScale)")
+            }
+        }
+        
         let availableWidth = context.width
         var displayWidth: CGFloat
         var displayHeight: CGFloat
         
-        if imageSize.width <= availableWidth {
+        if logicalSize.width <= availableWidth {
             // 图片比容器窄，按照原始大小展示，不拉伸
-            displayWidth = imageSize.width
-            displayHeight = imageSize.height
+            displayWidth = logicalSize.width
+            displayHeight = logicalSize.height
         } else {
             // 图片宽度比容器宽，保持长宽比压缩图片
-            let imageAspectRatio = imageSize.width / imageSize.height
+            let imageAspectRatio = logicalSize.width / logicalSize.height
             displayWidth = availableWidth
             displayHeight = displayWidth / imageAspectRatio
         }

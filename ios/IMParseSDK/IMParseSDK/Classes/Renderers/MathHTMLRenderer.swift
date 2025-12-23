@@ -330,7 +330,11 @@ public class MathHTMLRenderer {
                     // 缓存图片（优先使用 delegate）
                     if let image = await self.captureWebView(webView, contentRect: contentRect) {
                         cacheDelegate?.saveFormulaImage(image, for: cacheKey)
-                        cacheDelegate?.setCachedSize(image.size, for: cacheKey)
+                        // 确保缓存的是逻辑尺寸（points），不是像素尺寸
+                        // 由于 captureWebView 已经确保 image.scale 正确，image.size 就是逻辑尺寸
+                        let logicalSize = image.size
+                        cacheDelegate?.setCachedSize(logicalSize, for: cacheKey)
+                        print("MathHTMLRenderer: Cached image size - logical: \(logicalSize), scale: \(image.scale), actual pixels: \(logicalSize.width * image.scale) × \(logicalSize.height * image.scale)")
                         continuation.resume(returning: image)
                         return
                     }
@@ -436,7 +440,40 @@ public class MathHTMLRenderer {
             // 验证生成的图片尺寸
             let image = try await webView.takeSnapshot(with: config)
             
-            // 返回成功获取的图片
+            // 确保 UIImage 有正确的 scale 属性
+            // WKWebView.takeSnapshot 可能返回 scale=1.0 的图片，即使设置了 snapshotWidth
+            // 我们需要确保返回的图片有正确的 scale，这样 image.size 才是逻辑尺寸（points）
+            if image.scale != scale {
+                // 计算实际像素尺寸：如果 image.scale = 1.0，则 image.size 就是像素尺寸
+                // 如果 image.scale != 1.0，则实际像素尺寸 = image.size * image.scale
+                let actualPixelWidth = image.size.width * image.scale
+                let actualPixelHeight = image.size.height * image.scale
+                
+                // 计算逻辑尺寸：实际像素尺寸 / 目标 scale
+                let logicalSize = CGSize(
+                    width: actualPixelWidth / scale,
+                    height: actualPixelHeight / scale
+                )
+                
+                // 使用 UIGraphicsImageRenderer 重新创建，确保 scale 正确
+                let format = UIGraphicsImageRendererFormat.default()
+                format.scale = scale
+                let renderer = UIGraphicsImageRenderer(size: logicalSize, format: format)
+                let correctedImage = renderer.image { _ in
+                    // 将原始图片绘制到新的画布上，使用逻辑尺寸
+                    // 注意：draw 方法会自动处理 scale，所以使用逻辑尺寸即可
+                    image.draw(in: CGRect(origin: .zero, size: logicalSize))
+                }
+                
+                // 验证：correctedImage.size 应该是逻辑尺寸，correctedImage.scale 应该是 scale
+                print("MathHTMLRenderer: Corrected image scale - original: size=\(image.size), scale=\(image.scale), pixels=\(actualPixelWidth)×\(actualPixelHeight); corrected: size=\(correctedImage.size), scale=\(correctedImage.scale)")
+                return correctedImage
+            }
+            
+            // scale 已经正确，直接返回
+            // 验证：image.size 应该是逻辑尺寸，image.scale 应该是 scale
+            let actualPixels = "\(image.size.width * image.scale)×\(image.size.height * image.scale)"
+            print("MathHTMLRenderer: Image scale is correct - size=\(image.size), scale=\(image.scale), pixels=\(actualPixels)")
             return image
         } catch {
             print("MathHTMLRenderer: Snapshot error: \(error.localizedDescription)")
