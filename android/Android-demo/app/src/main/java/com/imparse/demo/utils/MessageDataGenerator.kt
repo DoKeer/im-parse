@@ -75,6 +75,15 @@ object MessageDataGenerator {
     private fun generateMarkdownTemplates(): List<String> {
         return listOf(
             """
+                
+            - 伽玛函数：$\Gamma(z) = \int_0^\infty t^{z-1}e^{-t} dt = (z-1)!$ （${'$'}z \in \mathbb{C}, \Re(z)>0$）
+
+            - 拉普拉斯变换：$\mathcal{L}{f(t)} = F(s) = \int_0^\infty f(t)e^{-st} dt = \sum_{n=0}^\infty \frac{f^{(n)}(0)}{s^{n+1}}$
+
+            外积：$\mathbf{a} \times (\mathbf{b} \times \mathbf{c}) = \mathbf{b}(\mathbf{a} \cdot \mathbf{c}) - \mathbf{c}(\mathbf{a} \cdot \mathbf{b})$
+
+            曲率张量：${'$'}R^\rho{}{\sigma\mu\nu} = \partial\mu\Gamma^\rho{}{\nu\sigma} - \partial\nu\Gamma^\rho{}{\mu\sigma} + \Gamma^\rho{}{\mu\lambda}\Gamma^\lambda{}{\nu\sigma} - \Gamma^\rho{}{\nu\lambda}\Gamma^\lambda{}_{\mu\sigma}$
+            
             $$
             \int_0^1 x^2 \, dx
             $$

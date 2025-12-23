@@ -75,6 +75,8 @@ class MessageDataGenerator {
     private static func generateMarkdownTemplates() -> [String] {
         return [
             #"""
+            多层嵌套对数 $\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$
+
             #### 📊 GitLab日报看板(deepbank/feedback)  
             **报告时间：** 2025年12月22日 10:09:09 | **总任务数：** <font color=red>102</font> | [GitLab看板链接](https://gitlab.daikuan.qihoo.net/deepbank/feedback/-/boards/107)  
               

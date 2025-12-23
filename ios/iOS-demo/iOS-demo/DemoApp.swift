@@ -50,6 +50,8 @@ enum DemoPage: String, Identifiable, CaseIterable {
 struct MainTabView: View {
     @State private var navigationPath = NavigationPath()
     
+    @State private var cleanTitle = "清理缓存"
+    
     var body: some View {
         NavigationStack(path: $navigationPath) {
             VStack(spacing: 20) {
@@ -64,9 +66,11 @@ struct MainTabView: View {
                     .padding(.bottom, 30)
                 
                 Button {
-                    ImageCache.default.clearCache()
+                    ImageCache.default.clearCache {
+                        cleanTitle = "清理成功✅"
+                    }
                 } label: {
-                    Text("清理缓存")
+                    Text(cleanTitle)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .padding(.bottom, 30)

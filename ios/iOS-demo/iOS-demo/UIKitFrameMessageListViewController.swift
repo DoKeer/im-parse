@@ -541,7 +541,7 @@ extension UIKitFrameMessageListViewController: UIKitFormulaSizeCacheDelegate {
         // 从 Kingfisher 内存缓存中同步读取图片
         if let cachedImage = ImageCache.default.retrieveImageInMemoryCache(forKey: cacheKey) {
             // 从内存缓存中获取尺寸
-            return CGSizeMake(cachedImage.size.width/UIScreen.main.scale, cachedImage.size.height/UIScreen.main.scale)
+            return CGSizeMake(cachedImage.size.width, cachedImage.size.height)
         }
         
         // 注意：Kingfisher 的磁盘读取是异步的，这里我们只检查内存缓存
@@ -577,9 +577,12 @@ extension UIKitFrameMessageListViewController: UIKitFormulaSizeCacheDelegate {
     func getFormulaImage(for key: String) -> UIImage? {
         let cacheKey = generateCacheKey(for: key)
         // 先从内存缓存读取（快速）
-        if let memoryImage = ImageCache.default.retrieveImageInMemoryCache(forKey: cacheKey), let cgImage = memoryImage.cgImage {
-            let res = UIImage(cgImage: cgImage, scale: UIScreen.main.scale, orientation: memoryImage.imageOrientation)
-            return res
+        if let memoryImage = ImageCache.default.retrieveImageInMemoryCache(forKey: cacheKey) {
+            if memoryImage.scale != UIScreen.main.scale,let cgImage = memoryImage.cgImage {
+                let res = UIImage(cgImage: cgImage, scale: UIScreen.main.scale, orientation: memoryImage.imageOrientation)
+                return res
+            }
+            return memoryImage
         }
         
         // 如果内存缓存没有，从磁盘缓存同步读取（使用信号量等待异步结果）
@@ -598,9 +601,12 @@ extension UIKitFrameMessageListViewController: UIKitFormulaSizeCacheDelegate {
         
         // 等待异步结果，最多等待 0.01 秒
         _ = semaphore.wait(timeout: .now() + .milliseconds(10))
-        if let diskImage = diskImage, let cgImage = diskImage.cgImage {
-            let res = UIImage(cgImage: cgImage, scale: UIScreen.main.scale, orientation: diskImage.imageOrientation)
-            return res
+        if let diskImage = diskImage {
+            if diskImage.scale != UIScreen.main.scale,let cgImage = diskImage.cgImage {
+                let res = UIImage(cgImage: cgImage, scale: UIScreen.main.scale, orientation: diskImage.imageOrientation)
+                return res
+            }
+            return diskImage
         }
         return nil
     }
