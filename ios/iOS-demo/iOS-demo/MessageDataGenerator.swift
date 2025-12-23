@@ -127,6 +127,16 @@ class MessageDataGenerator {
             \int_{0}^{\infty} e^{-x^{2}} \, dx \approx \frac{\sqrt{\pi}}{2}
             $$
             
+            ### 母函数与组合恒等式
+            $$
+            \sum_{n=0}^\infty \left(\sum_{k=0}^n \binom{n}{k}^2 \binom{n+k}{k}^2\right) x^n = \frac{1}{\sqrt{1-14x+x^2}} \cdot {}_3F_2\left(\begin{array}{c} \frac{1}{2},\frac{1}{2},\frac{1}{2} \\ 1,1 \end{array} ; \frac{16x}{(1-14x+x^2)^2}\right) = \prod_{p\equiv 1\pmod{4}} \frac{1}{1-4p^{-s}} \cdot \prod_{p\equiv 3\pmod{4}} \frac{1}{1-p^{-2s}}
+            $$
+
+            ### 黎曼ζ函数函数方程
+            $$
+            \zeta(s) = \sum_{n=1}^\infty \frac{1}{n^s} = \prod_{p \text{ prime}} \frac{1}{1-p^{-s}} = 2^s \pi^{s-1} \sin\left(\frac{\pi s}{2}\right) \Gamma(1-s) \zeta(1-s) = \frac{1}{2} + \frac{1}{s-1} + \sum_{n=1}^\infty \frac{B_{2n}}{(2n)!} (s)_{2n-1} + \frac{1}{\Gamma(s)} \int_0^\infty \frac{x^{s-1}}{e^x-1} dx
+            $$
+            
             ```mermaid
             sequenceDiagram
                 participant A as Alice

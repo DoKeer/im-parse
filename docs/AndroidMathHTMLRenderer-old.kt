@@ -2,17 +2,13 @@ package com.imparse.renderers
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.os.Handler
 import android.os.Looper
-import android.util.Base64
 import android.util.Log
 import android.view.View
-import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.compose.ui.graphics.Color
 import com.imparse.core.IMParseCore
 import java.util.concurrent.ConcurrentHashMap
 import androidx.core.graphics.createBitmap
@@ -45,18 +41,6 @@ class AndroidMathHTMLRenderer private constructor() {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load KaTeX CSS from assets", e)
                 "" // 返回空字符串，使用内联样式
-            }
-        }
-        
-        /**
-         * 从 assets 读取 html2canvas JS 内容（如果存在）
-         */
-        private fun loadHtml2CanvasJS(context: Context): String {
-            return try {
-                context.assets.open("html2canvas.min.js").bufferedReader().use { it.readText() }
-            } catch (e: Exception) {
-                Log.d(TAG, "html2canvas.min.js not found in assets, will use CDN")
-                "" // 返回空字符串，将使用 CDN
             }
         }
         
@@ -112,21 +96,6 @@ class AndroidMathHTMLRenderer private constructor() {
     // WebView 池（复用 WebView 以减少资源占用）
     private val webViewPool = AndroidWebViewPool.getInstance()
     
-    // 渲染任务信息
-    private data class RenderTask(
-        val webView: WebView,
-        val container: android.view.ViewGroup,
-        val cacheKey: String,
-        val completion: (Bitmap?) -> Unit
-    )
-    
-    // 用于存储当前渲染任务的信息（key: WebView hashCode, value: RenderTask）
-    private val pendingTasks = ConcurrentHashMap<Int, RenderTask>()
-    
-    // 复用控制：存储正在进行的渲染任务（key: cacheKey, value: 等待的回调列表）
-    // 相同 cacheKey 的多个请求会共享同一个渲染任务
-    private val pendingRenderTasks = ConcurrentHashMap<String, MutableList<(Bitmap?) -> Unit>>()
-    
     /**
      * 渲染 HTML 为图片
      * @param context Android Context
@@ -153,58 +122,21 @@ class AndroidMathHTMLRenderer private constructor() {
             return
         }
         
-        // 检查是否有正在进行的渲染任务（复用控制）
-        synchronized(pendingRenderTasks) {
-            val waitingCallbacks = pendingRenderTasks[cacheKey]
-            if (waitingCallbacks != null) {
-                // 已有正在进行的任务，将当前回调添加到等待列表
-                waitingCallbacks.add(completion)
-                Log.d(TAG, "Reusing render task for cacheKey: $cacheKey, total waiters: ${waitingCallbacks.size}")
-                return
-            }
-            
-            // 创建新的等待列表
-            val callbacks = mutableListOf(completion)
-            pendingRenderTasks[cacheKey] = callbacks
-        }
-        
         // 缓存未命中，验证 HTML 是否有效
         if (html.isEmpty() || (!html.contains("katex") && !html.contains("math-container"))) {
             Log.w(TAG, "Invalid HTML content")
-            // 通知所有等待的回调
-            notifyAllCallbacks(cacheKey, null)
+            completion(null)
             return
         }
         
         // HTML 有效，进行渲染（必须在主线程）
         Handler(Looper.getMainLooper()).post {
-            renderHTML(context, html, display, textColor, fontSize, cacheKey) { bitmap ->
-                // 通知所有等待的回调
-                notifyAllCallbacks(cacheKey, bitmap)
-            }
-        }
-    }
-    
-    /**
-     * 通知所有等待的回调并清理任务
-     */
-    private fun notifyAllCallbacks(cacheKey: String, bitmap: Bitmap?) {
-        synchronized(pendingRenderTasks) {
-            val callbacks = pendingRenderTasks.remove(cacheKey)
-            if (callbacks != null) {
-                Handler(Looper.getMainLooper()).post {
-                    callbacks.forEach { callback ->
-                        callback(bitmap)
-                    }
-                }
-                Log.d(TAG, "Notified ${callbacks.size} callbacks for cacheKey: $cacheKey")
-            }
+            renderHTML(context, html, display, textColor, fontSize, cacheKey, completion)
         }
     }
     
     /**
      * 实际渲染 HTML（必须在主线程调用）
-     * 注意：completion 会被调用一次，然后通过 notifyAllCallbacks 通知所有等待的回调
      */
     private fun renderHTML(
         context: Context,
@@ -218,19 +150,7 @@ class AndroidMathHTMLRenderer private constructor() {
         // 从池中获取或创建 WebView
         val webView = webViewPool.getOrCreateWebView(context)
         
-        // 存储任务信息（使用 WebView 的 hashCode 作为 key）
-        val webViewKey = webView.hashCode()
-        
-        // 先创建容器（稍后会被添加到视图层次结构）
-        val container = android.widget.FrameLayout(context)
-        
-        // 存储任务信息
-        pendingTasks[webViewKey] = RenderTask(webView, container, cacheKey, completion)
-        
-        // 添加 JavaScript Bridge
-        webView.addJavascriptInterface(CaptureBridge(webViewKey), "AndroidBridge")
-        
-        // 构建完整的 HTML（包含 KaTeX CSS 和 html2canvas）
+        // 构建完整的 HTML（包含 KaTeX CSS）
         val fullHTML = buildFullHTML(context, html, display, textColor, fontSize)
         
         // 获取屏幕尺寸
@@ -239,13 +159,13 @@ class AndroidMathHTMLRenderer private constructor() {
         val screenWidth = displayMetrics.widthPixels
         val screenHeight = displayMetrics.heightPixels
         
-        // 设置 WebView 配置（使用更大的初始尺寸，确保内容能完全渲染）
-        // 增大宽度以确保行内公式不被截断
-        val width = 3000
-        val height = if (display) 800 else 400
+        // 设置 WebView 配置（使用较大的初始尺寸，确保内容能完全渲染）
+        val width = 1000
+        val height = if (display) 300 else 150
         
         // WebView 必须被添加到视图层次结构中才能渲染
-        // 使用已创建的容器
+        // 创建一个隐藏的容器来放置 WebView
+        val container = android.widget.FrameLayout(context)
         container.layoutParams = android.widget.FrameLayout.LayoutParams(
             width,
             height
@@ -361,16 +281,90 @@ class AndroidMathHTMLRenderer private constructor() {
                 waitForKaTeXReady(webView, maxAttempts = 10) { ready ->
                     if (!ready) {
                         Log.w(TAG, "KaTeX CSS failed to load (timeout)")
-                        // 清理容器和任务
-                        val task = pendingTasks.remove(webViewKey)
-                        if (task != null) {
-                            cleanupAndComplete(task.webView, task.container, null, task.completion)
-                                    }
-                        return@waitForKaTeXReady
                     }
                     
-                    // KaTeX 已就绪，使用 html2canvas 进行精确截图
-                    captureWithHtml2Canvas(webViewKey)
+                    // 获取数学公式容器的精确边界
+                    webView.evaluateJavascript("""
+                        (function() {
+                            const katexElement = document.querySelector('.katex') || document.querySelector('.math-container');
+                            if (katexElement) {
+                                const rect = katexElement.getBoundingClientRect();
+                                return {
+                                    width: Math.ceil(rect.width),
+                                    height: Math.ceil(rect.height)
+                                };
+                            }
+                            const body = document.body;
+                            const rect = body.getBoundingClientRect();
+                            return {
+                                width: Math.max(Math.ceil(rect.width), 100),
+                                height: Math.max(Math.ceil(rect.height), 30)
+                            };
+                        })();
+                    """.trimIndent()) { result ->
+                        try {
+                            val sizeDict = parseJavaScriptResult(result)
+                            val width = sizeDict["width"]?.toFloatOrNull() ?: 400f
+                            val height = sizeDict["height"]?.toFloatOrNull() ?: (if (display) 100f else 50f)
+                            
+                            // 获取内容在 WebView 中的精确位置和尺寸
+                            webView.evaluateJavascript("""
+                                (function() {
+                                    const katexElement = document.querySelector('.katex') || document.querySelector('.math-container');
+                                    if (katexElement) {
+                                        const rect = katexElement.getBoundingClientRect();
+                                        return {
+                                            x: Math.max(0, Math.floor(rect.left)),
+                                            y: Math.max(0, Math.floor(rect.top)),
+                                            width: Math.ceil(rect.width),
+                                            height: Math.ceil(rect.height)
+                                        };
+                                    }
+                                    return { x: 0, y: 0, width: ${width}, height: ${height} };
+                                })();
+                            """.trimIndent()) { positionResult ->
+                                try {
+                                    val positionDict = parseJavaScriptResult(positionResult)
+                                    val x = positionDict["x"]?.toFloatOrNull() ?: 0f
+                                    val y = positionDict["y"]?.toFloatOrNull() ?: 0f
+                                    val w = positionDict["width"]?.toFloatOrNull() ?: width
+                                    val h = positionDict["height"]?.toFloatOrNull() ?: height
+                                    
+                                    // 使用精确的内容区域截图
+                                    captureWebView(webView, container, x.toInt(), y.toInt(), w.toInt(), h.toInt()) { image ->
+                                        // 缓存图片
+                                        if (image != null) {
+                                            imageCache[cacheKey] = image
+                                        }
+                                        
+                                        // 将 WebView 返回池中
+                                        webViewPool.returnWebView(webView)
+                                        
+                                        completion(image)
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error parsing position result", e)
+                                    captureWebView(webView, container, 0, 0, width.toInt(), height.toInt()) { image ->
+                                        if (image != null) {
+                                            imageCache[cacheKey] = image
+                                        }
+                                        webViewPool.returnWebView(webView)
+                                        completion(image)
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error parsing size result", e)
+                            // 使用默认尺寸
+                            captureWebView(webView, container, 0, 0, 400, if (display) 100 else 50) { image ->
+                                if (image != null) {
+                                    imageCache[cacheKey] = image
+                                }
+                                webViewPool.returnWebView(webView)
+                                completion(image)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -380,7 +374,7 @@ class AndroidMathHTMLRenderer private constructor() {
     }
     
     /**
-     * 构建完整的 HTML（包含内联的 KaTeX CSS 和 html2canvas）
+     * 构建完整的 HTML（包含内联的 KaTeX CSS）
      */
     private fun buildFullHTML(context: Context, html: String, display: Boolean, textColor: String, fontSize: Float): String {
         val displayStyle = if (display) "block" else "inline-block"
@@ -388,7 +382,6 @@ class AndroidMathHTMLRenderer private constructor() {
         
         // 从 assets 加载 KaTeX CSS 并内联
         val katexCSS = loadKaTeXCSS(context)
-        val html2CanvasJS = loadHtml2CanvasJS(context)
         
         return """
             <!DOCTYPE html>
@@ -397,7 +390,6 @@ class AndroidMathHTMLRenderer private constructor() {
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 ${if (katexCSS.isNotEmpty()) "<style>$katexCSS</style>" else "<link rel=\"stylesheet\" href=\"file:///android_asset/katex.min.css\">"}
-                ${if (html2CanvasJS.isNotEmpty()) "<script>$html2CanvasJS</script>" else "<script src=\"https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js\"></script>"}
                 <style>
                     * {
                         margin: 0;
@@ -410,34 +402,25 @@ class AndroidMathHTMLRenderer private constructor() {
                         color: $textColor;
                         background: transparent;
                         margin: 0;
-                        padding: 5px;
-                        /* 移除 flex 布局，避免内容被裁剪 */
-                        width: fit-content;
-                        height: fit-content;
+                        padding: 0;
+                        display: flex;
+                        align-items: center;
+                        justify-content: $textAlign;
+                        min-height: 100vh;
                     }
                     .math-container {
                         display: $displayStyle;
                         text-align: $textAlign;
                         margin: 0;
                         padding: 0;
-                        /* 确保容器能够容纳完整内容 */
-                        width: fit-content;
-                        height: fit-content;
-                        max-width: none;
-                        max-height: none;
-                        overflow: visible;
-                        white-space: nowrap;
                     }
                     .katex {
                         font-size: 1em !important;
-                        /* 确保 katex 内容不被截断 */
-                        display: inline-block;
-                        white-space: nowrap;
                     }
                 </style>
             </head>
             <body>
-                <div id="math-container" class="math-container">
+                <div class="math-container">
                     $html
                 </div>
             </body>
@@ -446,208 +429,18 @@ class AndroidMathHTMLRenderer private constructor() {
     }
     
     /**
-     * 使用 html2canvas 进行精确截图（生产级方案）
-     * @param webViewKey WebView 的 hashCode（用于查找任务）
+     * 截图 WebView - 简化版本，直接返回整个 WebView 的截图
      */
-    private fun captureWithHtml2Canvas(webViewKey: Int) {
-        val task = pendingTasks[webViewKey] ?: run {
-            Log.e(TAG, "Task not found for webViewKey: $webViewKey")
-            return
-        }
-        
-        // 获取设备的实际 density（用于计算准确的 scale）
-        val displayMetrics = task.webView.context.resources.displayMetrics
-        val densityDpi = displayMetrics.densityDpi
-        // 计算 scale：densityDpi / 160 (基准密度)
-        // 例如：320 dpi = 2x, 480 dpi = 3x
-        // 限制最大为 3x 以避免图片过大
-        val deviceScale = (densityDpi / 160f).coerceAtMost(3f)
-        
-        // 等待一小段时间确保渲染完成
-        Handler(Looper.getMainLooper()).postDelayed({
-            // 执行 JavaScript 进行截图
-            task.webView.evaluateJavascript("""
-                (function() {
-                    // 检查 AndroidBridge 是否可用
-                    if (typeof AndroidBridge === 'undefined') {
-                        console.error('AndroidBridge is not available');
-                        return JSON.stringify({ error: 'AndroidBridge not available' });
-                    }
-                
-                    // 检查 html2canvas 是否已加载
-                    if (typeof html2canvas === 'undefined') {
-                        console.warn('html2canvas not loaded yet, retrying...');
-                        setTimeout(function() {
-                            window.captureMath();
-                        }, 500);
-                        return JSON.stringify({ error: 'html2canvas not loaded' });
-                    }
-                    
-                    const mathElement = document.querySelector('#math-container');
-                    if (!mathElement) {
-                        AndroidBridge.onCaptureError('Element not found: #math-container');
-                        return JSON.stringify({ error: 'Element not found' });
-                    }
-                    
-                    // 使用 scrollWidth/scrollHeight 以确保捕获完整内容（包括溢出部分）
-                    const actualWidth = Math.max(
-                        mathElement.scrollWidth,
-                        mathElement.offsetWidth,
-                        mathElement.clientWidth
-                    );
-                    const actualHeight = Math.max(
-                        mathElement.scrollHeight,
-                        mathElement.offsetHeight,
-                        mathElement.clientHeight
-                    );
-                    
-                    if (actualWidth === 0 || actualHeight === 0) {
-                        AndroidBridge.onCaptureError('Element has zero size');
-                        return JSON.stringify({ error: 'Zero size' });
-                    }
-                    
-                    console.log('Capturing element with size:', actualWidth, 'x', actualHeight);
-                    
-                    // 使用 html2canvas 截图，使用实际内容尺寸
-                    // 使用设备的实际 density 计算 scale，确保图片清晰度
-                    // deviceScale 从 Android 端传入，基于设备的实际 densityDpi
-                    const deviceScale = $deviceScale;
-                    // 如果 window.devicePixelRatio 可用且更准确，优先使用它；否则使用传入的 deviceScale
-                    const renderScale = Math.min(
-                        window.devicePixelRatio || deviceScale,
-                        deviceScale,
-                        3
-                    );
-                    console.log('Using render scale:', renderScale, '(device scale:', deviceScale, ', devicePixelRatio:', window.devicePixelRatio, ')');
-                    
-                    html2canvas(mathElement, {
-                        backgroundColor: null,
-                        scale: renderScale,
-                        useCORS: true,
-                        logging: false, // 关闭详细日志以提高性能
-                        width: actualWidth,
-                        height: actualHeight,
-                        windowWidth: actualWidth,
-                        windowHeight: actualHeight,
-                        // 确保捕获溢出内容
-                        allowTaint: true,
-                        foreignObjectRendering: false
-                    }).then(function(canvas) {
-                        const dataUrl = canvas.toDataURL("image/png");
-                        console.log('Capture success, canvas size:', canvas.width, 'x', canvas.height, ', dataUrl length:', dataUrl.length);
-                        if (dataUrl && dataUrl.length > 100) {
-                            AndroidBridge.onCaptureSuccess(dataUrl);
-                        } else {
-                            AndroidBridge.onCaptureError('Invalid dataUrl');
-                        }
-                    }).catch(function(error) {
-                        console.error('html2canvas error:', error);
-                        AndroidBridge.onCaptureError('html2canvas error: ' + (error.message || String(error)));
-                    });
-                    
-                    return JSON.stringify({ status: 'capturing' });
-                })();
-            """.trimIndent(), null)
-        }, 300) // 延迟 300ms 确保渲染完成
-    }
-    
-    /**
-     * JavaScript Bridge 用于接收截图结果
-     */
-    inner class CaptureBridge(private val webViewKey: Int) {
-        @JavascriptInterface
-        fun onCaptureSuccess(dataUrl: String) {
-            Log.d(TAG, "onCaptureSuccess called: dataUrl length=${dataUrl.length}")
-            Handler(Looper.getMainLooper()).post {
-                try {
-                    val task = pendingTasks.remove(webViewKey)
-                    if (task == null) {
-                        Log.w(TAG, "No task found for webViewKey: $webViewKey")
-                        return@post
-                    }
-                    
-                    if (dataUrl.isEmpty() || !dataUrl.startsWith("data:image")) {
-                        Log.e(TAG, "Invalid dataUrl format")
-                        cleanupAndComplete(task.webView, task.container, null, task.completion)
-                        return@post
-                    }
-                    
-                    val base64 = dataUrl.substringAfter("base64,")
-                    if (base64.isEmpty()) {
-                        Log.e(TAG, "Empty base64 data")
-                        cleanupAndComplete(task.webView, task.container, null, task.completion)
-                        return@post
-                    }
-                    
-                    val bytes = Base64.decode(base64, Base64.DEFAULT)
-                    
-                    // html2canvas 已经根据 scale 生成了高分辨率图片，不需要再次缩放
-                    // 禁用自动缩放，保持原始分辨率以确保清晰度
-                    val options = BitmapFactory.Options()
-                    options.inScaled = false // 关键：禁用自动缩放，保持 html2canvas 生成的原始分辨率
-                    options.inPreferredConfig = Bitmap.Config.ARGB_8888 // 使用高质量配置
-                    
-                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-                    
-                    if (bitmap == null) {
-                        Log.e(TAG, "Failed to decode bitmap")
-                        cleanupAndComplete(task.webView, task.container, null, task.completion)
-                            return@post
-                        }
-                    
-                    Log.d(TAG, "Bitmap decoded successfully: ${bitmap.width}x${bitmap.height}, density: ${bitmap.density}")
-                    
-                    // 缓存图片
-                    imageCache[task.cacheKey] = bitmap
-                        
-                        // 清理并返回结果
-                    cleanupAndComplete(task.webView, task.container, bitmap, task.completion)
-                    } catch (e: Exception) {
-                    Log.e(TAG, "onCaptureSuccess error", e)
-                    val task = pendingTasks.remove(webViewKey)
-                    task?.let {
-                        cleanupAndComplete(it.webView, it.container, null, it.completion)
-                    }
-                }
-            }
-        }
-        
-        @JavascriptInterface
-        fun onCaptureError(msg: String) {
-            Log.e(TAG, "onCaptureError: $msg")
-            Handler(Looper.getMainLooper()).post {
-                val task = pendingTasks.remove(webViewKey)
-                task?.let {
-                    cleanupAndComplete(it.webView, it.container, null, it.completion)
-            }
-            }
-        }
-    }
-    
-    /**
-     * 直接截图 WebView 并裁剪到内容区域（类似 iOS 的实现方式）
-     * 这是 html2canvas 的备选方案，用于调试或特殊场景
-     * 
-     * @param webView WebView 实例
-     * @param container 容器视图
-     * @param contentX 内容在 WebView 中的 X 坐标（px）
-     * @param contentY 内容在 WebView 中的 Y 坐标（px）
-     * @param contentWidth 内容宽度（px）
-     * @param contentHeight 内容高度（px）
-     * @param cacheKey 缓存键
-     * @param completion 完成回调
-     */
-    private fun captureWebViewDirect(
+    private fun captureWebView(
         webView: WebView,
         container: android.view.ViewGroup,
-        contentX: Float,
-        contentY: Float,
-        contentWidth: Float,
-        contentHeight: Float,
-        cacheKey: String,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
         completion: (Bitmap?) -> Unit
     ) {
-        // 延迟确保渲染完成
+        // 简单延迟后截图
         Handler(Looper.getMainLooper()).postDelayed({
             try {
                 val webViewWidth = webView.width
@@ -655,11 +448,11 @@ class AndroidMathHTMLRenderer private constructor() {
                 
                 if (webViewWidth <= 0 || webViewHeight <= 0) {
                     Log.w(TAG, "WebView has invalid size: ${webViewWidth}x${webViewHeight}")
-                    cleanupAndComplete(webView, container, null, completion)
+                    completion(null)
                     return@postDelayed
                 }
                 
-                // 强制布局和绘制（保持 INVISIBLE 状态也可以绘制）
+                // 强制布局和绘制（保持 INVISIBLE 状态）
                 container.requestLayout()
                 container.invalidate()
                 webView.requestLayout()
@@ -667,95 +460,82 @@ class AndroidMathHTMLRenderer private constructor() {
                 
                 // 等待布局完成
                 webView.post {
+                    // 直接截取整个 WebView（INVISIBLE 状态也可以绘制）
+                    val fullBitmap = createBitmap(webViewWidth, webViewHeight)
+                    val fullCanvas = Canvas(fullBitmap)
+                    webView.draw(fullCanvas)
+                    
+                    Log.d(TAG, "Captured full WebView, size: ${fullBitmap.width}x${fullBitmap.height}")
+                    
+                    // 清理：从父视图中移除容器
                     try {
-                        // 1. 截取整个 WebView
-                        val fullBitmap = createBitmap(webViewWidth, webViewHeight)
-                        val fullCanvas = Canvas(fullBitmap)
-                        webView.draw(fullCanvas)
-                        
-                        Log.d(TAG, "Captured full WebView, size: ${fullBitmap.width}x${fullBitmap.height}")
-                        
-                        // 2. 计算裁剪区域（考虑 WebView 的 scale 和内容偏移）
-                        // WebView 的内容坐标是相对于 WebView 的，需要考虑 body padding
-                        val scale = webView.scale
-                        val scaledX = (contentX * scale).toInt().coerceAtLeast(0)
-                        val scaledY = (contentY * scale).toInt().coerceAtLeast(0)
-                        val scaledWidth = (contentWidth * scale).toInt().coerceAtMost(fullBitmap.width - scaledX)
-                        val scaledHeight = (contentHeight * scale).toInt().coerceAtMost(fullBitmap.height - scaledY)
-                        
-                        // 验证裁剪区域是否有效
-                        if (scaledWidth <= 0 || scaledHeight <= 0 || 
-                            scaledX >= fullBitmap.width || scaledY >= fullBitmap.height) {
-                            Log.w(TAG, "Invalid crop region: x=$scaledX, y=$scaledY, w=$scaledWidth, h=$scaledHeight")
-                            cleanupAndComplete(webView, container, null, completion)
-                            return@post
-                        }
-                        
-                        // 3. 裁剪 Bitmap 到内容区域
-                        val croppedBitmap = try {
-                            Bitmap.createBitmap(
-                                fullBitmap,
-                                scaledX,
-                                scaledY,
-                                scaledWidth,
-                                scaledHeight
-                            )
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Failed to crop bitmap", e)
-                            null
-                        }
-                        
-                        // 释放全图 Bitmap（如果裁剪成功）
-                        if (croppedBitmap != null && croppedBitmap != fullBitmap) {
-                            fullBitmap.recycle()
-                        } else if (croppedBitmap == null) {
-                            fullBitmap.recycle()
-                        }
-                        
-                        if (croppedBitmap != null) {
-                            Log.d(TAG, "Cropped bitmap size: ${croppedBitmap.width}x${croppedBitmap.height}")
-                            // 缓存图片
-                            imageCache[cacheKey] = croppedBitmap
-                        }
-                        
-                        // 清理并返回结果
-                        cleanupAndComplete(webView, container, croppedBitmap, completion)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Direct capture error", e)
-                        cleanupAndComplete(webView, container, null, completion)
+                        val parent = container.parent as? android.view.ViewGroup
+                        parent?.removeView(container)
+                    } catch (ex: Exception) {
+                        Log.e(TAG, "Error removing container", ex)
                     }
+                    
+                    // 将 WebView 返回池中
+                    webViewPool.returnWebView(webView)
+                    
+                    // 返回截图
+                    completion(fullBitmap)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Direct capture error", e)
-                cleanupAndComplete(webView, container, null, completion)
+                Log.e(TAG, "Snapshot error", e)
+                completion(null)
             }
         }, 500) // 延迟 500ms 确保渲染完成
     }
     
     /**
-     * 清理资源并返回结果
+     * 检查 Bitmap 是否有内容（不是全透明或全黑）
      */
-    private fun cleanupAndComplete(
-        webView: WebView,
-        container: android.view.ViewGroup,
-        bitmap: Bitmap?,
-        completion: (Bitmap?) -> Unit
-    ) {
-        // 清理：从父视图中移除容器
-        try {
-            val parent = container.parent as? android.view.ViewGroup
-            parent?.removeView(container)
-        } catch (ex: Exception) {
-            Log.e(TAG, "Error removing container", ex)
+    private fun checkBitmapHasContent(bitmap: Bitmap): Boolean {
+        if (bitmap.width <= 0 || bitmap.height <= 0) {
+            return false
         }
         
-        // 将 WebView 返回池中
-        webViewPool.returnWebView(webView)
+        // 更全面的采样检查
+        val samplePoints = mutableListOf<Pair<Int, Int>>()
         
-        // 返回结果
-        completion(bitmap)
+        // 中心点
+        samplePoints.add(Pair(bitmap.width / 2, bitmap.height / 2))
+        
+        // 四个角落
+        samplePoints.add(Pair(0, 0))
+        samplePoints.add(Pair(bitmap.width - 1, 0))
+        samplePoints.add(Pair(0, bitmap.height - 1))
+        samplePoints.add(Pair(bitmap.width - 1, bitmap.height - 1))
+        
+        // 四边中点
+        samplePoints.add(Pair(bitmap.width / 2, 0))
+        samplePoints.add(Pair(bitmap.width / 2, bitmap.height - 1))
+        samplePoints.add(Pair(0, bitmap.height / 2))
+        samplePoints.add(Pair(bitmap.width - 1, bitmap.height / 2))
+        
+        // 检查所有采样点
+        var nonTransparentCount = 0
+        for ((x, y) in samplePoints) {
+            if (x >= 0 && x < bitmap.width && y >= 0 && y < bitmap.height) {
+                val pixel = bitmap.getPixel(x, y)
+                val alpha = android.graphics.Color.alpha(pixel)
+                // 如果像素不是完全透明，认为有内容
+                if (alpha > 10) { // 允许一些透明度误差
+                    nonTransparentCount++
+                }
+            }
+        }
+        
+        // 如果至少有一个点不是完全透明，认为有内容
+        val hasContent = nonTransparentCount > 0
+        if (!hasContent) {
+            Log.d(TAG, "Bitmap check: all ${samplePoints.size} sample points are transparent")
+        }
+        
+        return hasContent
     }
-
+    
     /**
      * 轮询等待 KaTeX CSS 加载完成
      */
@@ -788,19 +568,8 @@ class AndroidMathHTMLRenderer private constructor() {
                     return { ready: false, reason: 'DOM not complete' };
                 }
                 
-                // 使用 scrollWidth/scrollHeight 以确保捕获完整尺寸
-                const actualWidth = Math.max(
-                    katexElement.scrollWidth,
-                    katexElement.offsetWidth,
-                    katexElement.clientWidth
-                );
-                const actualHeight = Math.max(
-                    katexElement.scrollHeight,
-                    katexElement.offsetHeight,
-                    katexElement.clientHeight
-                );
-                
-                const hasValidDimensions = actualWidth > 0 && actualHeight > 0;
+                const rect = katexElement.getBoundingClientRect();
+                const hasValidDimensions = rect.width > 0 && rect.height > 0;
                 
                 if (!hasValidDimensions) {
                     return { ready: false, reason: 'no dimensions' };
@@ -811,14 +580,14 @@ class AndroidMathHTMLRenderer private constructor() {
                                           document.fonts.check('16px KaTeX_Main');
                     const mathFontLoaded = document.fonts.check('1em KaTeX_Math-Italic') || 
                                           document.fonts.check('16px KaTeX_Math');
-                    const fontsReady = mainFontLoaded || mathFontLoaded || actualHeight > 12;
+                    const fontsReady = mainFontLoaded || mathFontLoaded || rect.height > 12;
                     
                     if (!fontsReady) {
                         return { 
                             ready: false, 
                             reason: 'fonts not loaded',
-                            width: Math.ceil(actualWidth),
-                            height: Math.ceil(actualHeight)
+                            width: Math.ceil(rect.width),
+                            height: Math.ceil(rect.height)
                         };
                     }
                 }
@@ -826,8 +595,8 @@ class AndroidMathHTMLRenderer private constructor() {
                 return { 
                     ready: true, 
                     reason: 'fully rendered',
-                    width: Math.ceil(actualWidth),
-                    height: Math.ceil(actualHeight)
+                    width: Math.ceil(rect.width),
+                    height: Math.ceil(rect.height)
                 };
             })();
         """.trimIndent()) { result ->
