@@ -481,6 +481,14 @@ class AndroidMermaidHTMLRenderer private constructor() {
             return
         }
         
+        // 获取设备的实际 density（用于计算准确的 scale）
+        val displayMetrics = task.webView.context.resources.displayMetrics
+        val densityDpi = displayMetrics.densityDpi
+        // 计算 scale：densityDpi / 160 (基准密度)
+        // 例如：320 dpi = 2x, 480 dpi = 3x
+        // 限制最大为 3x 以避免图片过大
+        val deviceScale = (densityDpi / 160f).coerceAtMost(3f)
+        
         // 等待一小段时间确保渲染完成
         Handler(Looper.getMainLooper()).postDelayed({
             // 执行 JavaScript 进行截图
@@ -490,7 +498,7 @@ class AndroidMermaidHTMLRenderer private constructor() {
                     if (typeof AndroidBridge === 'undefined') {
                         console.error('AndroidBridge is not available');
                         return JSON.stringify({ error: 'AndroidBridge not available' });
-                }
+                    }
                 
                     // 检查 html2canvas 是否已加载
                     if (typeof html2canvas === 'undefined') {
@@ -507,25 +515,53 @@ class AndroidMermaidHTMLRenderer private constructor() {
                         return JSON.stringify({ error: 'Element not found' });
                     }
                     
-                    const rect = mermaidElement.getBoundingClientRect();
-                    if (rect.width === 0 || rect.height === 0) {
+                    // 使用 scrollWidth/scrollHeight 以确保捕获完整内容（包括溢出部分）
+                    const actualWidth = Math.max(
+                        mermaidElement.scrollWidth,
+                        mermaidElement.offsetWidth,
+                        mermaidElement.clientWidth
+                    );
+                    const actualHeight = Math.max(
+                        mermaidElement.scrollHeight,
+                        mermaidElement.offsetHeight,
+                        mermaidElement.clientHeight
+                    );
+                    
+                    if (actualWidth === 0 || actualHeight === 0) {
                         AndroidBridge.onCaptureError('Element has zero size');
                         return JSON.stringify({ error: 'Zero size' });
                     }
-                    const renderScale = Math.min(window.devicePixelRatio , 3);
+                    
+                    console.log('Capturing element with size:', actualWidth, 'x', actualHeight);
+                    
+                    // 使用 html2canvas 截图，使用实际内容尺寸
+                    // 使用设备的实际 density 计算 scale，确保图片清晰度
+                    // deviceScale 从 Android 端传入，基于设备的实际 densityDpi
+                    const deviceScale = $deviceScale;
+                    // 如果 window.devicePixelRatio 可用且更准确，优先使用它；否则使用传入的 deviceScale
+                    const renderScale = Math.min(
+                        window.devicePixelRatio || deviceScale,
+                        deviceScale,
+                        3
+                    );
+                    console.log('Using render scale:', renderScale, '(device scale:', deviceScale, ', devicePixelRatio:', window.devicePixelRatio, ')');
+                    
                     // 使用 html2canvas 截图
                     html2canvas(mermaidElement, {
                         backgroundColor: null,
                         scale: renderScale,
                         useCORS: true,
-                        logging: false,
-                        width: rect.width,
-                        height: rect.height,
-                        windowWidth: rect.width,
-                        windowHeight: rect.height
+                        logging: false, // 关闭详细日志以提高性能
+                        width: actualWidth,
+                        height: actualHeight,
+                        windowWidth: actualWidth,
+                        windowHeight: actualHeight,
+                        // 确保捕获溢出内容
+                        allowTaint: true,
+                        foreignObjectRendering: false
                     }).then(function(canvas) {
                         const dataUrl = canvas.toDataURL("image/png");
-                        console.log('Capture success, dataUrl length:', dataUrl.length);
+                        console.log('Capture success, canvas size:', canvas.width, 'x', canvas.height, ', dataUrl length:', dataUrl.length);
                         if (dataUrl && dataUrl.length > 100) {
                             AndroidBridge.onCaptureSuccess(dataUrl);
                         } else {
@@ -571,7 +607,14 @@ class AndroidMermaidHTMLRenderer private constructor() {
                     }
                     
                     val bytes = Base64.decode(base64, Base64.DEFAULT)
-                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    
+                    // html2canvas 已经根据 scale 生成了高分辨率图片，不需要再次缩放
+                    // 禁用自动缩放，保持原始分辨率以确保清晰度
+                    val options = BitmapFactory.Options()
+                    options.inScaled = false // 关键：禁用自动缩放，保持 html2canvas 生成的原始分辨率
+                    options.inPreferredConfig = Bitmap.Config.ARGB_8888 // 使用高质量配置
+                    
+                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
                     
                     if (bitmap == null) {
                         Log.e(TAG, "Failed to decode bitmap")
@@ -579,7 +622,7 @@ class AndroidMermaidHTMLRenderer private constructor() {
                             return@post
                         }
                     
-                    Log.d(TAG, "Bitmap decoded successfully: ${bitmap.width}x${bitmap.height}")
+                    Log.d(TAG, "Bitmap decoded successfully: ${bitmap.width}x${bitmap.height}, density: ${bitmap.density}")
                     
                     // 缓存图片
                     imageCache[task.cacheKey] = bitmap
