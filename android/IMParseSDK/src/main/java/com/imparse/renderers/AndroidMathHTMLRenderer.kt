@@ -230,8 +230,8 @@ class AndroidMathHTMLRenderer private constructor() {
         // 添加 JavaScript Bridge
         webView.addJavascriptInterface(CaptureBridge(webViewKey), "AndroidBridge")
         
-        // 构建完整的 HTML（包含 KaTeX CSS 和 html2canvas）
-        val fullHTML = buildFullHTML(context, html, display, textColor, fontSize)
+        // 构建完整的 HTML（包含 KaTeX CSS 和 html2canvas）, 全部按照块级公式处理
+        val fullHTML = buildFullHTML(context, html, false, textColor, fontSize)
         
         // 获取屏幕尺寸
         val activity = getActivityFromContext(context)
@@ -242,7 +242,7 @@ class AndroidMathHTMLRenderer private constructor() {
         // 设置 WebView 配置（使用更大的初始尺寸，确保内容能完全渲染）
         // 增大宽度以确保行内公式不被截断
         val width = 3000
-        val height = if (display) 800 else 400
+        val height = 800
         
         // WebView 必须被添加到视图层次结构中才能渲染
         // 使用已创建的容器

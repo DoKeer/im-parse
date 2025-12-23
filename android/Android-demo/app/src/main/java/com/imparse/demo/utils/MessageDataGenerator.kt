@@ -75,7 +75,6 @@ object MessageDataGenerator {
     private fun generateMarkdownTemplates(): List<String> {
         return listOf(
             """
-                
             - 伽玛函数：$\Gamma(z) = \int_0^\infty t^{z-1}e^{-t} dt = (z-1)!$ （${'$'}z \in \mathbb{C}, \Re(z)>0$）
 
             - 拉普拉斯变换：$\mathcal{L}{f(t)} = F(s) = \int_0^\infty f(t)e^{-st} dt = \sum_{n=0}^\infty \frac{f^{(n)}(0)}{s^{n+1}}$

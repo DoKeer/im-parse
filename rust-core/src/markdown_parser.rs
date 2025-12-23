@@ -982,7 +982,12 @@ impl MarkdownParser {
                     let mut inline_children = Vec::new();
                     self.collect_inline_content(events, &mut inline_children, current_styles);
                     
-                    if !inline_children.is_empty() {
+                    // 如果 collect_inline_content 没有消费任何事件，我们需要强制消费一个
+                    // 以避免死循环
+                    if inline_children.is_empty() && events.peek().is_some() {
+                        // collect_inline_content 没有处理这个事件，跳过它
+                        events.next();
+                    } else if !inline_children.is_empty() {
                         children.push(ASTNode::Paragraph(ParagraphNode { 
                             children: inline_children 
                         }));
