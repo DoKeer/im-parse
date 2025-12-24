@@ -107,7 +107,7 @@ class UIKitFrameMessageListViewController: UIViewController {
             guard let self = self else {
                 return
             }
-            let generatedMessages = MessageDataGenerator.generateMessages(count: 6)
+            let generatedMessages = MessageDataGenerator.generateMessages(count: 10)
             
             // 解析消息并计算布局
             var parsedMessages = generatedMessages
@@ -535,18 +535,7 @@ extension UIKitFrameMessageListViewController: UIKitFormulaSizeCacheDelegate {
     /// - Parameter key: 缓存键（公式或Mermaid的内容字符串）
     /// - Returns: 缓存的尺寸，如果不存在则返回nil
     func getCachedSize(for key: String) -> CGSize? {
-        // 生成 Kingfisher 缓存键
-        let cacheKey = generateCacheKey(for: key)
-        
-        // 从 Kingfisher 内存缓存中同步读取图片
-        if let cachedImage = ImageCache.default.retrieveImageInMemoryCache(forKey: cacheKey) {
-            // 从内存缓存中获取尺寸
-            return CGSizeMake(cachedImage.size.width, cachedImage.size.height)
-        }
-        
-        // 注意：Kingfisher 的磁盘读取是异步的，这里我们只检查内存缓存
-        // 如果内存缓存中没有，返回 nil，布局计算会使用估算高度
-        // 当图片从磁盘加载到内存后，会触发高度刷新
+      
         return nil
     }
     

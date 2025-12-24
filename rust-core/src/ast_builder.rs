@@ -6,8 +6,8 @@ pub struct ASTBuilder {
     root: RootNode,
     node_stack: Vec<ASTNode>,
     pub(crate) current_paragraph: Option<ParagraphNode>,
-    current_list: Option<ListNode>,
-    current_table: Option<TableNode>,
+    pub(crate) current_list: Option<ListNode>,
+    pub(crate) current_table: Option<TableNode>,
     current_table_row: Option<TableRow>,
 }
 
