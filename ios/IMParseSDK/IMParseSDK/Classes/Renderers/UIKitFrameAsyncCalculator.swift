@@ -422,7 +422,7 @@ public class UIKitFrameAsyncCalculator {
     private static func appendInlineMathNode(_ node: MathNode, to attrString: NSMutableAttributedString, context: UIKitRenderContext) {
         let font = context.currentFont ?? context.theme.font
         let textColor = context.currentTextColor ?? context.theme.textColor
-        let fontSize = font.pointSize
+        let fontSize = 12.0 // 行内公式用12号字
         let cacheKey = generateMathCacheKey(
             mathContent: node.content,
             textColor: textColor,
@@ -903,8 +903,8 @@ public class UIKitFrameAsyncCalculator {
     // MARK: - Math & Mermaid Layout
     
     private static func calculateMathLayout(_ node: MathNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
+        let font = context.currentFont ?? context.theme.font
         if !node.display {
-            let font = context.currentFont ?? context.theme.font
             let lineHeight = font.lineHeight
             let estimatedWidth = min(CGFloat(node.content.count * 8), width)
             return NodeLayout(
@@ -914,7 +914,7 @@ public class UIKitFrameAsyncCalculator {
         }
         
         let textColor = context.theme.textColor
-        let fontSize = node.display ? 16.0 : 14.0
+        let fontSize = font.pointSize
         let cacheKey = generateMathCacheKey(
             mathContent: node.content,
             textColor: textColor,
@@ -943,8 +943,7 @@ public class UIKitFrameAsyncCalculator {
         
         // 使用原文估算
         let contentWidth = width
-        let font = context.theme.codeFont
-        let attrString = NSAttributedString(string: node.content, attributes: [.font: font])
+        let attrString = NSAttributedString(string: node.content, attributes: [.font: context.theme.codeFont])
         let size = calculateTextSize(attrString, width: contentWidth)
         let totalHeight = ceil(size.height)
         

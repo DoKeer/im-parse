@@ -138,7 +138,7 @@ public class UIKitAttributedStringBuilder {
                 
                 // 生成缓存键
                 let textColor = context.currentTextColor ?? context.theme.textColor
-                let fontSize = font.pointSize
+                let fontSize = 12.0 // 行内公式用12号字
                 let cacheKey = generateMathCacheKey(
                     mathContent: mathNode.content,
                     textColor: textColor,

@@ -201,7 +201,6 @@ public class UIKitFrameRender {
         for (_, renderInfo) in features.inlineMathRenderInfos {
             let mathNode = renderInfo.mathNode
             let textColor = renderInfo.textColor
-            let fontSize = renderInfo.fontSize
             let onNodeLayoutChanged = context.onNodeLayoutChanged
             
             Task {
@@ -209,7 +208,6 @@ public class UIKitFrameRender {
                 if let _ = await MathHTMLRenderer.renderInlineMath(
                     mathContent: mathNode.content,
                     textColor: textColor,
-                    fontSize: fontSize,
                     formulaSizeCacheDelegate: formulaSizeCacheDelegate
                 ) {
                     // 渲染成功，在主线程触发布局更新回调
@@ -892,11 +890,12 @@ public class UIKitFrameRender {
     /// 渲染数学公式
     static func renderMath(_ node: MathNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
         assert(node.display, "行内数学公式应该使用 MathTextAttachment 在 NSAttributedString 中处理")
-        
+        let font = context.currentFont ?? context.theme.font
+
         let containerView = createEmptyView(size: frame.size)
         
         let textColor = context.theme.textColor
-        let fontSize = node.display ? 16.0 : 14.0
+        let fontSize = font.pointSize
         let cacheKey = generateMathCacheKey(
             mathContent: node.content,
             textColor: textColor,
