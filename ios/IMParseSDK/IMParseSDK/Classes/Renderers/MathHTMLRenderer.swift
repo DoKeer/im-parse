@@ -199,13 +199,13 @@ public class MathHTMLRenderer {
                 // 获取或创建 WebView（必须在主线程）
                 let webView = await self.getOrCreateWebView()
                 
-                // 构建完整的 HTML（包含 KaTeX CSS）
-                let fullHTML = self.buildFullHTML(html: html, display: display, textColor: textColor, fontSize: fontSize)
+                // 构建完整的 HTML（包含 KaTeX CSS）,  全部按照块级公式处理
+                let fullHTML = self.buildFullHTML(html: html, display: false, textColor: textColor, fontSize: fontSize)
                 
                 // 设置 WebView 配置（使用较大的初始尺寸，确保内容能完全渲染）
                 // 宽度设置为 2000pt 以容纳较长的公式（不会影响最终截图尺寸）
                 // 高度根据显示模式设置：块级公式通常更高（分数、矩阵等）
-                webView.frame = CGRect(x: 0, y: 0, width: 2000, height: display ? 500 : 200)
+                webView.frame = CGRect(x: 0, y: 0, width: 2000, height: 2000)
                 webView.isOpaque = false
                 webView.backgroundColor = .clear
                 

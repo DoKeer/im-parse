@@ -104,11 +104,17 @@ object IMParseCore {
      * 解析 Markdown（高级 API）
      */
     fun parseMarkdownToResult(input: String): ParseResult {
+        android.util.Log.d("IMParseCore", "[Kotlin] parseMarkdownToResult: 开始，输入长度 = ${input.length}")
         ensureLibraryLoaded()
+        android.util.Log.d("IMParseCore", "[Kotlin] parseMarkdownToResult: 库已加载，调用parseMarkdown")
         val ptr = parseMarkdown(input)
+        android.util.Log.d("IMParseCore", "[Kotlin] parseMarkdownToResult: parseMarkdown返回指针 = $ptr")
         return try {
+            android.util.Log.d("IMParseCore", "[Kotlin] parseMarkdownToResult: 读取结果")
             val success = getParseResultSuccess(ptr)
+            android.util.Log.d("IMParseCore", "[Kotlin] parseMarkdownToResult: success = $success")
             val astJson = if (success) getParseResultAstJson(ptr) else null
+            android.util.Log.d("IMParseCore", "[Kotlin] parseMarkdownToResult: astJson长度 = ${astJson?.length ?: 0}")
             val errorCode = if (!success) getParseResultErrorCode(ptr) else 0
             val errorMessage = if (!success) getParseResultErrorMessage(ptr) else null
             
@@ -121,7 +127,9 @@ object IMParseCore {
                 ) else null
             )
         } finally {
+            android.util.Log.d("IMParseCore", "[Kotlin] parseMarkdownToResult: 释放指针")
             freeParseResult(ptr)
+            android.util.Log.d("IMParseCore", "[Kotlin] parseMarkdownToResult: 完成")
         }
     }
     
