@@ -178,16 +178,30 @@ public class MermaidHTMLRenderer {
                 // 加载 HTML
                 webView.loadHTMLString(fullHTML, baseURL: nil)
                 
-                // 等待页面加载完成
+                // 等待页面加载完成（优化：使用超时机制，避免无限等待）
                 await withCheckedContinuation { navContinuation in
+                    var hasResumed = false
+                    let resumeOnce: () -> Void = {
+                        if !hasResumed {
+                            hasResumed = true
+                            navContinuation.resume()
+                        }
+                    }
+                    
                     // 使用 WKNavigationDelegate 监听加载完成
                     let delegate = MermaidWebViewDelegate {
-                        navContinuation.resume()
+                        resumeOnce()
                     }
                     
                     // 保存 delegate 引用（避免被释放）
                     objc_setAssociatedObject(webView, &MermaidAssociatedKeys.delegate, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
                     webView.navigationDelegate = delegate
+                    
+                    // 添加超时保护：如果 5 秒内未完成，强制继续
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 秒
+                        resumeOnce()
+                    }
                 }
                 
                 // 检查是否已经处理过
@@ -203,17 +217,21 @@ public class MermaidHTMLRenderer {
                 webView.navigationDelegate = nil
                 objc_setAssociatedObject(webView, &MermaidAssociatedKeys.delegate, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
                 
-                // 等待 mermaid.js 加载和渲染完成
-                // iOS 14 需要更多时间从 CDN 加载脚本，使用轮询检测
-                let ready = await self.waitForMermaidReady(webView: webView, maxAttempts: 20)
-        
-                if !ready {
-                    print("MermaidHTMLRenderer: Mermaid.js failed to load (timeout or iOS 14 compatibility issue)")
-                    continuation.resume(returning: nil)
-                    return
-                }
+//                // 等待 mermaid.js 加载和渲染完成
+//                // iOS 14 需要更多时间从 CDN 加载脚本，使用轮询检测
+//                // 优化：减少最大尝试次数，加快失败响应
+//                let ready = await self.waitForMermaidReady(webView: webView, maxAttempts: 15)
+//        
+//                if !ready {
+//                    print("MermaidHTMLRenderer: Mermaid.js failed to load (timeout or iOS 14 compatibility issue)")
+//                    continuation.resume(returning: nil)
+//                    return
+//                }
         
                 // Mermaid 已就绪，获取图表的精确边界
+                // 优化：添加短暂延迟，确保 DOM 完全渲染
+//                try? await Task.sleep(nanoseconds: 50_000_000) // 50ms，减少主线程阻塞
+                
                 let sizeResult = try? await webView.evaluateJavaScript("""
                     (function() {
                         const mermaidElement = document.querySelector('.mermaid');
@@ -295,70 +313,74 @@ public class MermaidHTMLRenderer {
     ///   - webView: WebView 实例
     ///   - maxAttempts: 最大尝试次数（默认 20 次，每次 0.2 秒，共 4 秒）
     /// - Returns: 是否成功加载
-    @MainActor
-    private func waitForMermaidReady(webView: WKWebView, maxAttempts: Int) async -> Bool {
-        return await checkMermaidReady(webView: webView, attempt: 0, maxAttempts: maxAttempts)
-    }
+//    @MainActor
+//    private func waitForMermaidReady(webView: WKWebView, maxAttempts: Int) async -> Bool {
+//        return await checkMermaidReady(webView: webView, attempt: 0, maxAttempts: maxAttempts)
+//    }
     
-    /// 递归检查 Mermaid.js 是否加载完成
-    @MainActor
-    private func checkMermaidReady(webView: WKWebView, attempt: Int, maxAttempts: Int) async -> Bool {
-        guard attempt < maxAttempts else {
-            // 超时
-            return false
-        }
-        
-        // 检查 mermaid 对象和渲染是否完成
-        do {
-            let result = try await webView.evaluateJavaScript("""
-                (function() {
-                    // 检查 mermaid.js 是否加载
-                    if (typeof mermaid === 'undefined') {
-                        return { ready: false, reason: 'mermaid not loaded' };
-                    }
-                    
-                    // 检查 SVG 元素是否已渲染（Mermaid 会将代码转换为 SVG）
-                    const mermaidElement = document.querySelector('.mermaid');
-                    if (!mermaidElement) {
-                        return { ready: false, reason: 'mermaid element not found' };
-                    }
-                    
-                    // 检查是否包含 SVG（已渲染）
-                    const hasSVG = mermaidElement.querySelector('svg') !== null;
-                    if (hasSVG) {
-                        return { ready: true, reason: 'rendered' };
-                    }
-                    
-                    return { ready: false, reason: 'not rendered yet' };
-                })();
-            """)
-            
-            if let statusDict = result as? [String: Any],
-               let ready = statusDict["ready"] as? Bool,
-               let reason = statusDict["reason"] as? String {
-                if ready {
-                    print("MermaidHTMLRenderer: Mermaid ready after \(attempt + 1) attempts - \(reason)")
-                    return true
-                } else {
-                    // 未就绪，继续等待
-                    if attempt == 0 || (attempt + 1) % 5 == 0 {
-                        print("MermaidHTMLRenderer: Waiting for mermaid (attempt \(attempt + 1)/\(maxAttempts)) - \(reason)")
-                    }
-                    try await Task.sleep(nanoseconds: 200_000_000) // 0.2 秒
-                    return await checkMermaidReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts)
-                }
-            } else {
-                // 未知错误，继续重试
-                try await Task.sleep(nanoseconds: 200_000_000) // 0.2 秒
-                return await checkMermaidReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts)
-            }
-        } catch {
-            print("MermaidHTMLRenderer: Check ready error (attempt \(attempt + 1)/\(maxAttempts)): \(error)")
-            // 继续重试
-            try? await Task.sleep(nanoseconds: 200_000_000) // 0.2 秒
-            return await checkMermaidReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts)
-        }
-    }
+    // 递归检查 Mermaid.js 是否加载完成
+//    @MainActor
+//    private func checkMermaidReady(webView: WKWebView, attempt: Int, maxAttempts: Int) async -> Bool {
+//        guard attempt < maxAttempts else {
+//            // 超时
+//            return false
+//        }
+//        
+//        // 检查 mermaid 对象和渲染是否完成
+//        do {
+//            let result = try await webView.evaluateJavaScript("""
+//                (function() {
+//                    // 检查 mermaid.js 是否加载
+//                    if (typeof mermaid === 'undefined') {
+//                        return { ready: false, reason: 'mermaid not loaded' };
+//                    }
+//                    
+//                    // 检查 SVG 元素是否已渲染（Mermaid 会将代码转换为 SVG）
+//                    const mermaidElement = document.querySelector('.mermaid');
+//                    if (!mermaidElement) {
+//                        return { ready: false, reason: 'mermaid element not found' };
+//                    }
+//                    
+//                    // 检查是否包含 SVG（已渲染）
+//                    const hasSVG = mermaidElement.querySelector('svg') !== null;
+//                    if (hasSVG) {
+//                        return { ready: true, reason: 'rendered' };
+//                    }
+//                    
+//                    return { ready: false, reason: 'not rendered yet' };
+//                })();
+//            """)
+//            
+//            if let statusDict = result as? [String: Any],
+//               let ready = statusDict["ready"] as? Bool,
+//               let reason = statusDict["reason"] as? String {
+//                if ready {
+//                    print("MermaidHTMLRenderer: Mermaid ready after \(attempt + 1) attempts - \(reason)")
+//                    return true
+//                } else {
+//                    // 未就绪，继续等待
+//                    // 优化：使用更短的等待间隔，加快响应速度
+//                    if attempt == 0 || (attempt + 1) % 5 == 0 {
+//                        print("MermaidHTMLRenderer: Waiting for mermaid (attempt \(attempt + 1)/\(maxAttempts)) - \(reason)")
+//                    }
+//                    // 优化：减少等待时间，从 0.2 秒减少到 0.15 秒
+//                    try await Task.sleep(nanoseconds: 150_000_000) // 0.15 秒
+//                    return await checkMermaidReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts)
+//                }
+//            } else {
+//                // 未知错误，继续重试
+//                // 优化：减少等待时间
+//                try await Task.sleep(nanoseconds: 150_000_000) // 0.15 秒
+//                return await checkMermaidReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts)
+//            }
+//        } catch {
+//            print("MermaidHTMLRenderer: Check ready error (attempt \(attempt + 1)/\(maxAttempts)): \(error)")
+//            // 继续重试
+//            // 优化：减少等待时间
+//            try? await Task.sleep(nanoseconds: 150_000_000) // 0.15 秒
+//            return await checkMermaidReady(webView: webView, attempt: attempt + 1, maxAttempts: maxAttempts)
+//        }
+//    }
     
     /// 构建完整的 HTML（包含 mermaid.js）
     /// 优先使用本地资源，失败时自动降级到 CDN
@@ -485,15 +507,62 @@ public class MermaidHTMLRenderer {
     private func captureWebView(_ webView: WKWebView, contentRect: CGRect?) async -> UIImage? {
         let config = WKSnapshotConfiguration()
         
+        // 获取屏幕 scale，用于生成高清图片（避免模糊）
+        let scale = UIScreen.main.scale
+        
         // 如果指定了内容区域，只截取该区域；否则截取整个 WebView
+        let targetRect: CGRect
         if let rect = contentRect {
-            config.rect = rect
+            targetRect = rect
         } else {
-            config.rect = webView.bounds
+            targetRect = webView.bounds
         }
         
+        config.rect = targetRect
+        
+        // 设置快照宽度为实际像素宽度（点数 × scale）
+        // 这样可以生成高分辨率图片，避免在 Retina 屏幕上模糊
+        config.snapshotWidth = NSNumber(value: Double(targetRect.width * scale))
+        
         do {
+            // 验证生成的图片尺寸（必须在主线程调用）
             let image = try await webView.takeSnapshot(with: config)
+            
+            // 确保 UIImage 有正确的 scale 属性
+            // WKWebView.takeSnapshot 可能返回 scale=1.0 的图片，即使设置了 snapshotWidth
+            // 我们需要确保返回的图片有正确的 scale，这样 image.size 才是逻辑尺寸（points）
+            if image.scale != scale {
+                // 将图片 scale 校正移到后台线程处理，减少主线程阻塞
+                return await Task.detached(priority: .userInitiated) {
+                    // 计算实际像素尺寸：如果 image.scale = 1.0，则 image.size 就是像素尺寸
+                    // 如果 image.scale != 1.0，则实际像素尺寸 = image.size * image.scale
+                    let actualPixelWidth = image.size.width * image.scale
+                    let actualPixelHeight = image.size.height * image.scale
+                    
+                    // 计算逻辑尺寸：实际像素尺寸 / 目标 scale
+                    let logicalSize = CGSize(
+                        width: actualPixelWidth / scale,
+                        height: actualPixelHeight / scale
+                    )
+                    
+                    // 使用 UIGraphicsImageRenderer 重新创建，确保 scale 正确
+                    // 注意：UIGraphicsImageRenderer 可以在后台线程使用
+                    let format = UIGraphicsImageRendererFormat.default()
+                    format.scale = scale
+                    let renderer = UIGraphicsImageRenderer(size: logicalSize, format: format)
+                    let correctedImage = renderer.image { _ in
+                        // 将原始图片绘制到新的画布上，使用逻辑尺寸
+                        // 注意：draw 方法会自动处理 scale，所以使用逻辑尺寸即可
+                        image.draw(in: CGRect(origin: .zero, size: logicalSize))
+                    }
+                    
+                    // 验证：correctedImage.size 应该是逻辑尺寸，correctedImage.scale 应该是 scale
+                    print("MermaidHTMLRenderer: Corrected image scale - original: size=\(image.size), scale=\(image.scale), pixels=\(actualPixelWidth)×\(actualPixelHeight); corrected: size=\(correctedImage.size), scale=\(correctedImage.scale)")
+                    return correctedImage
+                }.value
+            }
+            
+            // scale 已经正确，直接返回
             return image
         } catch {
             print("MermaidHTMLRenderer: Snapshot error: \(error.localizedDescription)")

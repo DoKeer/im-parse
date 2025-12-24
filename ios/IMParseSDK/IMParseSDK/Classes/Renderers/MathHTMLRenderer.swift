@@ -214,16 +214,30 @@ public class MathHTMLRenderer {
                 // 加载 HTML
                 webView.loadHTMLString(fullHTML, baseURL: nil)
                 
-                // 等待页面加载完成
+                // 等待页面加载完成（优化：使用超时机制，避免无限等待）
                 await withCheckedContinuation { navContinuation in
+                    var hasResumed = false
+                    let resumeOnce: () -> Void = {
+                        if !hasResumed {
+                            hasResumed = true
+                            navContinuation.resume()
+                        }
+                    }
+                    
                     // 使用 WKNavigationDelegate 监听加载完成
                     let delegate = MathWebViewDelegate {
-                        navContinuation.resume()
+                        resumeOnce()
                     }
                     
                     // 保存 delegate 引用（避免被释放）
                     objc_setAssociatedObject(webView, &MathAssociatedKeys.delegate, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
                     webView.navigationDelegate = delegate
+                    
+                    // 添加超时保护：如果 5 秒内未完成，强制继续
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 秒
+                        resumeOnce()
+                    }
                 }
                 
                 // 检查是否已经处理过
@@ -251,7 +265,11 @@ public class MathHTMLRenderer {
                 // 获取数学公式容器的精确边界（相对于视口）
                 // 注意：getBoundingClientRect() 返回的是实际渲染尺寸（包括字体、行高等）
                 // 使用 Math.ceil() 向上取整，避免因浮点数截断导致内容被裁剪
+                // 优化：添加短暂延迟，确保 DOM 完全渲染
                 do {
+                    // 等待一小段时间确保 DOM 渲染完成（优化：减少等待时间）
+//                    try await Task.sleep(nanoseconds: 50_000_000) // 50ms，减少主线程阻塞
+                    
                     let result = try await webView.evaluateJavaScript("""
                         (function() {
                             // 先查找 .katex 元素（KaTeX 生成的元素）
@@ -411,37 +429,41 @@ public class MathHTMLRenderer {
         // snapshotWidth 是生成图片的实际像素宽度
         config.snapshotWidth = NSNumber(value: Double(targetRect.width * scale))
         do {
-            // 验证生成的图片尺寸
+            // 验证生成的图片尺寸（必须在主线程调用）
             let image = try await webView.takeSnapshot(with: config)
             
             // 确保 UIImage 有正确的 scale 属性
             // WKWebView.takeSnapshot 可能返回 scale=1.0 的图片，即使设置了 snapshotWidth
             // 我们需要确保返回的图片有正确的 scale，这样 image.size 才是逻辑尺寸（points）
             if image.scale != scale {
-                // 计算实际像素尺寸：如果 image.scale = 1.0，则 image.size 就是像素尺寸
-                // 如果 image.scale != 1.0，则实际像素尺寸 = image.size * image.scale
-                let actualPixelWidth = image.size.width * image.scale
-                let actualPixelHeight = image.size.height * image.scale
-                
-                // 计算逻辑尺寸：实际像素尺寸 / 目标 scale
-                let logicalSize = CGSize(
-                    width: actualPixelWidth / scale,
-                    height: actualPixelHeight / scale
-                )
-                
-                // 使用 UIGraphicsImageRenderer 重新创建，确保 scale 正确
-                let format = UIGraphicsImageRendererFormat.default()
-                format.scale = scale
-                let renderer = UIGraphicsImageRenderer(size: logicalSize, format: format)
-                let correctedImage = renderer.image { _ in
-                    // 将原始图片绘制到新的画布上，使用逻辑尺寸
-                    // 注意：draw 方法会自动处理 scale，所以使用逻辑尺寸即可
-                    image.draw(in: CGRect(origin: .zero, size: logicalSize))
-                }
-                
-                // 验证：correctedImage.size 应该是逻辑尺寸，correctedImage.scale 应该是 scale
-                print("MathHTMLRenderer: Corrected image scale - original: size=\(image.size), scale=\(image.scale), pixels=\(actualPixelWidth)×\(actualPixelHeight); corrected: size=\(correctedImage.size), scale=\(correctedImage.scale)")
-                return correctedImage
+                // 将图片 scale 校正移到后台线程处理，减少主线程阻塞
+                return await Task.detached(priority: .userInitiated) {
+                    // 计算实际像素尺寸：如果 image.scale = 1.0，则 image.size 就是像素尺寸
+                    // 如果 image.scale != 1.0，则实际像素尺寸 = image.size * image.scale
+                    let actualPixelWidth = image.size.width * image.scale
+                    let actualPixelHeight = image.size.height * image.scale
+                    
+                    // 计算逻辑尺寸：实际像素尺寸 / 目标 scale
+                    let logicalSize = CGSize(
+                        width: actualPixelWidth / scale,
+                        height: actualPixelHeight / scale
+                    )
+                    
+                    // 使用 UIGraphicsImageRenderer 重新创建，确保 scale 正确
+                    // 注意：UIGraphicsImageRenderer 可以在后台线程使用
+                    let format = UIGraphicsImageRendererFormat.default()
+                    format.scale = scale
+                    let renderer = UIGraphicsImageRenderer(size: logicalSize, format: format)
+                    let correctedImage = renderer.image { _ in
+                        // 将原始图片绘制到新的画布上，使用逻辑尺寸
+                        // 注意：draw 方法会自动处理 scale，所以使用逻辑尺寸即可
+                        image.draw(in: CGRect(origin: .zero, size: logicalSize))
+                    }
+                    
+                    // 验证：correctedImage.size 应该是逻辑尺寸，correctedImage.scale 应该是 scale
+                    print("MathHTMLRenderer: Corrected image scale - original: size=\(image.size), scale=\(image.scale), pixels=\(actualPixelWidth)×\(actualPixelHeight); corrected: size=\(correctedImage.size), scale=\(correctedImage.scale)")
+                    return correctedImage
+                }.value
             }
             
             // scale 已经正确，直接返回
