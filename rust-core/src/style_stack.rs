@@ -114,11 +114,12 @@ impl StyleStack {
         let pos = self.stack.len();
         let type_id = style.type_id();
         
-        self.stack.push(style);
         self.type_positions
             .entry(type_id)
             .or_insert_with(Vec::new)
             .push(pos);
+        
+        self.stack.push(style);
     }
     
     /// 弹出样式

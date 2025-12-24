@@ -25,6 +25,10 @@ jni = { version = "0.21", optional = true }
 [dev-dependencies]
 criterion = "0.5"
 
+[[bench]]
+name = "parser_bench"
+harness = false
+
 # 优化 release 构建，减小体积
 [profile.release]
 # 优化级别：z = 优化大小，s = 优化大小和速度的平衡

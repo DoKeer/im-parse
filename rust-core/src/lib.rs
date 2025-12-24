@@ -5,6 +5,11 @@ pub mod ast_builder;
 pub mod html_renderer;
 pub mod style_config;
 
+// 优化模块（新版解析器支持）
+pub mod event_stream;
+pub mod text_span;
+pub mod style_stack;
+
 pub mod ffi;
 
 #[cfg(feature = "jni")]
@@ -225,5 +230,9 @@ pub enum ParseError {
     MarkdownError(String),
     #[error("Delta parse error: {0}")]
     DeltaError(String),
+    #[error("Unexpected event: {0}")]
+    UnexpectedEvent(String),
+    #[error("Unexpected end: {0}")]
+    UnexpectedEnd(String),
 }
 

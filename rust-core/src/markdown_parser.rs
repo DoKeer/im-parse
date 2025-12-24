@@ -1,6 +1,7 @@
 use crate::ast::*;
 use crate::ast_builder::ASTBuilder;
 use crate::ParseError;
+use crate::text_span::{TextBuffer, MathParser, SpanBasedBuilder, InlineStyle as SpanInlineStyle};
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd, HeadingLevel};
 
 /// Markdown 解析器
@@ -297,7 +298,7 @@ impl MarkdownParser {
                 | Event::End(TagEnd::TableRow)
                 | Event::End(TagEnd::Table) => {
                     // 在退出前处理累积的文本
-                    self.flush_text_buffer(&mut text_buffer, children);
+                    self.flush_text_buffer_v2(&mut text_buffer, children);
                     break;
                 }
                 // 处理块级标签的开始（这些不应该在行内内容中出现）
@@ -307,7 +308,7 @@ impl MarkdownParser {
                 | Event::Start(Tag::List(_))
                 | Event::Start(Tag::CodeBlock(_))
                 | Event::Start(Tag::Table(_)) => {
-                    self.flush_text_buffer(&mut text_buffer, children);
+                    self.flush_text_buffer_v2(&mut text_buffer, children);
                     break;
                 }
                 _ => {
@@ -323,7 +324,7 @@ impl MarkdownParser {
                             }
                             Event::Code(code) => {
                                 // 先处理累积的文本
-                                self.flush_text_buffer(&mut text_buffer, children);
+                                self.flush_text_buffer_v2(&mut text_buffer, children);
                                 // 添加 Code 节点
                                 children.push(ASTNode::Code(CodeNode {
                                     content: code.to_string(),
@@ -345,7 +346,7 @@ impl MarkdownParser {
                             }
                             Event::Html(html) => {
                                 // 先处理累积的文本
-                                self.flush_text_buffer(&mut text_buffer, children);
+                                self.flush_text_buffer_v2(&mut text_buffer, children);
                                 // 在行内上下文中添加 HTML 节点
                                 children.push(ASTNode::Html(HtmlNode {
                                     content: html.to_string(),
@@ -391,17 +392,17 @@ impl MarkdownParser {
         }
         
         // 处理剩余的文本缓冲区
-        self.flush_text_buffer(&mut text_buffer, children);
+        self.flush_text_buffer_v2(&mut text_buffer, children);
     }
-
-    /// 处理累积的文本缓冲区，统一解析块级和行内公式
+    
+    /// 处理累积的文本缓冲区（优化版 - 使用 Span-based 处理）
     /// 
-    /// 这是公式识别的核心函数。采用两阶段策略：
-    /// 1. 先识别块级公式 `$$...$$`
-    /// 2. 再识别行内公式 `$...$`
-    /// 
-    /// 通过文本累积解决pulldown-cmark将LaTeX反斜杠拆分成多个Event的问题。
-    fn flush_text_buffer(
+    /// Phase 2 优化：
+    /// - 使用 TextBuffer 避免重复字符串分配
+    /// - 使用 MathParser 一次遍历完成公式解析
+    /// - 复杂度从 O(n²) 降至 O(n)
+    #[allow(dead_code)]
+    fn flush_text_buffer_v2(
         &self,
         buffer: &mut Vec<TextFragment>,
         children: &mut Vec<ASTNode>,
@@ -410,154 +411,35 @@ impl MarkdownParser {
             return;
         }
         
-        // 1. 合并所有文本内容
-        let full_text = buffer.iter()
-            .map(|f| f.content.as_str())
-            .collect::<String>();
+        // 1. 构建 TextBuffer（Span-based）
+        let mut text_buffer = TextBuffer::new();
+        for fragment in buffer.iter() {
+            // 转换 InlineStyle 到 SpanInlineStyle
+            let span_styles: Vec<SpanInlineStyle> = fragment.styles.iter().map(|s| {
+                match s {
+                    InlineStyle::Strong => SpanInlineStyle::Strong,
+                    InlineStyle::Em => SpanInlineStyle::Em,
+                    InlineStyle::Strike => SpanInlineStyle::Strike,
+                    InlineStyle::Link(url) => SpanInlineStyle::Link(url.clone()),
+                }
+            }).collect();
+            
+            text_buffer.push(&fragment.content, &span_styles);
+        }
         
-        if full_text.is_empty() {
+        if text_buffer.is_empty() {
             buffer.clear();
             return;
         }
         
-        // 2. 先处理块级公式 $$...$$
-        let block_parts = self.split_block_math(&full_text);
+        // 2. 使用 MathParser 解析数学公式（O(n) 复杂度）
+        let content_spans = MathParser::parse(text_buffer.full_text());
         
-        if let Some(block_parts) = block_parts {
-            // 找到了块级公式
-            let mut current_pos = 0;
-            
-            for part in block_parts {
-                match part {
-                    TextPart::Math(content) => {
-                        // 块级数学公式节点
-                        let content_len = content.chars().count();
-                        children.push(ASTNode::Math(MathNode { content, display: true }));
-                        // 更新当前位置（包括 $$ 符号）
-                        current_pos += content_len + 4; // +4 for the $$ signs
-                    }
-                    TextPart::Text(text) => {
-                        if !text.is_empty() {
-                            // 对这段文本继续处理行内公式
-                            let inline_parts = self.split_inline_math(&text);
-                            let text_start = current_pos;
-                            
-                            for inline_part in inline_parts {
-                                match inline_part {
-                                    TextPart::Math(inline_content) => {
-                                        let content_len = inline_content.chars().count();
-                                        children.push(ASTNode::Math(MathNode { content: inline_content, display: false }));
-                                        current_pos += content_len + 2;
-                                    }
-                                    TextPart::Text(inline_text) => {
-                                        if !inline_text.is_empty() {
-                                            self.process_text_fragment_with_styles(
-                                                &inline_text,
-                                                buffer,
-                                                text_start,
-                                                current_pos,
-                                                children
-                                            );
-                                            current_pos += inline_text.chars().count();
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            // 没有块级公式，只处理行内公式
-            let parts = self.split_inline_math(&full_text);
-            let mut current_pos = 0;
-            
-            for part in parts {
-                match part {
-                    TextPart::Math(content) => {
-                        // 行内数学公式节点
-                        let content_len = content.chars().count();
-                        children.push(ASTNode::Math(MathNode { content, display: false }));
-                        // 更新当前位置（包括 $ 符号）
-                        current_pos += content_len + 2; // +2 for the $ signs
-                    }
-                    TextPart::Text(text) => {
-                        if !text.is_empty() {
-                            self.process_text_fragment_with_styles(
-                                &text,
-                                buffer,
-                                0,
-                                current_pos,
-                                children
-                            );
-                            current_pos += text.chars().count();
-                        }
-                    }
-                }
-            }
-        }
+        // 3. 使用 SpanBasedBuilder 构造 AST 节点
+        let nodes = SpanBasedBuilder::build_nodes(&text_buffer, &content_spans);
         
+        children.extend(nodes);
         buffer.clear();
-    }
-    
-    /// 处理文本片段，应用样式
-    fn process_text_fragment_with_styles(
-        &self,
-        text: &str,
-        buffer: &[TextFragment],
-        buffer_start_pos: usize,
-        text_start: usize,
-        children: &mut Vec<ASTNode>,
-    ) {
-        let text_end = text_start + text.chars().count();
-        
-        // 找出覆盖这段文本的样式片段
-        let mut text_fragments_in_range = Vec::new();
-        let mut accumulated_offset = buffer_start_pos;
-        
-        for fragment in buffer.iter() {
-            let fragment_start = accumulated_offset;
-            let fragment_end = fragment_start + fragment.content.chars().count();
-            
-            // 检查这个片段是否与当前文本范围有交集
-            if fragment_end > text_start && fragment_start < text_end {
-                let overlap_start = fragment_start.max(text_start);
-                let overlap_end = fragment_end.min(text_end);
-                
-                if overlap_start < overlap_end {
-                    // 计算在原始文本中的位置
-                    let local_start = overlap_start - text_start;
-                    let local_end = overlap_end - text_start;
-                    
-                    // 提取对应的文本片段
-                    let chars: Vec<char> = text.chars().collect();
-                    if local_end <= chars.len() {
-                        let fragment_text: String = chars[local_start..local_end].iter().collect();
-                        text_fragments_in_range.push((fragment_text, fragment.styles.clone()));
-                    }
-                }
-            }
-            
-            accumulated_offset = fragment_end;
-            
-            if accumulated_offset >= text_end {
-                break;
-            }
-        }
-        
-        // 如果没有找到匹配的样式片段，使用无样式的文本
-        if text_fragments_in_range.is_empty() {
-            let styled_nodes = self.build_styled_nodes(text.to_string(), &[]);
-            children.extend(styled_nodes);
-        } else {
-            // 构建带样式的节点
-            for (fragment_text, styles) in text_fragments_in_range {
-                if !fragment_text.is_empty() {
-                    let styled_nodes = self.build_styled_nodes(fragment_text, &styles);
-                    children.extend(styled_nodes);
-                }
-            }
-        }
     }
 
     fn collect_block_content<'a>(

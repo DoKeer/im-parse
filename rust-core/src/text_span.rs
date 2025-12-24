@@ -476,9 +476,10 @@ mod tests {
         let text = "Before $$x^2$$ after";
         let spans = MathParser::parse_block_math(text);
         
+        // 应该有 3 个 spans：Text, BlockMath, Text
         assert_eq!(spans.len(), 3);
         assert!(matches!(spans[0], ContentSpan::Text { .. }));
-        assert!(matches!(spans[1], ContentSpan::Text { .. })); // 这里应该是 BlockMath
+        assert!(matches!(spans[1], ContentSpan::BlockMath { .. }));
         assert!(matches!(spans[2], ContentSpan::Text { .. }));
     }
     
