@@ -317,23 +317,37 @@ internal class MathTextAttachment: NSTextAttachment {
         
         // 计算目标显示尺寸（基于字体行高，考虑屏幕 scale）
         let screenScale = UIScreen.main.scale
-        let targetHeight = font.capHeight * 2.5 // 要放大1.5倍
+        let baseTargetHeight = font.capHeight * 2 // 基础Attachment高度比字体capHeight要放大2倍
         let imageAspectRatio = image.size.width / image.size.height
-        let targetWidth = targetHeight * imageAspectRatio
         
-        // 缩放图片到目标尺寸（考虑屏幕 scale，确保清晰度）
+        // 根据图片尺寸和font.capHeight，计算真正合适的image尺寸
+        // 如果图片高度超过基础高度，需要增加Attachment整体高度
+        let finalTargetHeight: CGFloat
+        if image.size.height > baseTargetHeight {
+            // 图片比较高，使用图片的实际高度（保持清晰度）
+            finalTargetHeight = image.size.height
+        } else {
+            // 图片比较小，放大到基础高度
+            finalTargetHeight = baseTargetHeight
+        }
+        
+        let finalTargetWidth = finalTargetHeight * imageAspectRatio
+        
+        // 使用UIGraphicsImageRenderer进行缩放，保持屏幕scale
         let scaledImage: UIImage
-        if image.size.width > targetWidth || image.size.height > targetHeight {
-            // 图片比需要的大，需要缩放
-            // 使用 UIGraphicsImageRenderer 进行高质量缩放，保持屏幕 scale
+        if abs(image.size.width - finalTargetWidth) > 0.1 || abs(image.size.height - finalTargetHeight) > 0.1 {
+            // 需要缩放图片
             let format = UIGraphicsImageRendererFormat.default()
             format.scale = screenScale // 使用屏幕 scale，确保在高分辨率屏幕上清晰
-            let renderer = UIGraphicsImageRenderer(size: CGSize(width: targetWidth, height: targetHeight), format: format)
+            let renderer = UIGraphicsImageRenderer(
+                size: CGSize(width: finalTargetWidth, height: finalTargetHeight),
+                format: format
+            )
             scaledImage = renderer.image { _ in
-                image.draw(in: CGRect(origin: .zero, size: CGSize(width: targetWidth, height: targetHeight)))
+                image.draw(in: CGRect(origin: .zero, size: CGSize(width: finalTargetWidth, height: finalTargetHeight)))
             }
         } else {
-            // 图片已经足够小，直接使用
+            // 图片尺寸已经合适，直接使用
             scaledImage = image
         }
         
