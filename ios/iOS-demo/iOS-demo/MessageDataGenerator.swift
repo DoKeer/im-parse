@@ -76,6 +76,7 @@ class MessageDataGenerator {
         return [
             #"""
             **a $b$ c**
+            数据3 $E = mc^2$ 
             $$\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$$
 
             多层嵌套对数 $\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$

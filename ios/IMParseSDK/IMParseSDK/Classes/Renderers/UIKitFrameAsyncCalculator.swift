@@ -430,7 +430,7 @@ public class UIKitFrameAsyncCalculator {
         )
         
         if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0) {
-            let mathAttachment = MathTextAttachment(mathNode: node, image: cachedImage, font: font)
+            let mathAttachment = MathTextAttachment(mathNode: node, image: cachedImage, font: font, context: context)
             attrString.append(NSAttributedString(attachment: mathAttachment))
         } else {
             // 缓存未命中，使用原文，并添加标记以便在渲染时处理

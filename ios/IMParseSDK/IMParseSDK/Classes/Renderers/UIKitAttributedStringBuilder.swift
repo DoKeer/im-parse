@@ -147,7 +147,7 @@ public class UIKitAttributedStringBuilder {
                 
                 // 先检查缓存，如果命中则创建 MathTextAttachment
                 if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0) {
-                    let mathAttachment = MathTextAttachment(mathNode: mathNode, image: cachedImage, font: font)
+                    let mathAttachment = MathTextAttachment(mathNode: mathNode, image: cachedImage, font: font, context: context)
                     return NSAttributedString(attachment: mathAttachment)
                 }
                 

@@ -310,51 +310,72 @@ internal class MathTextAttachment: NSTextAttachment {
     ///   - mathNode: 数学公式节点
     ///   - image: 已加载的公式图片（必须提供，应该比需要的大）
     ///   - font: 当前字体（用于计算 bounds）
-    init(mathNode: MathNode, image: UIImage, font: UIFont) {
+    init(mathNode: MathNode, image: UIImage, font: UIFont, context: UIKitRenderContext) {
         self.mathNode = mathNode
         self.font = font
         super.init(data: nil, ofType: nil)
         
         // 计算目标显示尺寸（基于字体行高，考虑屏幕 scale）
         let screenScale = UIScreen.main.scale
-        let baseTargetHeight = font.capHeight * 2 // 基础Attachment高度比字体capHeight要放大2倍
+        let minHeight = font.capHeight * 2 // 基础Attachment高度比字体capHeight要放大2倍
+        let maxHeight = font.capHeight * 4 // 最大Attachment高度比字体capHeight要放大5倍
         let imageAspectRatio = image.size.width / image.size.height
+        let availableWidth = context.width*0.5
         
-        // 根据图片尺寸和font.capHeight，计算真正合适的image尺寸
-        // 如果图片高度超过基础高度，需要增加Attachment整体高度
-        let finalTargetHeight: CGFloat
-        if image.size.height > baseTargetHeight {
-            // 图片比较高，使用图片的实际高度（保持清晰度）
-            finalTargetHeight = image.size.height
-        } else {
-            // 图片比较小，放大到基础高度
-            finalTargetHeight = baseTargetHeight
+        // 行内数学公式图片缩放算法，保证图片清晰度和阅读体验
+        var targetWidth = image.size.width
+        var targetHeight = image.size.height
+        
+        // 1. 如果图片宽度比context.width大，则按照比例缩放，保证图片宽度不超过context.width
+        if image.size.width > availableWidth {
+            targetWidth = availableWidth
+            targetHeight = targetWidth / imageAspectRatio
         }
         
-        let finalTargetWidth = finalTargetHeight * imageAspectRatio
+        // 2. 如果图片宽度比context.width小，再判断图片高度
+        else if image.size.width <= availableWidth {
+            // 2.1 如果图片高度比maxHeight小，直接使用图片尺寸（已在上面设置）
+            if image.size.height > maxHeight {
+                // 2.2 如果图片高度比maxHeight大，则按照比例缩放，保证图片高度不超过maxHeight
+                targetHeight = maxHeight
+                targetWidth = targetHeight * imageAspectRatio
+                // 如果缩放后宽度超过可用宽度，需要重新按宽度缩放
+                if targetWidth > availableWidth {
+                    targetWidth = availableWidth
+                    targetHeight = targetWidth / imageAspectRatio
+                }
+            }
+            else if image.size.height < minHeight {
+                // 4. 如果图片高度比minHeight小，则按照比例缩放，保证图片高度不小于minHeight
+                targetHeight = minHeight
+                targetWidth = targetHeight * imageAspectRatio
+                // 如果缩放后宽度超过可用宽度，需要重新按宽度缩放
+                if targetWidth > availableWidth {
+                    targetWidth = availableWidth
+                    targetHeight = targetWidth / imageAspectRatio
+                }
+            }
+        }
         
         // 使用UIGraphicsImageRenderer进行缩放，保持屏幕scale
         let scaledImage: UIImage
-        if abs(image.size.width - finalTargetWidth) > 0.1 || abs(image.size.height - finalTargetHeight) > 0.1 {
-            // 需要缩放图片
+        if abs(targetWidth - image.size.width) > 1 || abs(targetHeight - image.size.height) > 1 {
+            // 需要缩放
             let format = UIGraphicsImageRendererFormat.default()
             format.scale = screenScale // 使用屏幕 scale，确保在高分辨率屏幕上清晰
-            let renderer = UIGraphicsImageRenderer(
-                size: CGSize(width: finalTargetWidth, height: finalTargetHeight),
-                format: format
-            )
+            let renderer = UIGraphicsImageRenderer(size: CGSize(width: targetWidth, height: targetHeight), format: format)
             scaledImage = renderer.image { _ in
-                image.draw(in: CGRect(origin: .zero, size: CGSize(width: finalTargetWidth, height: finalTargetHeight)))
+                image.draw(in: CGRect(origin: .zero, size: CGSize(width: targetWidth, height: targetHeight)))
             }
         } else {
-            // 图片尺寸已经合适，直接使用
+            // 不需要缩放，直接使用原图
             scaledImage = image
         }
         
         // 设置缩放后的图片
         self.image = scaledImage
         // 计算垂直居中的 bounds（使用缩放后的尺寸）
-        let displaySize = scaledImage.size
+        let displaySize = CGSize(width: targetWidth, height: targetHeight)
         let yOffset = (font.capHeight - displaySize.height) / 2
         self.cacheImageBounds = CGRect(origin: CGPoint(x: 0, y: yOffset), size: displaySize)
     }
