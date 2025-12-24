@@ -169,12 +169,15 @@ extension UIKitFrameMessageListViewController: UITableViewDataSource {
                     return
                 }
             
-                // 递归查找并替换匹配的节点
-//                    layout = updateNodeLayout(in: layout, with: updatedNodeLayout)
-                self.messages[indexPath.row].layout = nil;
-                self.messages[indexPath.row].calculateLayout(width: self.contentWidth, context: self.sharedRenderContext)
-                
-                tableView.reloadRows(at: [indexPath], with: .none)
+                var messageBackup = self.messages[indexPath.row]
+                Task {
+                    messageBackup.calculateLayout(width: self.contentWidth, context: self.sharedRenderContext)
+                    await MainActor.run {
+                        self.messages[indexPath.row] = messageBackup
+
+                        tableView.reloadRows(at: [indexPath], with: .none)
+                    }
+                }
             }
         }
         
