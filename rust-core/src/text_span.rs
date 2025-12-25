@@ -437,6 +437,13 @@ impl SpanBasedBuilder {
                     url: url.clone(),
                     children: vec![current],
                 }),
+                InlineStyle::Underline => ASTNode::Underline(UnderlineNode {
+                    children: vec![current],
+                }),
+                InlineStyle::Color(color) => ASTNode::Color(ColorNode {
+                    color: color.clone(),
+                    children: vec![current],
+                }),
             };
         }
         
@@ -450,6 +457,8 @@ pub enum InlineStyle {
     Em,
     Strike,
     Link(String),
+    Underline,
+    Color(String), // CSS color string (e.g., "#FF0000", "rgb(255,0,0)")
 }
 
 #[cfg(test)]

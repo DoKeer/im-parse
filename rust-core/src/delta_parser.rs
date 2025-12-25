@@ -1,6 +1,7 @@
 use crate::ast::*;
 use crate::ast_builder::ASTBuilder;
 use crate::ParseError;
+use crate::text_span::{TextBuffer, MathParser, SpanBasedBuilder, InlineStyle as SpanInlineStyle};
 use serde_json::Value;
 
 
@@ -349,254 +350,73 @@ impl DeltaParser {
         Ok(builder.end_document())
     }
 
+    /// 构建带样式的文本（优化版 - 使用 Span-based 处理）
+    /// 
+    /// 使用与 markdown_parser.rs 相同的架构：
+    /// - 使用 TextBuffer 避免重复字符串分配
+    /// - 使用 MathParser 一次遍历完成公式解析（O(n) 复杂度）
+    /// - 使用 SpanBasedBuilder 构造 AST 节点
     fn build_styled_text(
         &self,
         text: &str,
         attributes: &Option<DeltaAttributes>,
     ) -> Vec<ASTNode> {
-        // 首先检测数学公式（行内和块级）
-        let math_parts = self.split_math_formulas(text);
-        
-        // 如果有数学公式，需要分别处理每个部分
-        if math_parts.len() > 1 || matches!(math_parts.first(), Some(DeltaTextPart::Math(_, _))) {
-            let mut result = Vec::new();
-            for part in math_parts {
-                match part {
-                    DeltaTextPart::Math(content, display) => {
-                        result.push(ASTNode::Math(MathNode { content, display }));
-                    }
-                    DeltaTextPart::Text(text_part) => {
-                        if !text_part.is_empty() {
-                            // 对非数学公式部分应用样式
-                            let styled_nodes = self.build_styled_text_internal(&text_part, attributes);
-                            result.extend(styled_nodes);
-                        }
-                    }
-                }
-            }
-            return result;
+        if text.is_empty() {
+            return Vec::new();
         }
 
-        // 没有数学公式，正常处理样式
-        self.build_styled_text_internal(text, attributes)
-    }
-
-    /// 内部方法：构建带样式的文本（不处理数学公式）
-    fn build_styled_text_internal(
-        &self,
-        text: &str,
-        attributes: &Option<DeltaAttributes>,
-    ) -> Vec<ASTNode> {
-        if let Some(attrs) = attributes {
-            let mut styles: Vec<DeltaStyle> = Vec::new();
-
+        // 1. 转换 Delta 属性到 SpanInlineStyle
+        let span_styles: Vec<SpanInlineStyle> = if let Some(attrs) = attributes {
+            let mut styles = Vec::new();
+            
             if attrs.get("bold").and_then(|v| v.as_bool()).unwrap_or(false) {
-                styles.push(DeltaStyle::Bold);
+                styles.push(SpanInlineStyle::Strong);
             }
             if attrs.get("italic").and_then(|v| v.as_bool()).unwrap_or(false) {
-                styles.push(DeltaStyle::Italic);
+                styles.push(SpanInlineStyle::Em);
             }
             if attrs.get("underline").and_then(|v| v.as_bool()).unwrap_or(false) {
-                styles.push(DeltaStyle::Underline);
+                styles.push(SpanInlineStyle::Underline);
             }
             if attrs.get("strike").and_then(|v| v.as_bool()).unwrap_or(false) {
-                styles.push(DeltaStyle::Strike);
+                styles.push(SpanInlineStyle::Strike);
             }
-
             if let Some(link) = attrs.get("link").and_then(|v| v.as_str()) {
-                styles.push(DeltaStyle::Link(link.to_string()));
+                styles.push(SpanInlineStyle::Link(link.to_string()));
             }
-
             if let Some(color) = attrs.get("color").and_then(|v| v.as_str()) {
-                styles.push(DeltaStyle::Color(color.to_string()));
+                styles.push(SpanInlineStyle::Color(color.to_string()));
             }
+            
+            styles
+        } else {
+            Vec::new()
+        };
 
+        // 2. 检查是否是代码（代码需要特殊处理，不使用样式系统）
+        if let Some(attrs) = attributes {
             if attrs.get("code").and_then(|v| v.as_bool()).unwrap_or(false) {
                 return vec![ASTNode::Code(CodeNode {
                     content: text.to_string(),
                 })];
             }
-
-            if styles.is_empty() {
-                return vec![ASTNode::Text(TextNode {
-                    content: text.to_string(),
-                })];
-            }
-
-            // 构建样式节点
-            let text_node = ASTNode::Text(TextNode {
-                content: text.to_string(),
-            });
-            let mut current = text_node;
-
-            for style in styles.iter().rev() {
-                current = match style {
-                    DeltaStyle::Bold => ASTNode::Strong(StrongNode {
-                        children: vec![current],
-                    }),
-                    DeltaStyle::Italic => ASTNode::Em(EmNode {
-                        children: vec![current],
-                    }),
-                    DeltaStyle::Underline => ASTNode::Underline(UnderlineNode {
-                        children: vec![current],
-                    }),
-                    DeltaStyle::Strike => ASTNode::Strike(StrikeNode {
-                        children: vec![current],
-                    }),
-                    DeltaStyle::Link(url) => ASTNode::Link(LinkNode {
-                        url: url.clone(),
-                        children: vec![current],
-                    }),
-                    DeltaStyle::Color(color) => ASTNode::Color(crate::ast::ColorNode {
-                        color: color.clone(),
-                        children: vec![current],
-                    }),
-                };
-            }
-
-            vec![current]
-        } else {
-            vec![ASTNode::Text(TextNode {
-                content: text.to_string(),
-            })]
         }
+
+        // 3. 构建 TextBuffer（Span-based）
+        let mut text_buffer = TextBuffer::new();
+        text_buffer.push(text, &span_styles);
+        
+        if text_buffer.is_empty() {
+            return Vec::new();
+        }
+
+        // 4. 使用 MathParser 解析数学公式（O(n) 复杂度）
+        let content_spans = MathParser::parse(text_buffer.full_text());
+        
+        // 5. 使用 SpanBasedBuilder 构造 AST 节点
+        SpanBasedBuilder::build_nodes(&text_buffer, &content_spans)
     }
 
-    /// 分割数学公式（块级和行内）
-    fn split_math_formulas(&self, text: &str) -> Vec<DeltaTextPart> {
-        let mut parts = Vec::new();
-        let mut last_end = 0;
-        let text_bytes = text.as_bytes();
-        let mut i = 0;
-
-        // 首先处理块级公式 $$...$$
-        while i < text_bytes.len().saturating_sub(1) {
-            if text_bytes[i] == b'$' && text_bytes[i + 1] == b'$' {
-                // 找到块级公式开始标记 $$
-                let content_start = i + 2;
-                let mut found_end = false;
-                
-                // 查找结束标记 $$
-                for j in (content_start)..text_bytes.len().saturating_sub(1) {
-                    if text_bytes[j] == b'$' && text_bytes[j + 1] == b'$' {
-                        // 找到结束标记
-                        let content = text[content_start..j].trim().to_string();
-                        if !content.is_empty() {
-                            // 添加之前的文本
-                            if last_end < i {
-                                let text_part = text[last_end..i].to_string();
-                                if !text_part.is_empty() {
-                                    parts.push(DeltaTextPart::Text(text_part));
-                                }
-                            }
-                            parts.push(DeltaTextPart::Math(content, true)); // display = true
-                            last_end = j + 2;
-                            i = j + 2;
-                            found_end = true;
-                            break;
-                        }
-                    }
-                }
-
-                if !found_end {
-                    // 没有找到结束标记，跳过这两个 $
-                    i += 2;
-                }
-            } else {
-                i += 1;
-            }
-        }
-
-        // 如果没有找到块级公式，处理剩余文本中的行内公式
-        if parts.is_empty() {
-            // 没有块级公式，处理行内公式
-            return self.split_inline_math_delta(text);
-        } else {
-            // 有块级公式，处理剩余文本中的行内公式
-            if last_end < text.len() {
-                let remaining_text = text[last_end..].to_string();
-                if !remaining_text.is_empty() {
-                    let inline_parts = self.split_inline_math_delta(&remaining_text);
-                    parts.extend(inline_parts);
-                }
-            }
-        }
-
-        parts
-    }
-
-    /// 分割行内数学公式 $...$
-    fn split_inline_math_delta(&self, text: &str) -> Vec<DeltaTextPart> {
-        let mut parts = Vec::new();
-        let mut last_end = 0;
-        let chars: Vec<(usize, char)> = text.char_indices().collect();
-        let mut i = 0;
-
-        while i < chars.len() {
-            let (start, _) = chars[i];
-            
-            // 检查是否是单个 $（不是 $$）
-            if text[start..].starts_with('$') && !text[start..].starts_with("$$") {
-                let content_start = start + 1;
-                let mut found_end = false;
-                
-                // 查找结束的 $
-                for j in (i + 1)..chars.len() {
-                    let (pos, ch) = chars[j];
-                    
-                    // 检查是否是结束标记：单个 $ 且前面不是 $
-                    if ch == '$' {
-                        // 检查前面是否是 $
-                        let prev_is_dollar = if pos > 0 {
-                            text.chars().nth(pos - 1) == Some('$')
-                        } else {
-                            false
-                        };
-                        
-                        if !prev_is_dollar {
-                            // 找到结束标记
-                            let content = text[content_start..pos].trim().to_string();
-                            if !content.is_empty() {
-                                // 添加之前的文本
-                                if last_end < start {
-                                    let text_part = text[last_end..start].to_string();
-                                    if !text_part.is_empty() {
-                                        parts.push(DeltaTextPart::Text(text_part));
-                                    }
-                                }
-                                parts.push(DeltaTextPart::Math(content, false)); // display = false
-                                last_end = pos + 1;
-                                i = j + 1;
-                                found_end = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                
-                if !found_end {
-                    // 没有找到结束标记，跳过这个 $
-                    i += 1;
-                }
-            } else {
-                i += 1;
-            }
-        }
-
-        // 添加剩余的文本
-        if last_end < text.len() {
-            let text_part = text[last_end..].to_string();
-            if !text_part.is_empty() {
-                parts.push(DeltaTextPart::Text(text_part));
-            }
-        }
-
-        if parts.is_empty() {
-            parts.push(DeltaTextPart::Text(text.to_string()));
-        }
-
-        parts
-    }
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -646,22 +466,6 @@ struct EmojiValue {
 
 type DeltaAttributes = serde_json::Map<String, Value>;
 
-#[derive(Debug, Clone)]
-enum DeltaStyle {
-    Bold,
-    Italic,
-    Underline,
-    Strike,
-    Link(String),
-    Color(String), // CSS color string (e.g., "#FF0000", "rgb(255,0,0)")
-}
-
-/// Delta 文本部分（用于数学公式解析）
-enum DeltaTextPart {
-    Text(String),
-    Math(String, bool), // (content, display)
-}
-
 impl Default for DeltaParser {
     fn default() -> Self {
         Self::new()
@@ -697,8 +501,18 @@ mod tests {
         let has_list = ast.children.iter().any(|node| matches!(node, ASTNode::List(_)));
         assert!(has_list, "AST should contain list nodes");
         
-        // Check for image nodes
-        let has_image = ast.children.iter().any(|node| matches!(node, ASTNode::Image(_)));
+        // Check for image nodes (including nested ones)
+        let has_image = ast.children.iter().any(|node| {
+            match node {
+                ASTNode::Image(_) => true,
+                ASTNode::List(list) => {
+                    list.items.iter().any(|item| {
+                        item.children.iter().any(|child| matches!(child, ASTNode::Image(_)))
+                    })
+                }
+                _ => false,
+            }
+        });
         assert!(has_image, "AST should contain image nodes");
         
         // Check paragraph count (bold, italic, underline, color = 4 paragraphs)
