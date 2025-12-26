@@ -21,11 +21,12 @@ private enum RenderConstants {
 
 // MARK: - AttributedString Features
 
-/// AttributedString 特性检测结果
+    /// AttributedString 特性检测结果
 private struct AttributedStringFeatures {
     let hasLink: Bool
     let hasMention: Bool
     let hasEmoji: Bool
+    let hasMathAttachment: Bool
     let emojiAttachments: [EmojiTextAttachment]
     let inlineMathRenderInfos: [(range: NSRange, info: InlineMathRenderInfo)]
     
@@ -35,6 +36,12 @@ private struct AttributedStringFeatures {
     
     var needsInlineMathRender: Bool {
         !inlineMathRenderInfos.isEmpty
+    }
+    
+    var needsTextView: Bool {
+        // 如果有 attachments（特别是 MathTextAttachment），使用 UITextView 而不是 UILabel
+        // 因为 UITextView 对 attachments 的支持更好
+        hasMathAttachment || hasEmoji || needsInteraction
     }
 }
 
@@ -178,7 +185,9 @@ public class UIKitFrameRender {
             )
         }
         
-        if features.needsInteraction {
+        // 如果有 attachments（特别是 MathTextAttachment）或需要交互，使用 UITextView
+        // 因为 UITextView 对 attachments 的支持更好
+        if features.needsTextView {
             return createInteractiveTextView(
                 attributedString: attributedString,
                 frame: frame,
@@ -205,7 +214,7 @@ public class UIKitFrameRender {
             
             Task {
                 // 异步渲染行内公式
-                if let _ = await MathHTMLRenderer.renderInlineMath(
+                if let image = await MathHTMLRenderer.renderInlineMath(
                     mathContent: mathNode.content,
                     textColor: textColor,
                     formulaSizeCacheDelegate: formulaSizeCacheDelegate
@@ -224,6 +233,7 @@ public class UIKitFrameRender {
         var hasLink = false
         var hasMention = false
         var hasEmoji = false
+        var hasMathAttachment = false
         var emojiAttachments: [EmojiTextAttachment] = []
         var inlineMathRenderInfos: [(range: NSRange, info: InlineMathRenderInfo)] = []
         
@@ -247,6 +257,11 @@ public class UIKitFrameRender {
                 emojiAttachments.append(attachment)
             }
             
+            // 检测 MathTextAttachment
+            if attributes[.attachment] is MathTextAttachment {
+                hasMathAttachment = true
+            }
+            
             // 检测需要渲染的行内公式
             if let renderInfo = attributes[.inlineMathRenderInfo] as? InlineMathRenderInfo {
                 inlineMathRenderInfos.append((range: range, info: renderInfo))
@@ -257,6 +272,7 @@ public class UIKitFrameRender {
             hasLink: hasLink,
             hasMention: hasMention,
             hasEmoji: hasEmoji,
+            hasMathAttachment: hasMathAttachment,
             emojiAttachments: emojiAttachments,
             inlineMathRenderInfos: inlineMathRenderInfos
         )
@@ -298,6 +314,15 @@ public class UIKitFrameRender {
         label.attributedText = attributedString
         label.numberOfLines = 0
         label.frame = CGRect(origin: .zero, size: frame.size)
+        
+        // 确保 UILabel 能够正确显示所有内容，包括 attachments
+        // 使用 preferredMaxLayoutWidth 来帮助 UILabel 正确计算布局
+        label.preferredMaxLayoutWidth = frame.width
+        
+        // 强制布局更新，确保所有内容都能正确显示
+        label.setNeedsLayout()
+        label.layoutIfNeeded()
+        
         return label
     }
     

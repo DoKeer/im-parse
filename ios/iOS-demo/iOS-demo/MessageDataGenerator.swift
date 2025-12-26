@@ -75,15 +75,20 @@ class MessageDataGenerator {
     private static func generateMarkdownTemplates() -> [String] {
         return [
             #"""
-            $$\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$$
+            伽玛函数：$\Gamma(z) = \int_0^\infty t^{z-1}e^{-t} dt = (z-1)!$（$z \in \mathbb{C}, \Re(z)>0$）
+            
+            """#,
+            
+            #"""
 
-            多层嵌套对数 $\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$
+            伽玛函数：$\Gamma(z) = \int_0^\infty t^{z-1} e^{-t} \, dt = (z-1)!, \quad z \in \mathbb{C}, \Re(z) > 0$ 多层嵌套对数 $\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$
+
+            行内多公式测试：$E = mc^2$ $\int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}$ $E = mc^2$ $E = mc^2$ $E = mc^2$ 
+            
+            $$\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$$
 
             **a $b$ c**
             数据3 $E = mc^2$ 
-
-            伽玛函数：$\Gamma(z) = \int_0^\infty t^{z-1}e^{-t} dt = (z-1)!$ （$z \in \mathbb{C}, \Re(z)>0$）
-
             
             $$\Gamma(z) = \int_0^\infty t^{z-1}e^{-t} dt = (z-1)!$$ （$z \in \mathbb{C}, \Re(z)>0$）
             

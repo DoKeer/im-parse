@@ -33,8 +33,12 @@ class UIKitFrameMessageListViewController: UIViewController {
     
     /// 初始化全局共享的渲染上下文
     private func setupSharedRenderContext() {
+        var theme = UIKitTheme.default
+        theme.toolbarCodeText = "xxx"
+        theme.toolbarPreviewText = "ppp"
+
         sharedRenderContext = UIKitRenderContext(
-            theme: UIKitTheme.default,
+            theme: theme,
             width: 0, // 宽度会在使用时更新
             onLinkTap: { url in
                 // URL 打开浏览器
@@ -107,7 +111,7 @@ class UIKitFrameMessageListViewController: UIViewController {
             guard let self = self else {
                 return
             }
-            let generatedMessages = MessageDataGenerator.generateMessages(count: 10)
+            let generatedMessages = MessageDataGenerator.generateMessages(count: 1)
             
             // 解析消息并计算布局
             var parsedMessages = generatedMessages
