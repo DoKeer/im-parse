@@ -75,6 +75,19 @@ object MessageDataGenerator {
     private fun generateMarkdownTemplates(): List<String> {
         return listOf(
             """
+            $$\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$$
+
+            多层嵌套对数 $\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$
+
+            **a ${'$'}b$ c**
+            数据3 ${'$'}E = mc^2$ 
+
+            伽玛函数：$\Gamma(z) = \int_0^\infty t^{z-1}e^{-t} dt = (z-1)!$ （${'$'}z \in \mathbb{C}, \Re(z)>0$）
+
+            
+            $$\Gamma(z) = \int_0^\infty t^{z-1}e^{-t} dt = (z-1)!$$ （${'$'}z \in \mathbb{C}, \Re(z)>0$）
+            
+                
             - 伽玛函数：$\Gamma(z) = \int_0^\infty t^{z-1}e^{-t} dt = (z-1)!$ （${'$'}z \in \mathbb{C}, \Re(z)>0$）
 
             - 拉普拉斯变换：$\mathcal{L}{f(t)} = F(s) = \int_0^\infty f(t)e^{-st} dt = \sum_{n=0}^\infty \frac{f^{(n)}(0)}{s^{n+1}}$

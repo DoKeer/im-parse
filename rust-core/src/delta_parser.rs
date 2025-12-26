@@ -134,7 +134,7 @@ impl DeltaParser {
                                 // 处理段落（无论是否在列表中，换行后都可能是新段落）
                                 if !current_paragraph_children.is_empty() {
                                     builder.start_paragraph();
-                                    if let Some(para) = &mut builder.current_paragraph {
+                                    if let Some(para) = builder.current_paragraph_mut() {
                                         para.children = std::mem::take(&mut current_paragraph_children);
                                     }
                                     builder.end_paragraph();
@@ -175,7 +175,7 @@ impl DeltaParser {
                                     // 不在列表中，结束当前段落
                                     if !current_paragraph_children.is_empty() {
                                         builder.start_paragraph();
-                                        if let Some(para) = &mut builder.current_paragraph {
+                                        if let Some(para) = builder.current_paragraph_mut() {
                                             para.children = std::mem::take(&mut current_paragraph_children);
                                         }
                                         builder.end_paragraph();
@@ -264,7 +264,7 @@ impl DeltaParser {
                                                 );
                                             } else {
                                                 builder.start_paragraph();
-                                                if let Some(para) = &mut builder.current_paragraph {
+                                                if let Some(para) = builder.current_paragraph_mut() {
                                                     para.children = std::mem::take(&mut current_paragraph_children);
                                                 }
                                                 builder.end_paragraph();
@@ -313,7 +313,7 @@ impl DeltaParser {
                             // 结束当前段落
                             if !in_list && !current_paragraph_children.is_empty() {
                                 builder.start_paragraph();
-                                if let Some(para) = &mut builder.current_paragraph {
+                                if let Some(para) = builder.current_paragraph_mut() {
                                     para.children = std::mem::take(&mut current_paragraph_children);
                                 }
                                 builder.end_paragraph();
@@ -337,7 +337,7 @@ impl DeltaParser {
         // 处理剩余的段落和列表
         if !current_paragraph_children.is_empty() {
             builder.start_paragraph();
-            if let Some(para) = &mut builder.current_paragraph {
+            if let Some(para) = builder.current_paragraph_mut() {
                 para.children = current_paragraph_children;
             }
             builder.end_paragraph();

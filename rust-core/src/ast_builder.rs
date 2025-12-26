@@ -2,12 +2,17 @@ use crate::ast::*;
 use std::collections::HashMap;
 
 /// AST 构建器，用于构建统一的 HTML AST
+/// 
+/// 演进友好化设计：
+/// - 所有内部状态字段都是 private
+/// - Parser 只能通过 emit_block / finish_* 等方法操作
+/// - 不允许直接访问 current_list / current_table
 pub struct ASTBuilder {
     root: RootNode,
     node_stack: Vec<ASTNode>,
-    pub(crate) current_paragraph: Option<ParagraphNode>,
-    pub(crate) current_list: Option<ListNode>,
-    pub(crate) current_table: Option<TableNode>,
+    current_paragraph: Option<ParagraphNode>,
+    current_list: Option<ListNode>,
+    current_table: Option<TableNode>,
     current_table_row: Option<TableRow>,
 }
 
@@ -218,6 +223,33 @@ impl ASTBuilder {
         }
     }
 
+    // ========== 演进友好化：Block 节点提取方法 ==========
+    
+    /// 提取并完成当前列表（用于嵌套场景）
+    /// 
+    /// 演进说明：Parser 不应该直接访问 current_list，
+    /// 应该通过这个方法提取已完成的列表节点
+    pub fn finish_list(&mut self) -> Option<ListNode> {
+        self.current_list.take()
+    }
+    
+    /// 提取并完成当前表格（用于嵌套场景）
+    /// 
+    /// 演进说明：Parser 不应该直接访问 current_table，
+    /// 应该通过这个方法提取已完成的表格节点
+    pub fn finish_table(&mut self) -> Option<TableNode> {
+        self.current_table.take()
+    }
+    
+    /// 发出块级节点到文档根节点
+    /// 
+    /// 演进说明：统一的块级节点输出接口，
+    /// 未来可以在这里添加语义分析等处理
+    pub fn emit_block(&mut self, node: ASTNode) {
+        self.end_paragraph(); // 先结束当前段落
+        self.root.children.push(node);
+    }
+
     /// 开始表格行
     pub fn start_table_row(&mut self) {
         if let Some(row) = self.current_table_row.take() {
@@ -315,6 +347,14 @@ impl ASTBuilder {
                 para.children.push(node);
             }
         }
+    }
+    
+    /// 获取当前段落的可变引用（用于 Delta Parser 的特殊需求）
+    /// 
+    /// 演进说明：这是临时方案，未来 Delta Parser 应该通过统一的接口操作
+    /// TODO: 重构 Delta Parser 使用统一的 add_inline_node 接口
+    pub(crate) fn current_paragraph_mut(&mut self) -> Option<&mut ParagraphNode> {
+        self.current_paragraph.as_mut()
     }
 }
 
