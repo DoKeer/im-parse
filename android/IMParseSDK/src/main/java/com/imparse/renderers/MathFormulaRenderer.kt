@@ -99,6 +99,7 @@ object MathFormulaRenderer {
                 textView = textView,
                 contentWidth = context.contentWidth
             )
+            
             val clickableSpan = if (context.onMathTap != null) {
                 object : android.text.style.ClickableSpan() {
                         override fun onClick(widget: View) {
@@ -404,15 +405,23 @@ object MathFormulaRenderer {
     }
     
     /**
+     * 数据类：包含 ImageSpan 和 ClickableSpan
+     */
+    data class InlineMathSpans(
+        val imageSpan: DynamicDrawableSpan,
+        val clickableSpan: android.text.style.ClickableSpan?
+    )
+    
+    /**
      * 检查行内数学公式是否有缓存，如果有则创建 DrawableSpan
-     * @return Pair<DynamicDrawableSpan?, ClickableSpan?> 如果有缓存返回 Span 和 ClickableSpan，否则返回 null
+     * @return InlineMathSpans? 如果有缓存返回包含 ImageSpan 和 ClickableSpan 的对象，否则返回 null
      */
     fun checkAndCreateInlineMathSpan(
         mathNode: MathNode,
         context: AndroidRenderContext,
         displayMetrics: android.util.DisplayMetrics,
         textView: TextView? = null
-    ): Pair<DynamicDrawableSpan?, android.text.style.ClickableSpan?>? {
+    ): InlineMathSpans? {
         // 转换颜色为十六进制
         val textColor = context.theme.textColor
         val colorHex = String.format(
@@ -451,6 +460,7 @@ object MathFormulaRenderer {
                 textView = textView,
                 contentWidth = context.contentWidth
             )
+            
             val clickableSpan = if (context.onMathTap != null) {
                 object : android.text.style.ClickableSpan() {
                     override fun onClick(widget: View) {
@@ -459,7 +469,7 @@ object MathFormulaRenderer {
                 }
             } else null
             
-            return Pair(imageSpan, clickableSpan)
+            return InlineMathSpans(imageSpan, clickableSpan)
         }
         
         return null
@@ -666,11 +676,21 @@ private class AutoWrapImageSpan(
 
         if (fm != null) {
             val pfm = paint.fontMetricsInt
-            val textCenter = (pfm.descent + pfm.ascent) / 2
             val imageHeight = rect.height()
+            
+            // 计算文本的中心位置（相对于基线）
+            // pfm.ascent 是负数（基线以上），pfm.descent 是正数（基线以下）
+            val textCenter = (pfm.descent + pfm.ascent) / 2
             val imageCenter = imageHeight / 2
-            fm.ascent = textCenter - imageCenter
-            fm.descent = textCenter + imageCenter
+            
+            // 增加上下间距（呼吸感）：上下各 10% 的图片高度
+            val extraSpacing = (imageHeight * 0.1f).toInt()
+            
+            // 设置图片的垂直范围，使图片中心与文本中心对齐，并增加上下间距
+            // fm.ascent 是图片顶部相对于基线的位置（负数，在基线上方）
+            // fm.descent 是图片底部相对于基线的位置（正数，在基线下方）
+            fm.ascent = textCenter - imageCenter - extraSpacing
+            fm.descent = textCenter + imageCenter + extraSpacing
             fm.top = fm.ascent
             fm.bottom = fm.descent
         }
@@ -692,9 +712,18 @@ private class AutoWrapImageSpan(
         val drawable = drawable
         canvas.save()
 
+        // 获取字体的度量信息
         val fm = paint.fontMetricsInt
+        
+        // 计算文本的中心位置（相对于基线 y）
+        // ascent 是负数（基线以上），descent 是正数（基线以下）
         val textCenter = y + (fm.descent + fm.ascent) / 2
+        
+        // 计算图片的高度
         val imageHeight = drawable.bounds.height()
+        
+        // 让图片的中心与文本的中心对齐
+        // transY 是图片顶部相对于基线的偏移
         val transY = textCenter - imageHeight / 2
 
         canvas.translate(x, transY.toFloat())

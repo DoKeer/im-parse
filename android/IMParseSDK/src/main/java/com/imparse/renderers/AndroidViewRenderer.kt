@@ -1370,22 +1370,24 @@ class AndroidViewRenderer {
                         textView
                     )
                     
-                    if (cachedSpan != null && cachedSpan.first != null) {
+                    if (cachedSpan != null) {
                         // 有缓存，直接添加占位符并设置 ImageSpan
                         // 使用 \uFFFC (对象替换字符) 作为占位符，这是 ImageSpan 的标准做法
                         builder.append("\uFFFC")
                         val end = builder.length
+                        
+                        // 设置 ImageSpan
                         builder.setSpan(
-                            cachedSpan.first,
+                            cachedSpan.imageSpan,
                             start,
                             end,
                             Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                         )
                         
                         // 添加点击事件
-                        if (cachedSpan.second != null) {
+                        if (cachedSpan.clickableSpan != null) {
                             builder.setSpan(
-                                cachedSpan.second,
+                                cachedSpan.clickableSpan,
                                 start,
                                 end,
                                 Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
