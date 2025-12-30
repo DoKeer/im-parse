@@ -138,9 +138,10 @@ class CustomTableLayout(
         // 构建富文本内容
         val spannable = SpannableStringBuilder()
         val mathNodes = mutableListOf<Pair<Int, com.imparse.models.MathNode>>()
+        val displayMetrics = context.resources.displayMetrics
         
         for (child in cell.children) {
-            appendInlineNode(spannable, child, renderContext, mathNodes)
+            appendInlineNode(spannable, child, renderContext, mathNodes, displayMetrics, textView)
         }
         
         textView.text = spannable
@@ -690,7 +691,9 @@ class CustomTableLayout(
         builder: SpannableStringBuilder,
         node: com.imparse.models.ASTNode,
         context: AndroidRenderContext,
-        mathNodes: MutableList<Pair<Int, com.imparse.models.MathNode>>
+        mathNodes: MutableList<Pair<Int, com.imparse.models.MathNode>>,
+        displayMetrics: android.util.DisplayMetrics? = null,
+        textView: TextView? = null
     ) {
         when (node) {
             is com.imparse.models.TextNode -> builder.append(node.content)
@@ -701,13 +704,13 @@ class CustomTableLayout(
                         // 段落内的多个子节点之间用空格分隔
                         builder.append(" ")
                     }
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
                 }
             }
             is com.imparse.models.StrongNode -> {
                 val start = builder.length
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
                 }
                 builder.setSpan(
                     android.text.style.StyleSpan(android.graphics.Typeface.BOLD),
@@ -719,7 +722,7 @@ class CustomTableLayout(
             is com.imparse.models.EmNode -> {
                 val start = builder.length
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
                 }
                 builder.setSpan(
                     android.text.style.StyleSpan(android.graphics.Typeface.ITALIC),
@@ -747,7 +750,7 @@ class CustomTableLayout(
             is com.imparse.models.LinkNode -> {
                 val start = builder.length
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
                 }
                 val clickableSpan = object : android.text.style.ClickableSpan() {
                     override fun onClick(widget: View) {
@@ -768,10 +771,48 @@ class CustomTableLayout(
                 )
             }
             is com.imparse.models.MathNode -> {
-                // 行内数学公式：添加占位符，稍后统一处理
+                // 行内数学公式：检查缓存，如果有缓存直接创建 ImageSpan，否则添加原文
                 val start = builder.length
-                builder.append("   ") // 使用 3 个空格作为占位符
-                mathNodes.add(Pair(start, node))
+                
+                if (displayMetrics != null) {
+                    // 检查缓存
+                    val cachedSpan = MathFormulaRenderer.checkAndCreateInlineMathSpan(
+                        node,
+                        context,
+                        displayMetrics,
+                        textView
+                    )
+                    
+                    if (cachedSpan != null && cachedSpan.first != null) {
+                        // 有缓存，直接添加占位符并设置 ImageSpan
+                        builder.append("   ") // 占位符，实际宽度由 ImageSpan 决定
+                        val end = builder.length
+                        builder.setSpan(
+                            cachedSpan.first,
+                            start,
+                            end,
+                            android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                        
+                        // 添加点击事件
+                        if (cachedSpan.second != null) {
+                            builder.setSpan(
+                                cachedSpan.second,
+                                start,
+                                end,
+                                android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                            )
+                        }
+                    } else {
+                        // 没有缓存，添加原文文本，记录需要异步渲染
+                        builder.append(node.content)
+                        mathNodes.add(Pair(start, node))
+                    }
+                } else {
+                    // 没有 displayMetrics，添加原文文本，记录需要异步渲染
+                    builder.append(node.content)
+                    mathNodes.add(Pair(start, node))
+                }
             }
             is com.imparse.models.EmojiNode -> builder.append(node.emoji)
             is com.imparse.models.MentionNode -> {
@@ -793,25 +834,25 @@ class CustomTableLayout(
             is com.imparse.models.BlockquoteNode -> {
                 // 块引用节点：递归处理子节点
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
                 }
             }
             is com.imparse.models.HeadingNode -> {
                 // 标题节点：递归处理子节点
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
                 }
             }
             is com.imparse.models.ListItemNode -> {
                 // 列表项节点：递归处理子节点
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
                 }
             }
             is com.imparse.models.CardNode -> {
                 // 卡片节点：递归处理子节点
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
                 }
             }
             else -> {
@@ -822,7 +863,8 @@ class CustomTableLayout(
         }
     }
     
-    // 辅助方法：渲染行内数学公式（使用统一的渲染方法）
+    // 辅助方法：渲染行内数学公式（只处理没有缓存的公式）
+    // 等待所有公式渲染完成后一次性替换原文为 ImageSpan
     private fun renderInlineMathNodes(
         textView: TextView,
         spannable: SpannableStringBuilder,
@@ -831,26 +873,83 @@ class CustomTableLayout(
     ) {
         if (mathNodes.isEmpty()) return
         
-        // 用于跟踪已完成的渲染数量
+        // 用于收集所有渲染结果
+        val renderResults = mutableMapOf<Int, MathFormulaRenderer.InlineMathRenderResult>()
         var completedCount = 0
         val totalCount = mathNodes.size
         
         // 为每个数学公式使用统一的渲染方法
-        mathNodes.forEach { (position, mathNode) ->
-            MathFormulaRenderer.renderInlineMath(
-                textView = textView,
-                spannable = spannable,
-                position = position,
-                placeholderLength = 3,
-                mathNode = mathNode,
-                context = context,
-                onComplete = {
-                    completedCount++
-                    if (completedCount == totalCount) {
-                        textView.text = spannable
+            // 为每个数学公式使用统一的渲染方法
+            mathNodes.forEach { (position, mathNode) ->
+                MathFormulaRenderer.renderInlineMath(
+                    textView = textView,
+                    spannable = spannable,
+                    position = position,
+                    placeholderLength = 3, // 占位符长度（替换原文时使用）
+                    mathNode = mathNode,
+                    context = context,
+                    onResult = { result ->
+                        // 收集渲染结果
+                        renderResults[position] = result
+                    },
+                    onComplete = {
+                        completedCount++
+                        if (completedCount == totalCount) {
+                            // 所有公式渲染完成，一次性替换所有公式
+                            applyMathRenderResults(textView, spannable, renderResults.values.toList())
+                            textView.text = spannable
+                        }
+                    }
+                )
+            }
+    }
+    
+    /**
+     * 应用所有数学公式的渲染结果到 SpannableStringBuilder
+     */
+    private fun applyMathRenderResults(
+        textView: TextView,
+        spannable: SpannableStringBuilder,
+        results: List<MathFormulaRenderer.InlineMathRenderResult>
+    ) {
+        // 按位置从后往前排序，避免替换时位置偏移
+        val sortedResults = results.sortedByDescending { it.position }
+        
+        for (result in sortedResults) {
+            try {
+                if (result.imageSpan != null) {
+                    // 有渲染结果，替换为 ImageSpan
+                    // 先找到原文的实际位置和长度
+                    val originalTextStart = result.position
+                    val originalTextEnd = originalTextStart + result.originalText.length
+                    
+                    if (originalTextEnd <= spannable.length) {
+                        // 移除原文，恢复占位符
+                        spannable.replace(originalTextStart, originalTextEnd, "   ")
+                        
+                        // 设置 ImageSpan
+                        spannable.setSpan(
+                            result.imageSpan,
+                            result.position,
+                            result.position + result.placeholderLength,
+                            android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                        
+                        // 添加点击事件
+                        if (result.clickableSpan != null) {
+                            spannable.setSpan(
+                                result.clickableSpan,
+                                result.position,
+                                result.position + result.placeholderLength,
+                                android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                            )
+                        }
                     }
                 }
-            )
+                // 如果 imageSpan 为 null，保持原文显示，不需要处理
+            } catch (e: Exception) {
+                android.util.Log.e("CustomTableLayout", "Error applying math render result", e)
+            }
         }
     }
 }

@@ -12,6 +12,7 @@ import android.webkit.WebViewClient
 import com.imparse.core.IMParseCore
 import java.util.concurrent.ConcurrentHashMap
 import androidx.core.graphics.createBitmap
+import java.security.MessageDigest
 
 /**
  * 数学公式 HTML 渲染器
@@ -45,6 +46,17 @@ class AndroidMathHTMLRenderer private constructor() {
         }
         
         /**
+         * 生成稳定的哈希值（使用 SHA-256）
+         * @param input 输入字符串
+         * @return 哈希值的十六进制字符串（前16位）
+         */
+        private fun stableHash(input: String): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            val hashBytes = digest.digest(input.toByteArray(Charsets.UTF_8))
+            return hashBytes.joinToString("") { "%02x".format(it) }.take(16)
+        }
+        
+        /**
          * 生成数学公式缓存键
          * @param mathContent 数学公式内容（LaTeX 格式）
          * @param display 是否为块级显示
@@ -60,7 +72,7 @@ class AndroidMathHTMLRenderer private constructor() {
             fontSize: Float,
             targetSize: android.graphics.PointF? = null
         ): String {
-            val contentHash = mathContent.hashCode()
+            val contentHash = stableHash(mathContent)
             return if (targetSize != null) {
                 // 行内公式：key包含目标尺寸
                 "math:${contentHash}:${display}:${textColor}:${fontSize.toInt()}:${targetSize.x.toInt()}x${targetSize.y.toInt()}"
@@ -85,7 +97,7 @@ class AndroidMathHTMLRenderer private constructor() {
             fontSize: Float,
             lineHeight: Float
         ): String {
-            val contentHash = mathContent.hashCode()
+            val contentHash = stableHash(mathContent)
             return "math:${contentHash}:false:${textColor}:${fontSize.toInt()}:${lineHeight.toInt()}"
         }
     }
@@ -684,7 +696,7 @@ class AndroidMathHTMLRenderer private constructor() {
      * 生成缓存键（内部使用，兼容旧代码）
      */
     private fun generateCacheKey(html: String, display: Boolean, textColor: String, fontSize: Float): String {
-        val hash = html.hashCode()
+        val hash = AndroidMathHTMLRenderer.stableHash(html)
         return "${hash}_${display}_${textColor}_${fontSize.toInt()}"
     }
     

@@ -13,6 +13,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.imparse.core.IMParseCore
 import java.util.concurrent.ConcurrentHashMap
+import java.security.MessageDigest
 
 /**
  * Mermaid 图表 HTML 渲染器
@@ -58,6 +59,17 @@ class AndroidMermaidHTMLRenderer private constructor() {
         }
         
         /**
+         * 生成稳定的哈希值（使用 SHA-256）
+         * @param input 输入字符串
+         * @return 哈希值的十六进制字符串（前16位）
+         */
+        private fun stableHash(input: String): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            val hashBytes = digest.digest(input.toByteArray(Charsets.UTF_8))
+            return hashBytes.joinToString("") { "%02x".format(it) }.take(16)
+        }
+        
+        /**
          * 生成 Mermaid 图表缓存键
          * @param mermaidCode Mermaid 代码
          * @param textColor 文本颜色（十六进制，如 "#000000"）
@@ -65,7 +77,7 @@ class AndroidMermaidHTMLRenderer private constructor() {
          * @return 缓存键
          */
         fun generateCacheKey(mermaidCode: String, textColor: String, backgroundColor: String): String {
-            val hash = mermaidCode.hashCode()
+            val hash = stableHash(mermaidCode)
             return "mermaid_${hash}_${textColor}_${backgroundColor}"
         }
     }

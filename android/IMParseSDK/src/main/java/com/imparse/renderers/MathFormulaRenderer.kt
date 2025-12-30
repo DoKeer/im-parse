@@ -18,6 +18,7 @@ import android.widget.TextView
 import androidx.core.graphics.scale
 import com.imparse.models.MathNode
 import java.lang.ref.WeakReference
+import androidx.core.graphics.withSave
 
 /**
  * 统一的数学公式渲染工具类
@@ -29,6 +30,17 @@ import java.lang.ref.WeakReference
 object MathFormulaRenderer {
     
     /**
+     * 渲染结果数据类
+     */
+    data class InlineMathRenderResult(
+        val position: Int,
+        val placeholderLength: Int,
+        val imageSpan: ImageSpan?,
+        val clickableSpan: android.text.style.ClickableSpan?,
+        val originalText: String
+    )
+    
+    /**
      * 渲染行内数学公式到 SpannableStringBuilder
      * @param textView 目标 TextView
      * @param spannable 要修改的 SpannableStringBuilder
@@ -36,7 +48,8 @@ object MathFormulaRenderer {
      * @param placeholderLength 占位符长度（通常是 3）
      * @param mathNode 数学公式节点
      * @param context 渲染上下文
-     * @param onComplete 完成回调（当所有公式渲染完成时调用）
+     * @param onResult 结果回调（返回渲染结果，不立即替换）
+     * @param onComplete 完成回调（当公式渲染完成时调用）
      */
     fun renderInlineMath(
         textView: TextView,
@@ -45,6 +58,7 @@ object MathFormulaRenderer {
         placeholderLength: Int,
         mathNode: MathNode,
         context: AndroidRenderContext,
+        onResult: ((InlineMathRenderResult) -> Unit)? = null,
         onComplete: (() -> Unit)? = null
     ) {
         // 转换颜色为十六进制
@@ -77,51 +91,47 @@ object MathFormulaRenderer {
         
         if (cachedImage != null) {
             // 缓存命中，直接创建 ImageSpan
-            val imageSpan = createInlineImageSpan(cachedImage, lineHeightPx, textView.context)
-            try {
-                spannable.setSpan(
-                    imageSpan,
-                    position,
-                    position + placeholderLength,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-                
-                // 添加点击事件
-                if (context.onMathTap != null) {
-                    val clickableSpan = object : android.text.style.ClickableSpan() {
-                        override fun onClick(widget: View) {
-                            context.onMathTap?.invoke(mathNode)
-                        }
+            val imageSpan = createInlineImageSpan(
+                cachedImage,
+                fontSizePx,
+                lineHeightPx,
+                textView.context,
+                textView = textView,
+                contentWidth = context.contentWidth
+            )
+            val clickableSpan = if (context.onMathTap != null) {
+                object : android.text.style.ClickableSpan() {
+                    override fun onClick(widget: View) {
+                        context.onMathTap?.invoke(mathNode)
                     }
-                    spannable.setSpan(
-                        clickableSpan,
-                        position,
-                        position + placeholderLength,
-                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
                 }
-                
-                onComplete?.invoke()
-            } catch (e: Exception) {
-                android.util.Log.e("MathFormulaRenderer", "Error setting ImageSpan from cache", e)
-                // 如果设置失败，显示原文
-                showOriginalText(spannable, position, placeholderLength, mathNode.content)
-                onComplete?.invoke()
-            }
+            } else null
+            
+            // 返回结果，不立即替换
+            onResult?.invoke(InlineMathRenderResult(
+                position = position,
+                placeholderLength = placeholderLength,
+                imageSpan = imageSpan,
+                clickableSpan = clickableSpan,
+                originalText = mathNode.content
+            ))
+            onComplete?.invoke()
             return
         }
         
-        // 缓存未命中，先显示原文
-        val originalTextLength = mathNode.content.length
-        showOriginalText(spannable, position, placeholderLength, mathNode.content)
-        // 立即更新 TextView 以显示原文
-        textView.text = spannable
-        
+        // 缓存未命中，原文已经在 renderInlineMathNodes 开始时显示，这里直接验证语法
         // 验证语法
         val result = com.imparse.core.IMParseCore.mathToHTMLResult(mathNode.content, mathNode.display)
         
         if (!result.success || result.astJSON == null) {
-            // 语法错误，保持原文显示
+            // 语法错误，返回 null 结果（保持原文显示）
+            onResult?.invoke(InlineMathRenderResult(
+                position = position,
+                placeholderLength = placeholderLength,
+                imageSpan = null,
+                clickableSpan = null,
+                originalText = mathNode.content
+            ))
             onComplete?.invoke()
             return
         }
@@ -137,47 +147,44 @@ object MathFormulaRenderer {
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 if (image != null) {
                     // 创建 ImageSpan
-                    val imageSpan = createInlineImageSpan(image, lineHeightPx, textView.context)
+                    val imageSpan = createInlineImageSpan(
+                        image,
+                        fontSizePx,
+                        lineHeightPx,
+                        textView.context,
+                        textView = textView,
+                        contentWidth = context.contentWidth
+                    )
                     
-                    // 替换原文为图片
-                    try {
-                        // 计算原文的实际结束位置
-                        val endPos = position + originalTextLength
-                        if (endPos <= spannable.length) {
-                            // 先移除原文，恢复占位符
-                            spannable.replace(position, endPos, "   ")
-                            // 再设置 ImageSpan
-                            spannable.setSpan(
-                                imageSpan,
-                                position,
-                                position + placeholderLength,
-                                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                            )
-                            
-                            // 添加点击事件
-                            if (context.onMathTap != null) {
-                                val clickableSpan = object : android.text.style.ClickableSpan() {
-                                    override fun onClick(widget: View) {
-                                        context.onMathTap?.invoke(mathNode)
-                                    }
-                                }
-                                spannable.setSpan(
-                                    clickableSpan,
-                                    position,
-                                    position + placeholderLength,
-                                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                                )
+                    // 创建点击事件
+                    val clickableSpan = if (context.onMathTap != null) {
+                        object : android.text.style.ClickableSpan() {
+                            override fun onClick(widget: View) {
+                                context.onMathTap?.invoke(mathNode)
                             }
-                            
-                            // 保存到缓存
-                            context.formulaSizeCacheDelegate?.saveFormulaImage(image, inlineCacheKey)
-                            
-                            // 更新 TextView
-                            textView.text = spannable
                         }
-                    } catch (e: Exception) {
-                        android.util.Log.e("MathFormulaRenderer", "Error setting ImageSpan after render", e)
-                    }
+                    } else null
+                    
+                    // 保存到缓存
+                    context.formulaSizeCacheDelegate?.saveFormulaImage(image, inlineCacheKey)
+                    
+                    // 返回结果，不立即替换
+                    onResult?.invoke(InlineMathRenderResult(
+                        position = position,
+                        placeholderLength = placeholderLength,
+                        imageSpan = imageSpan,
+                        clickableSpan = clickableSpan,
+                        originalText = mathNode.content
+                    ))
+                } else {
+                    // 渲染失败，返回 null 结果（保持原文显示）
+                    onResult?.invoke(InlineMathRenderResult(
+                        position = position,
+                        placeholderLength = placeholderLength,
+                        imageSpan = null,
+                        clickableSpan = null,
+                        originalText = mathNode.content
+                    ))
                 }
                 onComplete?.invoke()
             }
@@ -397,38 +404,91 @@ object MathFormulaRenderer {
     }
     
     /**
-     * 创建行内数学公式的 ImageSpan
+     * 检查行内数学公式是否有缓存，如果有则创建 ImageSpan
+     * @return Pair<ImageSpan?, ClickableSpan?> 如果有缓存返回 ImageSpan 和 ClickableSpan，否则返回 null
      */
-    private fun createInlineImageSpan(
-        image: Bitmap,
-        lineHeightPx: Int,
-        context: Context
-    ): ImageSpan {
-        // 计算图片尺寸，使其与行高匹配
-        val imageWidth = image.width
-        val imageHeight = image.height
-        val aspectRatio = imageWidth.toFloat() / imageHeight.toFloat()
-        
-        // 目标高度使用行高的 1.5 倍，确保公式清晰可见
-        // 这样既能保持与文本的协调性，又能保证公式清晰可见
-        val targetHeight = lineHeightPx.toFloat() * 1.5f
-        val targetWidth = targetHeight * aspectRatio
-        
-        // 使用高质量缩放算法
-        // filter=true 会使用双线性插值，产生更平滑、更清晰的结果
-        val scaledBitmap = Bitmap.createScaledBitmap(
-            image,
-            targetWidth.toInt(),
-            targetHeight.toInt(),
-            true  // 使用高质量过滤（双线性插值）
+    fun checkAndCreateInlineMathSpan(
+        mathNode: MathNode,
+        context: AndroidRenderContext,
+        displayMetrics: android.util.DisplayMetrics,
+        textView: TextView? = null
+    ): Pair<ImageSpan?, android.text.style.ClickableSpan?>? {
+        // 转换颜色为十六进制
+        val textColor = context.theme.textColor
+        val colorHex = String.format(
+            "#%02X%02X%02X",
+            android.graphics.Color.red(textColor),
+            android.graphics.Color.green(textColor),
+            android.graphics.Color.blue(textColor)
         )
         
-        // 保持原图的 density 设置
-        scaledBitmap.density = image.density
+        val fontSize = context.theme.fontSize
+        val fontSizePx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP,
+            fontSize,
+            displayMetrics
+        )
+        val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
         
-        // 使用自定义的 CenterImageSpan，让公式的中心与文本的中心对齐
-        // 这样可以获得最美观和谐的排版效果
-        return CenterImageSpan(context, scaledBitmap)
+        // 生成缓存键（包含 lineHeight）
+        val inlineCacheKey = AndroidMathHTMLRenderer.generateInlineMathCacheKey(
+            mathNode.content,
+            colorHex,
+            fontSize,
+            lineHeightPx.toFloat()
+        )
+        
+        // 先尝试从缓存获取图片
+        val cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(inlineCacheKey)
+        
+        if (cachedImage != null) {
+            // 缓存命中，直接创建 ImageSpan
+            val imageSpan = createInlineImageSpan(
+                cachedImage,
+                fontSizePx,
+                lineHeightPx,
+                context.context,
+                textView = textView,
+                contentWidth = context.contentWidth
+            )
+            val clickableSpan = if (context.onMathTap != null) {
+                object : android.text.style.ClickableSpan() {
+                    override fun onClick(widget: View) {
+                        context.onMathTap?.invoke(mathNode)
+                    }
+                }
+            } else null
+            
+            return Pair(imageSpan, clickableSpan)
+        }
+        
+        return null
+    }
+    
+    /**
+     * 创建行内数学公式的 ImageSpan
+     * @param image 原始图片
+     * @param fontSizePx 字体大小（像素）
+     * @param lineHeightPx 行高（像素）
+     * @param context Context
+     * @param textView TextView 引用（用于获取可用宽度）
+     * @param contentWidth 内容最大宽度（如果 TextView 未布局，使用此值）
+     */
+    fun createInlineImageSpan(
+        image: Bitmap,
+        fontSizePx: Float,
+        lineHeightPx: Int,
+        context: Context,
+        textView: TextView? = null,
+        contentWidth: Int = 0
+    ): ImageSpan {
+        // 使用自定义的 CenterImageSpan，支持根据容器宽度动态缩放
+        val textViewRef = if (textView != null) {
+            WeakReference(textView)
+        } else {
+            null
+        }
+        return CenterImageSpan(context, image, fontSizePx, lineHeightPx, textViewRef, contentWidth)
     }
     
     /**
@@ -489,9 +549,117 @@ object MathFormulaRenderer {
 
 /**
  * 自定义 ImageSpan，让图片的中心与文本的中心对齐
- * 这是行内数学公式最专业、最美观的对齐方式
+ * 支持根据容器宽度动态缩放，参考 iOS 的压缩规则
  */
-private class CenterImageSpan(context: Context, bitmap: Bitmap) : ImageSpan(context, bitmap) {
+private class CenterImageSpan(
+    context: Context,
+    private val originalBitmap: Bitmap,
+    private val fontSizePx: Float,
+    private val lineHeightPx: Int,
+    private val textViewRef: WeakReference<TextView>?,
+    private val contentWidth: Int
+) : ImageSpan(context, originalBitmap) {
+    
+    // 缓存的缩放后图片和尺寸
+    private var scaledBitmap: Bitmap? = null
+    private var cachedTargetWidth: Float = 0f
+    private var cachedTargetHeight: Float = 0f
+    private var cachedAvailableWidth: Float = 0f
+    
+    /**
+     * 获取 TextView 的可用宽度（考虑 padding）
+     */
+    private fun getAvailableWidth(): Float {
+        val textView = textViewRef?.get()
+        return if (textView != null && textView.width > 0) {
+            // TextView 已布局，使用实际宽度减去 padding
+            (textView.width - textView.paddingLeft - textView.paddingRight).toFloat()
+        } else {
+            // 使用 contentWidth（已减去 padding）
+            contentWidth.toFloat()-30
+        }
+    }
+    
+    /**
+     * 根据可用宽度计算目标尺寸，参考 iOS 的压缩规则
+     */
+    private fun calculateTargetSize(availableWidth: Float): Pair<Float, Float> {
+        val imageWidth = originalBitmap.width.toFloat()
+        val imageHeight = originalBitmap.height.toFloat()
+        val imageAspectRatio = imageWidth / imageHeight
+        
+        // 参考 iOS：minHeight = font.capHeight * 2, maxHeight = font.capHeight * 4
+        // Android 中 capHeight 约等于 fontSize * 0.7
+        val capHeight = fontSizePx
+        val minHeight = capHeight * 2f
+        val maxHeight = capHeight * 4f
+        
+        var targetWidth = imageWidth
+        var targetHeight = imageHeight
+        
+        // 1. 如果图片宽度比 availableWidth 大，则按照比例缩放
+        if (imageWidth > availableWidth) {
+            targetWidth = availableWidth
+            targetHeight = targetWidth / imageAspectRatio
+        }
+        // 2. 如果图片宽度 <= availableWidth，再判断图片高度
+        else if (imageWidth <= availableWidth) {
+            // 2.1 如果图片高度比 maxHeight 大，则按照比例缩放
+            if (imageHeight > maxHeight) {
+                targetHeight = maxHeight
+                targetWidth = targetHeight * imageAspectRatio
+                // 如果缩放后宽度超过可用宽度，需要重新按宽度缩放
+                if (targetWidth > availableWidth) {
+                    targetWidth = availableWidth
+                    targetHeight = targetWidth / imageAspectRatio
+                }
+            }
+            // 2.2 如果图片高度比 minHeight 小，则按照比例放大
+            else if (imageHeight < minHeight) {
+                targetHeight = minHeight
+                targetWidth = targetHeight * imageAspectRatio
+                // 如果缩放后宽度超过可用宽度，需要重新按宽度缩放
+                if (targetWidth > availableWidth) {
+                    targetWidth = availableWidth
+                    targetHeight = targetWidth / imageAspectRatio
+                }
+            }
+        }
+        
+        return Pair(targetWidth, targetHeight)
+    }
+    
+    /**
+     * 获取或创建缩放后的图片
+     */
+    private fun getScaledBitmap(availableWidth: Float): Bitmap {
+        // 如果可用宽度相同，直接返回缓存的图片
+        if (scaledBitmap != null && kotlin.math.abs(cachedAvailableWidth - availableWidth) < 1f) {
+            return scaledBitmap!!
+        }
+        
+        // 计算目标尺寸
+        val (targetWidth, targetHeight) = calculateTargetSize(availableWidth)
+        cachedTargetWidth = targetWidth
+        cachedTargetHeight = targetHeight
+        cachedAvailableWidth = availableWidth
+        
+        // 如果尺寸变化小于 1 像素，不需要缩放
+        if (kotlin.math.abs(targetWidth - originalBitmap.width) < 1f && 
+            kotlin.math.abs(targetHeight - originalBitmap.height) < 1f) {
+            scaledBitmap = originalBitmap
+            return originalBitmap
+        }
+        
+        // 使用高质量缩放算法
+        val scaled = originalBitmap.scale(targetWidth.toInt(), targetHeight.toInt())
+        
+        // 保持原图的 density 设置
+        scaled.density = originalBitmap.density
+        scaledBitmap = scaled
+        
+        return scaled
+    }
     
     override fun getSize(
         paint: Paint,
@@ -500,8 +668,17 @@ private class CenterImageSpan(context: Context, bitmap: Bitmap) : ImageSpan(cont
         end: Int,
         fm: Paint.FontMetricsInt?
     ): Int {
+        // 计算可用宽度（TextView 宽度的 50%，参考 iOS）
+        val availableWidth = getAvailableWidth()
+        
+        // 获取缩放后的图片
+        val scaled = getScaledBitmap(availableWidth)
+        
+        // 更新 drawable 的图片和 bounds
         val drawable = drawable
-        val rect = drawable?.bounds ?: return 0
+        if (drawable != null) {
+            drawable.setBounds(0, 0, scaled.width, scaled.height)
+        }
         
         if (fm != null) {
             // 获取字体的度量信息
@@ -512,7 +689,7 @@ private class CenterImageSpan(context: Context, bitmap: Bitmap) : ImageSpan(cont
             val textCenter = (pfm.descent + pfm.ascent) / 2
             
             // 计算图片的高度
-            val imageHeight = rect.height()
+            val imageHeight = scaled.height
             
             // 让图片的中心与文本的中心对齐
             val imageCenter = imageHeight / 2
@@ -525,7 +702,7 @@ private class CenterImageSpan(context: Context, bitmap: Bitmap) : ImageSpan(cont
             fm.bottom = fm.descent
         }
         
-        return rect.right
+        return scaled.width
     }
     
     override fun draw(
@@ -539,25 +716,38 @@ private class CenterImageSpan(context: Context, bitmap: Bitmap) : ImageSpan(cont
         bottom: Int,
         paint: Paint
     ) {
-        val drawable = drawable ?: return
+        // 计算可用宽度
+        val availableWidth = getAvailableWidth()
         
-        canvas.save()
+        // 获取缩放后的图片
+        val scaled = getScaledBitmap(availableWidth)
         
-        // 获取字体的度量信息
-        val fm = paint.fontMetricsInt
+        // 更新 drawable
+        val drawable = drawable
+        drawable.setBounds(0, 0, scaled.width, scaled.height)
         
-        // 计算文本的中心位置（相对于基线 y）
-        val textCenter = y + (fm.descent + fm.ascent) / 2
-        
-        // 计算图片的高度
-        val imageHeight = drawable.bounds.height()
-        
-        // 让图片的中心与文本的中心对齐
-        val transY = textCenter - imageHeight / 2
-        
-        canvas.translate(x, transY.toFloat())
-        drawable.draw(canvas)
-        canvas.restore()
+        canvas.withSave {
+
+            // 获取字体的度量信息
+            val fm = paint.fontMetricsInt
+
+            // 计算文本的中心位置（相对于基线 y）
+            val textCenter = y + (fm.descent + fm.ascent) / 2
+
+            // 计算图片的高度
+            val imageHeight = scaled.height
+
+            // 让图片的中心与文本的中心对齐
+            val transY = textCenter - imageHeight / 2
+
+            translate(x, transY.toFloat())
+            drawable.draw(this)
+        }
+    }
+    
+    override fun getDrawable(): android.graphics.drawable.Drawable {
+        // 返回使用原始图片创建的 drawable，会在 getSize 和 draw 中动态更新
+        return super.getDrawable()
     }
 }
 
