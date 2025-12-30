@@ -7,7 +7,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.text.Spannable
 import android.text.SpannableStringBuilder
-import android.text.style.ImageSpan
+import android.text.style.DynamicDrawableSpan
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
@@ -35,7 +35,7 @@ object MathFormulaRenderer {
     data class InlineMathRenderResult(
         val position: Int,
         val placeholderLength: Int,
-        val imageSpan: ImageSpan?,
+        val imageSpan: DynamicDrawableSpan?,
         val clickableSpan: android.text.style.ClickableSpan?,
         val originalText: String
     )
@@ -404,15 +404,15 @@ object MathFormulaRenderer {
     }
     
     /**
-     * 检查行内数学公式是否有缓存，如果有则创建 ImageSpan
-     * @return Pair<ImageSpan?, ClickableSpan?> 如果有缓存返回 ImageSpan 和 ClickableSpan，否则返回 null
+     * 检查行内数学公式是否有缓存，如果有则创建 DrawableSpan
+     * @return Pair<DynamicDrawableSpan?, ClickableSpan?> 如果有缓存返回 Span 和 ClickableSpan，否则返回 null
      */
     fun checkAndCreateInlineMathSpan(
         mathNode: MathNode,
         context: AndroidRenderContext,
         displayMetrics: android.util.DisplayMetrics,
         textView: TextView? = null
-    ): Pair<ImageSpan?, android.text.style.ClickableSpan?>? {
+    ): Pair<DynamicDrawableSpan?, android.text.style.ClickableSpan?>? {
         // 转换颜色为十六进制
         val textColor = context.theme.textColor
         val colorHex = String.format(
@@ -466,7 +466,7 @@ object MathFormulaRenderer {
     }
     
     /**
-     * 创建行内数学公式的 ImageSpan
+     * 创建行内数学公式的 DrawableSpan
      * @param image 原始图片
      * @param fontSizePx 字体大小（像素）
      * @param lineHeightPx 行高（像素）
@@ -481,14 +481,14 @@ object MathFormulaRenderer {
         context: Context,
         textView: TextView? = null,
         contentWidth: Int = 0
-    ): ImageSpan {
-        // 使用自定义的 CenterImageSpan，支持根据容器宽度动态缩放
+    ): DynamicDrawableSpan {
+        // 使用自定义的 AutoWrapImageSpan，支持根据容器宽度动态缩放
         val textViewRef = if (textView != null) {
             WeakReference(textView)
         } else {
             null
         }
-        return CenterImageSpan(context, image, fontSizePx, lineHeightPx, textViewRef, contentWidth)
+        return AutoWrapImageSpan(context, image, fontSizePx, lineHeightPx, textViewRef, contentWidth)
     }
     
     /**
@@ -548,154 +548,112 @@ object MathFormulaRenderer {
 }
 
 /**
- * 自定义 ImageSpan，让图片的中心与文本的中心对齐
- * 支持根据容器宽度动态缩放，参考 iOS 的压缩规则
+ * 自定义 DynamicDrawableSpan，让图片的中心与文本的中心对齐
+ * 不关心剩余宽度，尺寸固定后交给 TextView 处理换行
  */
-private class CenterImageSpan(
-    context: Context,
+private class AutoWrapImageSpan(
+    ctx: Context,
     private val originalBitmap: Bitmap,
     private val fontSizePx: Float,
     private val lineHeightPx: Int,
     private val textViewRef: WeakReference<TextView>?,
     private val contentWidth: Int
-) : ImageSpan(context, originalBitmap) {
-    
-    // 缓存的缩放后图片和尺寸
+) : DynamicDrawableSpan(ALIGN_BASELINE) {
+
+    private val context: Context = ctx
+
+    // 缓存缩放后的图片和可用宽度
     private var scaledBitmap: Bitmap? = null
-    private var cachedTargetWidth: Float = 0f
-    private var cachedTargetHeight: Float = 0f
-    private var cachedAvailableWidth: Float = 0f
-    
+    private var cachedAvailableWidth: Float = -1f
+    // 缓存 drawable，确保 layout / draw 使用同一实例
+    private var cachedDrawable: AutoWrapDrawable? = null
+
     /**
-     * 获取 TextView 的总可用宽度（考虑 padding）
+     * 获取整行的可用宽度（减去 padding）
      */
     private fun getTotalAvailableWidth(): Float {
         val textView = textViewRef?.get()
         return if (textView != null && textView.width > 0) {
-            // TextView 已布局，使用实际宽度减去 padding
             (textView.width - textView.paddingLeft - textView.paddingRight).toFloat()
+        } else if (contentWidth > 0) {
+            contentWidth.toFloat()
         } else {
-            // 使用 contentWidth（已减去 padding）
-            if (contentWidth > 0) {
-                contentWidth.toFloat()
-            } else {
-                // 后备方案：使用屏幕宽度的 50%
-                val displayMetrics = context.resources.displayMetrics
-                displayMetrics.widthPixels * 0.5f
-            }
+            val displayMetrics = context.resources.displayMetrics
+            displayMetrics.widthPixels * 0.5f
         }
     }
-    
+
     /**
-     * 获取当前行的剩余可用宽度
-     * @param paint Paint 对象
-     * @param text 完整文本
-     * @param start ImageSpan 在文本中的起始位置
-     * @return 当前行的剩余可用宽度
+     * 根据容器宽度计算目标尺寸（参考 iOS 规则）
      */
-    private fun getRemainingLineWidth(
-        paint: Paint,
-        text: CharSequence?,
-        start: Int
-    ): Float {
-        val totalWidth = getTotalAvailableWidth()
-        
-        if (text == null || start <= 0) {
-            return totalWidth
-        }
-        
-        // 测量从文本开始到当前位置的宽度
-        // 注意：这只能测量同一行的文本，如果已经换行，这个值会不准确
-        // 但 TextView 的布局机制会在 getSize 中自动处理换行
-        val usedWidth = paint.measureText(text, 0, start.coerceAtMost(text.length))
-        
-        // 计算剩余宽度，但至少保留一些空间（避免完全为0）
-        val remainingWidth = (totalWidth - usedWidth).coerceAtLeast(totalWidth * 0.1f)
-        
-        return remainingWidth
-    }
-    
-    /**
-     * 根据可用宽度计算目标尺寸，参考 iOS 的压缩规则
-     */
-    private fun calculateTargetSize(availableWidth: Float): Pair<Float, Float> {
+    private fun calculateTargetSize(containerWidth: Float): Pair<Int, Int> {
         val imageWidth = originalBitmap.width.toFloat()
         val imageHeight = originalBitmap.height.toFloat()
-        val imageAspectRatio = imageWidth / imageHeight
-        
-        // 参考 iOS：minHeight = font.capHeight * 2, maxHeight = font.capHeight * 4
-        // Android 中 capHeight 约等于 fontSize * 0.7
+        val imageAspect = imageWidth / imageHeight
+
         val capHeight = fontSizePx
         val minHeight = capHeight * 2f
         val maxHeight = capHeight * 4f
-        
+
         var targetWidth = imageWidth
         var targetHeight = imageHeight
-        
-        // 1. 如果图片宽度比 availableWidth 大，则按照比例缩放
-        if (imageWidth > availableWidth) {
-            targetWidth = availableWidth
-            targetHeight = targetWidth / imageAspectRatio
-        }
-        // 2. 如果图片宽度 <= availableWidth，再判断图片高度
-        else if (imageWidth <= availableWidth) {
-            // 2.1 如果图片高度比 maxHeight 大，则按照比例缩放
+
+        if (imageWidth > containerWidth) {
+            targetWidth = containerWidth
+            targetHeight = targetWidth / imageAspect
+        } else {
             if (imageHeight > maxHeight) {
                 targetHeight = maxHeight
-                targetWidth = targetHeight * imageAspectRatio
-                // 如果缩放后宽度超过可用宽度，需要重新按宽度缩放
-                if (targetWidth > availableWidth) {
-                    targetWidth = availableWidth
-                    targetHeight = targetWidth / imageAspectRatio
+                targetWidth = targetHeight * imageAspect
+                if (targetWidth > containerWidth) {
+                    targetWidth = containerWidth
+                    targetHeight = targetWidth / imageAspect
                 }
-            }
-            // 2.2 如果图片高度比 minHeight 小，则按照比例放大
-            else if (imageHeight < minHeight) {
+            } else if (imageHeight < minHeight) {
                 targetHeight = minHeight
-                targetWidth = targetHeight * imageAspectRatio
-                // 如果缩放后宽度超过可用宽度，需要重新按宽度缩放
-                if (targetWidth > availableWidth) {
-                    targetWidth = availableWidth
-                    targetHeight = targetWidth / imageAspectRatio
+                targetWidth = targetHeight * imageAspect
+                if (targetWidth > containerWidth) {
+                    targetWidth = containerWidth
+                    targetHeight = targetWidth / imageAspect
                 }
             }
         }
-        
-        return Pair(targetWidth, targetHeight)
+
+        return Pair(targetWidth.toInt(), targetHeight.toInt())
     }
-    
+
     /**
-     * 获取或创建缩放后的图片
+     * 获取缩放后的 Bitmap，基于整行宽度
      */
-    private fun getScaledBitmap(availableWidth: Float): Bitmap {
-        // 如果可用宽度相同，直接返回缓存的图片
-        if (scaledBitmap != null && kotlin.math.abs(cachedAvailableWidth - availableWidth) < 1f) {
+    private fun getScaledBitmap(): Bitmap {
+        val width = getTotalAvailableWidth()
+        if (scaledBitmap != null && kotlin.math.abs(cachedAvailableWidth - width) < 1f) {
             return scaledBitmap!!
         }
-        
-        // 计算目标尺寸
-        val (targetWidth, targetHeight) = calculateTargetSize(availableWidth)
-        cachedTargetWidth = targetWidth
-        cachedTargetHeight = targetHeight
-        cachedAvailableWidth = availableWidth
-        
-        // 如果尺寸变化小于 1 像素，不需要缩放
-        if (kotlin.math.abs(targetWidth - originalBitmap.width) < 1f && 
-            kotlin.math.abs(targetHeight - originalBitmap.height) < 1f) {
-            scaledBitmap = originalBitmap
-            return originalBitmap
+
+        val (targetW, targetH) = calculateTargetSize(width)
+        val scaled = if (kotlin.math.abs(targetW - originalBitmap.width) < 1 &&
+            kotlin.math.abs(targetH - originalBitmap.height) < 1
+        ) {
+            originalBitmap
+        } else {
+            originalBitmap.scale(targetW, targetH)
         }
-        
-        // 使用高质量缩放算法
-        val scaled = originalBitmap.scale(targetWidth.toInt(), targetHeight.toInt())
-        
-        // 保持原图的 density 设置
         scaled.density = originalBitmap.density
         scaledBitmap = scaled
-        
+        cachedAvailableWidth = width
         return scaled
     }
-    
+
+    override fun getDrawable(): android.graphics.drawable.Drawable {
+        val bmp = getScaledBitmap()
+        // 如果宽度变化导致 bitmap 更新，重建 drawable；否则复用
+        if (cachedDrawable == null || cachedDrawable?.sourceBitmap !== bmp) {
+            cachedDrawable = AutoWrapDrawable(bmp)
+        }
+        return cachedDrawable!!
+    }
+
     override fun getSize(
         paint: Paint,
         text: CharSequence?,
@@ -703,43 +661,23 @@ private class CenterImageSpan(
         end: Int,
         fm: Paint.FontMetricsInt?
     ): Int {
-        // 计算当前行的剩余可用宽度
-        val remainingWidth = getRemainingLineWidth(paint, text, start)
-        
-        // 获取缩放后的图片（使用剩余宽度）
-        val scaled = getScaledBitmap(remainingWidth)
-        
-        // 更新 drawable 的图片和 bounds
-        val drawable = drawable
-        if (drawable != null) {
-            drawable.setBounds(0, 0, scaled.width, scaled.height)
-        }
-        
+        val d = drawable
+        val rect = d.bounds
+
         if (fm != null) {
-            // 获取字体的度量信息
             val pfm = paint.fontMetricsInt
-            
-            // 计算文本的中心位置（相对于基线）
-            // ascent 是负数，descent 是正数
             val textCenter = (pfm.descent + pfm.ascent) / 2
-            
-            // 计算图片的高度
-            val imageHeight = scaled.height
-            
-            // 让图片的中心与文本的中心对齐
+            val imageHeight = rect.height()
             val imageCenter = imageHeight / 2
-            
-            // 计算图片的上下边界（相对于基线）
             fm.ascent = textCenter - imageCenter
             fm.descent = textCenter + imageCenter
-            
             fm.top = fm.ascent
             fm.bottom = fm.descent
         }
-        
-        return scaled.width
+
+        return rect.right
     }
-    
+
     override fun draw(
         canvas: Canvas,
         text: CharSequence?,
@@ -751,38 +689,37 @@ private class CenterImageSpan(
         bottom: Int,
         paint: Paint
     ) {
-        // 计算当前行的剩余可用宽度（与 getSize 保持一致）
-        val remainingWidth = getRemainingLineWidth(paint, text, start)
-        
-        // 获取缩放后的图片
-        val scaled = getScaledBitmap(remainingWidth)
-        
-        // 更新 drawable
         val drawable = drawable
-        drawable.setBounds(0, 0, scaled.width, scaled.height)
-        
-        canvas.withSave {
-        
-        // 获取字体的度量信息
+        canvas.save()
+
         val fm = paint.fontMetricsInt
-        
-        // 计算文本的中心位置（相对于基线 y）
         val textCenter = y + (fm.descent + fm.ascent) / 2
-        
-        // 计算图片的高度
-            val imageHeight = scaled.height
-        
-        // 让图片的中心与文本的中心对齐
+        val imageHeight = drawable.bounds.height()
         val transY = textCenter - imageHeight / 2
-        
-            translate(x, transY.toFloat())
-            drawable.draw(this)
-        }
+
+        canvas.translate(x, transY.toFloat())
+        drawable.draw(canvas)
+        canvas.restore()
     }
-    
-    override fun getDrawable(): android.graphics.drawable.Drawable {
-        // 返回使用原始图片创建的 drawable，会在 getSize 和 draw 中动态更新
-        return super.getDrawable()
+}
+
+/**
+ * 仅负责固定尺寸绘制的 Drawable，不关心行宽
+ */
+private class AutoWrapDrawable(
+    val sourceBitmap: Bitmap
+) : android.graphics.drawable.Drawable() {
+
+    init {
+        setBounds(0, 0, sourceBitmap.width, sourceBitmap.height)
     }
+
+    override fun draw(canvas: Canvas) {
+        canvas.drawBitmap(sourceBitmap, null, bounds, null)
+    }
+
+    override fun setAlpha(alpha: Int) {}
+    override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {}
+    override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
 }
 

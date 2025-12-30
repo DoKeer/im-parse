@@ -77,7 +77,7 @@ object MessageDataGenerator {
             """
             $$\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$$
 
-            伽 ${'$'}\Gamma(z) = \int_0^\infty t^{z-1} e^{-t} \, dt = (z-1)!, \quad z \in \mathbb{C}, \Re(z) > 0${'$'} 
+            伽玛函数这种重中之： ${'$'}\Gamma(z) = \int_0^\infty t^{z-1} e^{-t} \, dt = (z-1)!, \quad z \in \mathbb{C}, \Re(z) > 0${'$'} 重重中之重 
             多层嵌套对数 ${'$'}\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}${'$'}
 
             **a ${'$'}b$ c**

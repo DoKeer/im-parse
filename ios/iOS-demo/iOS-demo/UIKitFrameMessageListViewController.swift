@@ -355,16 +355,16 @@ class MessageTableViewCell: UITableViewCell {
         // 使用全局共享的渲染上下文（动态部分已在调用处更新）
         // 创建带有 Task 注册回调的上下文
         var renderContext = context
-        renderContext.onRenderTaskCreated = { [weak self] task in
-            guard let self = self else { return }
-            self.renderingTasks.insert(task)
-            
-            // Task 完成后自动从集合中移除
-            Task { @MainActor [weak self] in
-                _ = await task.result
-                self?.renderingTasks.remove(task)
-            }
-        }
+//        renderContext.onRenderTaskCreated = { [weak self] task in
+//            guard let self = self else { return }
+//            self.renderingTasks.insert(task)
+//            
+//            // Task 完成后自动从集合中移除
+//            Task { @MainActor [weak self] in
+//                _ = await task.result
+//                self?.renderingTasks.remove(task)
+//            }
+//        }
         
         // 优先使用预计算的布局
         if let layout = message.layout {

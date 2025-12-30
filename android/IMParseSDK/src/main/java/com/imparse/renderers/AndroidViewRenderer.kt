@@ -1372,7 +1372,8 @@ class AndroidViewRenderer {
                     
                     if (cachedSpan != null && cachedSpan.first != null) {
                         // 有缓存，直接添加占位符并设置 ImageSpan
-                        builder.append("   ") // 占位符，实际宽度由 ImageSpan 决定
+                        // 使用 \uFFFC (对象替换字符) 作为占位符，这是 ImageSpan 的标准做法
+                        builder.append("\uFFFC")
                         val end = builder.length
                         builder.setSpan(
                             cachedSpan.first,
@@ -1450,7 +1451,7 @@ class AndroidViewRenderer {
                     textView = textView,
                     spannable = spannable,
                     position = position,
-                    placeholderLength = 3, // 占位符长度（替换原文时使用）
+                    placeholderLength = 1, // 占位符长度（\uFFFC 是单个字符）
                     mathNode = mathNode,
                     context = context,
                     onResult = { result ->
@@ -1488,14 +1489,14 @@ class AndroidViewRenderer {
                         val originalTextEnd = originalTextStart + result.originalText.length
                         
                         if (originalTextEnd <= spannable.length) {
-                            // 移除原文，添加占位符
-                            spannable.replace(originalTextStart, originalTextEnd, "   ")
+                            // 移除原文，添加占位符 \uFFFC (对象替换字符)
+                            spannable.replace(originalTextStart, originalTextEnd, "\uFFFC")
                             
-                            // 设置 ImageSpan
+                            // 设置 ImageSpan（绑定在占位符上）
                             spannable.setSpan(
                                 result.imageSpan,
                                 result.position,
-                                result.position + result.placeholderLength,
+                                result.position + 1, // \uFFFC 是单个字符
                                 Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                             )
                             
@@ -1504,7 +1505,7 @@ class AndroidViewRenderer {
                                 spannable.setSpan(
                                     result.clickableSpan,
                                     result.position,
-                                    result.position + result.placeholderLength,
+                                    result.position + 1, // \uFFFC 是单个字符
                                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                                 )
                             }
