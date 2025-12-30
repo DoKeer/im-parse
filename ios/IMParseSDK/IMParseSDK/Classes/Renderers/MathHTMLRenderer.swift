@@ -94,47 +94,82 @@ public class MathHTMLRenderer {
             fontSize: fontSize
         )
         
+        let shortKey = String(cacheKey.0.prefix(50)) // 用于日志，避免过长
+        print("🔵 [MathHTMLRenderer] render() 开始 - key: \(shortKey)...")
+        
         // 优先使用传入的 delegate，否则使用实例的 delegate
         let cacheDelegate = formulaSizeCacheDelegate
         
         // 先检查缓存（优先使用 delegate）
         if let cachedImage = cacheDelegate?.getFormulaImage(for: cacheKey.0) {
+            print("✅ [MathHTMLRenderer] 缓存命中 - key: \(shortKey)...")
             return cachedImage
         }
         
         // 检查是否有正在处理的任务（避免重复渲染）
-        let existingTask: Task<UIImage?, Never>? = pendingTasksLock.withLock {
-            return pendingTasks[cacheKey.0]
+        let (existingTask, pendingCount): (Task<UIImage?, Never>?, Int) = pendingTasksLock.withLock {
+            (pendingTasks[cacheKey.0], pendingTasks.count)
         }
         
         if let existingTask = existingTask {
-            // 等待现有任务完成
-            return await existingTask.value
+            print("⏳ [MathHTMLRenderer] 等待现有任务 - key: \(shortKey)..., 当前pendingTasks数量: \(pendingCount)")
+            let result = await existingTask.value
+            print("✅ [MathHTMLRenderer] 现有任务完成 - key: \(shortKey)...")
+            return result
         }
+        
+        print("❌ [MathHTMLRenderer] 缓存未命中，创建新任务 - key: \(shortKey)..., 当前pendingTasks数量: \(pendingCount)")
         
         // 缓存未命中，生成 HTML, 统一使用block样式的html，否则截取时内容尺寸不对
         let result = IMParseCore.mathToHTML(mathContent, display: true)
         guard result.success, let html = result.astJSON else {
+            print("❌ [MathHTMLRenderer] HTML生成失败 - key: \(shortKey)...")
             return nil
         }
         
         // 验证 HTML 是否有效（检查是否包含 KaTeX 相关类）
         if html.isEmpty || (!html.contains("katex") && !html.contains("math-container")) {
             // HTML 无效或不包含数学公式内容
-            print("MathHTMLRenderer: Invalid HTML content")
+            print("❌ [MathHTMLRenderer] Invalid HTML content - key: \(shortKey)...")
             return nil
         }
         
         // 创建新的渲染任务
         let renderTask = Task<UIImage?, Never> { @MainActor in
+            print("🟢 [MathHTMLRenderer] Task开始执行 - key: \(shortKey)...")
+            
+            // 检查任务是否被取消
+            if Task.isCancelled {
+                print("⚠️ [MathHTMLRenderer] Task已取消（开始前）- key: \(shortKey)...")
+                pendingTasksLock.withLock {
+                    pendingTasks.removeValue(forKey: cacheKey.0)
+                    print("📊 [MathHTMLRenderer] Task已移除，当前pendingTasks数量: \(pendingTasks.count)")
+                }
+                return nil
+            }
+            
             // 在入队前再次检查缓存（队列中的任务可能已经完成并缓存了结果）
             if let cachedImage = cacheDelegate?.getFormulaImage(for: cacheKey.0) {
+                print("✅ [MathHTMLRenderer] Task执行中缓存命中 - key: \(shortKey)...")
                 // 清理任务
                 pendingTasksLock.withLock {
                     pendingTasks.removeValue(forKey: cacheKey.0)
+                    print("📊 [MathHTMLRenderer] Task已移除（缓存命中），当前pendingTasks数量: \(pendingTasks.count)")
                 }
                 return cachedImage
             }
+            
+            // 再次检查取消状态
+            if Task.isCancelled {
+                print("⚠️ [MathHTMLRenderer] Task已取消（渲染前）- key: \(shortKey)...")
+                pendingTasksLock.withLock {
+                    pendingTasks.removeValue(forKey: cacheKey.0)
+                    print("📊 [MathHTMLRenderer] Task已移除（取消），当前pendingTasks数量: \(pendingTasks.count)")
+                }
+                return nil
+            }
+            
+            print("🎨 [MathHTMLRenderer] 开始渲染HTML - key: \(shortKey)...")
             
             // 缓存仍未命中，进行渲染
             let image = await MathHTMLRenderer.shared.renderHTML(
@@ -146,9 +181,26 @@ public class MathHTMLRenderer {
                 cacheDelegate: cacheDelegate
             )
             
+            // 渲染完成后检查取消状态
+            if Task.isCancelled {
+                print("⚠️ [MathHTMLRenderer] Task已取消（渲染后）- key: \(shortKey)...")
+                pendingTasksLock.withLock {
+                    pendingTasks.removeValue(forKey: cacheKey.0)
+                    print("📊 [MathHTMLRenderer] Task已移除（取消），当前pendingTasks数量: \(pendingTasks.count)")
+                }
+                return nil
+            }
+            
             // 清理任务
             pendingTasksLock.withLock {
                 pendingTasks.removeValue(forKey: cacheKey.0)
+                print("📊 [MathHTMLRenderer] Task完成并移除 - key: \(shortKey)..., 当前pendingTasks数量: \(pendingTasks.count)")
+            }
+            
+            if image != nil {
+                print("✅ [MathHTMLRenderer] 渲染成功 - key: \(shortKey)...")
+            } else {
+                print("❌ [MathHTMLRenderer] 渲染失败 - key: \(shortKey)...")
             }
             
             return image
@@ -157,10 +209,13 @@ public class MathHTMLRenderer {
         // 存储任务
         pendingTasksLock.withLock {
             pendingTasks[cacheKey.0] = renderTask
+            print("📝 [MathHTMLRenderer] Task已添加到pendingTasks - key: \(shortKey)..., 当前pendingTasks数量: \(pendingTasks.count)")
         }
         
         // 等待任务完成
-        return await renderTask.value
+        let renderResult = await renderTask.value
+        print("🏁 [MathHTMLRenderer] render() 完成 - key: \(shortKey)...")
+        return renderResult
     }
     
     /// 渲染行内数学公式并调整尺寸以适应行高
@@ -189,17 +244,38 @@ public class MathHTMLRenderer {
         cacheKey: String,
         cacheDelegate: UIKitFormulaSizeCacheDelegate?
     ) async -> UIImage? {
+        let shortKey = String(cacheKey.prefix(50))
+        print("🎬 [MathHTMLRenderer] renderHTML() 开始 - key: \(shortKey)...")
+        
         // 确保在主线程
         assert(Thread.isMainThread, "renderHTML must be called on main thread")
         
         // 使用渲染队列串行执行
         return await withCheckedContinuation { continuation in
+            print("📤 [MathHTMLRenderer] 任务入队 - key: \(shortKey)...")
             renderQueue.enqueue {
+                print("▶️ [MathHTMLRenderer] 队列开始处理任务 - key: \(shortKey)...")
+                // 检查任务是否被取消
+                if Task.isCancelled {
+                    print("⚠️ [MathHTMLRenderer] 任务已取消（队列处理中）- key: \(shortKey)...")
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
                 // 获取或创建 WebView（必须在主线程）
+                print("🌐 [MathHTMLRenderer] 获取/创建WebView - key: \(shortKey)...")
                 let webView = await self.getOrCreateWebView()
+                
+                // 再次检查取消状态
+                if Task.isCancelled {
+                    print("⚠️ [MathHTMLRenderer] 任务已取消（WebView创建后）- key: \(shortKey)...")
+                    continuation.resume(returning: nil)
+                    return
+                }
                 
                 // 构建完整的 HTML（包含 KaTeX CSS）,  全部按照块级公式处理
                 let fullHTML = self.buildFullHTML(html: html, display: display, textColor: textColor, fontSize: fontSize)
+                print("📄 [MathHTMLRenderer] HTML构建完成，开始加载 - key: \(shortKey)...")
                 
                 // 设置 WebView 配置（使用较大的初始尺寸，确保内容能完全渲染）
                 // 宽度设置为 2000pt 以容纳较长的公式（不会影响最终截图尺寸）
@@ -242,12 +318,14 @@ public class MathHTMLRenderer {
                 
                 // 检查是否已经处理过
                 if let hasProcessed = objc_getAssociatedObject(webView, &MathAssociatedKeys.processing) as? Bool, hasProcessed {
+                    print("⚠️ [MathHTMLRenderer] WebView已处理过，跳过 - key: \(shortKey)...")
                     continuation.resume(returning: nil)
                     return
                 }
                 
                 // 标记为已处理
                 objc_setAssociatedObject(webView, &MathAssociatedKeys.processing, true, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                print("✅ [MathHTMLRenderer] 页面加载完成 - key: \(shortKey)...")
                 
                 // 立即清除 delegate，防止再次触发
                 webView.navigationDelegate = nil
@@ -270,6 +348,7 @@ public class MathHTMLRenderer {
                     // 等待一小段时间确保 DOM 渲染完成（优化：减少等待时间）
 //                    try await Task.sleep(nanoseconds: 50_000_000) // 50ms，减少主线程阻塞
                     
+                    print("📐 [MathHTMLRenderer] 开始计算内容区域 - key: \(shortKey)...")
                     let result = try await webView.evaluateJavaScript("""
                         (function() {
                             // 先查找 .katex 元素（KaTeX 生成的元素）
@@ -308,6 +387,7 @@ public class MathHTMLRenderer {
                             };
                         })();
                     """)
+                    print("✅ [MathHTMLRenderer] 内容区域计算完成 - key: \(shortKey)...")
                     var contentRect = CGRectZero
 
                     if let positionDict = result as? [String: CGFloat],
@@ -318,23 +398,36 @@ public class MathHTMLRenderer {
                         contentRect = CGRect(x: x, y: y, width: w, height: h)
                     }
                     
+                    // 再次检查取消状态
+                    if Task.isCancelled {
+                        print("⚠️ [MathHTMLRenderer] 任务已取消（截图前）- key: \(shortKey)...")
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    
                     // 使用精确的内容区域直接截图（不调整 WebView 尺寸）
-                    // 缓存图片（优先使用 delegate）
+                    print("📸 [MathHTMLRenderer] 开始截图 - key: \(shortKey)...")
                     if let image = await self.captureWebView(webView, contentRect: contentRect) {
+                        print("✅ [MathHTMLRenderer] 截图成功 - key: \(shortKey)..., size: \(image.size), scale: \(image.scale)")
+                        // 缓存图片（优先使用 delegate）
                         cacheDelegate?.saveFormulaImage(image, for: cacheKey)
                         // 确保缓存的是逻辑尺寸（points），不是像素尺寸
                         // 由于 captureWebView 已经确保 image.scale 正确，image.size 就是逻辑尺寸
                         let logicalSize = image.size
                         cacheDelegate?.setCachedSize(logicalSize, for: cacheKey)
-                        print("MathHTMLRenderer: Cached image size - logical: \(logicalSize), scale: \(image.scale), actual pixels: \(logicalSize.width * image.scale) × \(logicalSize.height * image.scale)")
+                        print("💾 [MathHTMLRenderer] 图片已缓存 - key: \(shortKey)..., logical: \(logicalSize), scale: \(image.scale), pixels: \(logicalSize.width * image.scale) × \(logicalSize.height * image.scale)")
                         continuation.resume(returning: image)
+                        print("🏁 [MathHTMLRenderer] renderHTML() 完成（成功）- key: \(shortKey)...")
                         return
                     }
                     
+                    print("❌ [MathHTMLRenderer] 截图失败 - key: \(shortKey)...")
                     continuation.resume(returning: nil)
+                    print("🏁 [MathHTMLRenderer] renderHTML() 完成（失败）- key: \(shortKey)...")
                 } catch {
-                    print("MathHTMLRenderer: JavaScript evaluation error: \(error)")
+                    print("❌ [MathHTMLRenderer] JavaScript evaluation error: \(error.localizedDescription) - key: \(shortKey)...")
                     continuation.resume(returning: nil)
+                    print("🏁 [MathHTMLRenderer] renderHTML() 完成（异常）- key: \(shortKey)...")
                 }
             }
         }
@@ -483,6 +576,7 @@ public class MathHTMLRenderer {
         assert(Thread.isMainThread, "getOrCreateWebView must be called on main thread")
         
         if let existingWebView = webView {
+            print("♻️ [MathHTMLRenderer] 复用现有WebView")
             // 清理之前的加载和状态
             existingWebView.stopLoading()
             existingWebView.navigationDelegate = nil
@@ -490,6 +584,7 @@ public class MathHTMLRenderer {
             return existingWebView
         }
         
+        print("🆕 [MathHTMLRenderer] 创建新WebView")
         // 创建新的 WebView（必须在主线程）
         let config = WKWebViewConfiguration()
         
@@ -517,7 +612,7 @@ public class MathHTMLRenderer {
         newWebView.scrollView.isScrollEnabled = false
         
         webView = newWebView
-        print("MathHTMLRenderer: Created new WebView")
+        print("✅ [MathHTMLRenderer] WebView创建完成")
         
         return newWebView
     }

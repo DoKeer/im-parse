@@ -20,6 +20,10 @@ class UIKitFrameMessageListViewController: UIViewController {
     // 全局共享的渲染上下文
     private var sharedRenderContext: UIKitRenderContext!
     
+    // 防抖定时器：避免频繁 reload
+    private var reloadDebounceTimer: Timer?
+    private var pendingReloadIndexPaths: Set<IndexPath> = []
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -172,14 +176,41 @@ extension UIKitFrameMessageListViewController: UITableViewDataSource {
                 if self.layouting {
                     return
                 }
-            
-                var messageBackup = self.messages[indexPath.row]
-                Task {
-                    messageBackup.calculateLayout(width: self.contentWidth, context: self.sharedRenderContext)
-                    await MainActor.run {
-                        self.messages[indexPath.row] = messageBackup
-
-                        tableView.reloadRows(at: [indexPath], with: .none)
+                
+                // 使用防抖机制：收集需要刷新的 indexPath，延迟统一刷新
+                self.pendingReloadIndexPaths.insert(indexPath)
+                
+                // 取消之前的定时器
+                self.reloadDebounceTimer?.invalidate()
+                
+                // 设置新的定时器：300ms 后统一刷新
+                self.reloadDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
+                    guard let self = self else { return }
+                    
+                    let indexPathsToReload = Array(self.pendingReloadIndexPaths)
+                    self.pendingReloadIndexPaths.removeAll()
+                    
+                    // 重新计算布局
+                    Task {
+                        var updatedMessages: [(IndexPath, Message)] = []
+                        
+                        for ip in indexPathsToReload {
+                            guard ip.row < self.messages.count else { continue }
+                            var messageBackup = self.messages[ip.row]
+                            messageBackup.calculateLayout(width: self.contentWidth, context: self.sharedRenderContext)
+                            updatedMessages.append((ip, messageBackup))
+                        }
+                        
+                        await MainActor.run {
+                            // 批量更新消息
+                            for (ip, message) in updatedMessages {
+                                guard ip.row < self.messages.count else { continue }
+                                self.messages[ip.row] = message
+                            }
+                            
+                            // 批量刷新 cell
+                            tableView.reloadRows(at: indexPathsToReload, with: .none)
+                        }
                     }
                 }
             }
