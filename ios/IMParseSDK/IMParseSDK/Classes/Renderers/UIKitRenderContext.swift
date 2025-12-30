@@ -135,6 +135,10 @@ public struct UIKitRenderContext {
     // 回调参数：新的 NodeLayout（包含更新后的节点布局信息）
     public var onNodeLayoutChanged: ((any Codable) -> Void)?
     
+    // 渲染 Task 注册回调（用于管理异步渲染任务，支持取消）
+    // 回调参数：新创建的渲染 Task
+    public var onRenderTaskCreated: ((Task<Void, Never>) -> Void)?
+    
     public init(theme: UIKitTheme,
                 width: CGFloat,
                 onLinkTap: ((URL) -> Void)? = nil,
@@ -150,7 +154,8 @@ public struct UIKitRenderContext {
                 inlineImageLoaderDelegate: UIKitInlineImageLoaderDelegate? = nil,
                 toolbarActionDelegate: UIKitToolbarActionDelegate? = nil,
                 textLocalizationDelegate: UIKitTextLocalizationDelegate? = nil,
-                onNodeLayoutChanged: ((any Codable) -> Void)? = nil) {
+                onNodeLayoutChanged: ((any Codable) -> Void)? = nil,
+                onRenderTaskCreated: ((Task<Void, Never>) -> Void)? = nil) {
         self.theme = theme
         self.width = width
         self.formulaSizeCacheDelegate = formulaSizeCacheDelegate
@@ -167,6 +172,7 @@ public struct UIKitRenderContext {
         self.toolbarActionDelegate = toolbarActionDelegate
         self.textLocalizationDelegate = textLocalizationDelegate
         self.onNodeLayoutChanged = onNodeLayoutChanged
+        self.onRenderTaskCreated = onRenderTaskCreated
     }
     
     // MARK: - 文案获取辅助方法

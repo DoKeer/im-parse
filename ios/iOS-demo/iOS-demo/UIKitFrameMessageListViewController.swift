@@ -234,6 +234,7 @@ class MessageTableViewCell: UITableViewCell {
     private weak var viewController: UIViewController?
     private var lastReportedHeight: CGFloat = 0 // 记录上次报告的高度，防止重复调用
     private var isConfiguring = false // 防止在配置过程中重复调用
+    private var renderingTasks: Set<Task<Void, Never>> = [] // 存储正在进行的渲染 Task，用于取消
     
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -297,6 +298,12 @@ class MessageTableViewCell: UITableViewCell {
         self.message = message
         self.viewController = viewController
         
+        // 取消所有正在进行的渲染 Task
+        for task in renderingTasks {
+            task.cancel()
+        }
+        renderingTasks.removeAll()
+        
         // 重置标志
         isConfiguring = true
         lastReportedHeight = 0
@@ -315,11 +322,23 @@ class MessageTableViewCell: UITableViewCell {
         containerView.addGestureRecognizer(longPressGesture)
         
         // 使用全局共享的渲染上下文（动态部分已在调用处更新）
+        // 创建带有 Task 注册回调的上下文
+        var renderContext = context
+        renderContext.onRenderTaskCreated = { [weak self] task in
+            guard let self = self else { return }
+            self.renderingTasks.insert(task)
+            
+            // Task 完成后自动从集合中移除
+            Task { @MainActor [weak self] in
+                _ = await task.result
+                self?.renderingTasks.remove(task)
+            }
+        }
         
         // 优先使用预计算的布局
         if let layout = message.layout {
             
-            let astView = layout.render(context: context)
+            let astView = layout.render(context: renderContext)
             // 使用 frame 布局，不使用 Auto Layout
             astView.frame = CGRect(origin: .zero, size: layout.frame.size)
             
@@ -562,18 +581,16 @@ extension UIKitFrameMessageListViewController: UIKitFormulaSizeCacheDelegate {
     ///   - image: 要缓存的图片
     ///   - key: 缓存键（公式或Mermaid的内容字符串）
     func saveFormulaImage(_ image: UIImage, for key: String) {
-        let cacheKey = generateCacheKey(for: key)
         // 保存到 Kingfisher 缓存（包括内存和磁盘）
-        ImageCache.default.store(image, forKey: cacheKey, toDisk: true)
+        ImageCache.default.store(image, forKey: key, toDisk: true)
     }
     
     /// 获取缓存的公式图片（同步方法，用于协议实现）
     /// - Parameter key: 缓存键（公式或Mermaid的内容字符串）
     /// - Returns: 缓存的图片，如果不存在则返回nil
     func getFormulaImage(for key: String) -> UIImage? {
-        let cacheKey = generateCacheKey(for: key)
         // 先从内存缓存读取（快速）
-        if let memoryImage = ImageCache.default.retrieveImageInMemoryCache(forKey: cacheKey) {
+        if let memoryImage = ImageCache.default.retrieveImageInMemoryCache(forKey: key) {
             if memoryImage.scale != UIScreen.main.scale,let cgImage = memoryImage.cgImage {
                 let res = UIImage(cgImage: cgImage, scale: UIScreen.main.scale, orientation: memoryImage.imageOrientation)
                 return res
@@ -585,7 +602,7 @@ extension UIKitFrameMessageListViewController: UIKitFormulaSizeCacheDelegate {
         var diskImage: UIImage?
         let semaphore = DispatchSemaphore(value: 0)
         
-        ImageCache.default.retrieveImage(forKey: cacheKey) { result in
+        ImageCache.default.retrieveImage(forKey: key) { result in
             switch result {
             case .success(let value):
                 diskImage = value.image
@@ -612,9 +629,8 @@ extension UIKitFrameMessageListViewController: UIKitFormulaSizeCacheDelegate {
     ///   - key: 缓存键
     ///   - completion: 完成回调，返回缓存的图片
     func getCachedFormulaImage(for key: String, completion: @escaping (UIImage?) -> Void) {
-        let cacheKey = generateCacheKey(for: key)
         // 从 Kingfisher 缓存中读取（包括内存和磁盘）
-        ImageCache.default.retrieveImage(forKey: cacheKey) { result in
+        ImageCache.default.retrieveImage(forKey: key) { result in
             switch result {
             case .success(let value):
                 completion(value.image)
@@ -623,20 +639,7 @@ extension UIKitFrameMessageListViewController: UIKitFormulaSizeCacheDelegate {
             }
         }
     }
-    
-    /// 生成缓存键（参考 Kingfisher 的键生成策略）
-    /// - Parameter key: 原始键
-    /// - Returns: 处理后的缓存键
-    private func generateCacheKey(for key: String) -> String {
-        // Kingfisher 使用 MD5 哈希，这里我们使用简单的处理
-        // 如果键太长，使用哈希
-        if key.count > 200 {
-            // 对于过长的键，使用哈希
-            return "formula_hash_\(key.hash)"
-        }
-        // 添加前缀以区分公式图片和其他图片
-        return "formula_\(key)"
-    }
+
 }
 
 // MARK: - UIKitToolbarActionDelegate

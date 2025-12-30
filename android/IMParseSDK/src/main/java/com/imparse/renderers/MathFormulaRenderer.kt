@@ -101,8 +101,8 @@ object MathFormulaRenderer {
             )
             val clickableSpan = if (context.onMathTap != null) {
                 object : android.text.style.ClickableSpan() {
-                    override fun onClick(widget: View) {
-                        context.onMathTap?.invoke(mathNode)
+                        override fun onClick(widget: View) {
+                            context.onMathTap?.invoke(mathNode)
                     }
                 }
             } else null
@@ -115,7 +115,7 @@ object MathFormulaRenderer {
                 clickableSpan = clickableSpan,
                 originalText = mathNode.content
             ))
-            onComplete?.invoke()
+                onComplete?.invoke()
             return
         }
         
@@ -159,15 +159,15 @@ object MathFormulaRenderer {
                     // 创建点击事件
                     val clickableSpan = if (context.onMathTap != null) {
                         object : android.text.style.ClickableSpan() {
-                            override fun onClick(widget: View) {
-                                context.onMathTap?.invoke(mathNode)
-                            }
-                        }
+                                    override fun onClick(widget: View) {
+                                        context.onMathTap?.invoke(mathNode)
+                                    }
+                                }
                     } else null
-                    
-                    // 保存到缓存
-                    context.formulaSizeCacheDelegate?.saveFormulaImage(image, inlineCacheKey)
-                    
+                            
+                            // 保存到缓存
+                            context.formulaSizeCacheDelegate?.saveFormulaImage(image, inlineCacheKey)
+                            
                     // 返回结果，不立即替换
                     onResult?.invoke(InlineMathRenderResult(
                         position = position,
@@ -567,17 +567,52 @@ private class CenterImageSpan(
     private var cachedAvailableWidth: Float = 0f
     
     /**
-     * 获取 TextView 的可用宽度（考虑 padding）
+     * 获取 TextView 的总可用宽度（考虑 padding）
      */
-    private fun getAvailableWidth(): Float {
+    private fun getTotalAvailableWidth(): Float {
         val textView = textViewRef?.get()
         return if (textView != null && textView.width > 0) {
             // TextView 已布局，使用实际宽度减去 padding
             (textView.width - textView.paddingLeft - textView.paddingRight).toFloat()
         } else {
             // 使用 contentWidth（已减去 padding）
-            contentWidth.toFloat()-30
+            if (contentWidth > 0) {
+                contentWidth.toFloat()
+            } else {
+                // 后备方案：使用屏幕宽度的 50%
+                val displayMetrics = context.resources.displayMetrics
+                displayMetrics.widthPixels * 0.5f
+            }
         }
+    }
+    
+    /**
+     * 获取当前行的剩余可用宽度
+     * @param paint Paint 对象
+     * @param text 完整文本
+     * @param start ImageSpan 在文本中的起始位置
+     * @return 当前行的剩余可用宽度
+     */
+    private fun getRemainingLineWidth(
+        paint: Paint,
+        text: CharSequence?,
+        start: Int
+    ): Float {
+        val totalWidth = getTotalAvailableWidth()
+        
+        if (text == null || start <= 0) {
+            return totalWidth
+        }
+        
+        // 测量从文本开始到当前位置的宽度
+        // 注意：这只能测量同一行的文本，如果已经换行，这个值会不准确
+        // 但 TextView 的布局机制会在 getSize 中自动处理换行
+        val usedWidth = paint.measureText(text, 0, start.coerceAtMost(text.length))
+        
+        // 计算剩余宽度，但至少保留一些空间（避免完全为0）
+        val remainingWidth = (totalWidth - usedWidth).coerceAtLeast(totalWidth * 0.1f)
+        
+        return remainingWidth
     }
     
     /**
@@ -668,11 +703,11 @@ private class CenterImageSpan(
         end: Int,
         fm: Paint.FontMetricsInt?
     ): Int {
-        // 计算可用宽度（TextView 宽度的 50%，参考 iOS）
-        val availableWidth = getAvailableWidth()
+        // 计算当前行的剩余可用宽度
+        val remainingWidth = getRemainingLineWidth(paint, text, start)
         
-        // 获取缩放后的图片
-        val scaled = getScaledBitmap(availableWidth)
+        // 获取缩放后的图片（使用剩余宽度）
+        val scaled = getScaledBitmap(remainingWidth)
         
         // 更新 drawable 的图片和 bounds
         val drawable = drawable
@@ -716,30 +751,30 @@ private class CenterImageSpan(
         bottom: Int,
         paint: Paint
     ) {
-        // 计算可用宽度
-        val availableWidth = getAvailableWidth()
+        // 计算当前行的剩余可用宽度（与 getSize 保持一致）
+        val remainingWidth = getRemainingLineWidth(paint, text, start)
         
         // 获取缩放后的图片
-        val scaled = getScaledBitmap(availableWidth)
+        val scaled = getScaledBitmap(remainingWidth)
         
         // 更新 drawable
         val drawable = drawable
         drawable.setBounds(0, 0, scaled.width, scaled.height)
         
         canvas.withSave {
-
-            // 获取字体的度量信息
-            val fm = paint.fontMetricsInt
-
-            // 计算文本的中心位置（相对于基线 y）
-            val textCenter = y + (fm.descent + fm.ascent) / 2
-
-            // 计算图片的高度
+        
+        // 获取字体的度量信息
+        val fm = paint.fontMetricsInt
+        
+        // 计算文本的中心位置（相对于基线 y）
+        val textCenter = y + (fm.descent + fm.ascent) / 2
+        
+        // 计算图片的高度
             val imageHeight = scaled.height
-
-            // 让图片的中心与文本的中心对齐
-            val transY = textCenter - imageHeight / 2
-
+        
+        // 让图片的中心与文本的中心对齐
+        val transY = textCenter - imageHeight / 2
+        
             translate(x, transY.toFloat())
             drawable.draw(this)
         }

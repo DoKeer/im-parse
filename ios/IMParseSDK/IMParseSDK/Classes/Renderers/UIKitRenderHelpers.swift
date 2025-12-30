@@ -320,7 +320,7 @@ internal class MathTextAttachment: NSTextAttachment {
         let minHeight = font.capHeight * 2 // 基础Attachment高度比字体capHeight要放大2倍
         let maxHeight = font.capHeight * 4 // 最大Attachment高度比字体capHeight要放大5倍
         let imageAspectRatio = image.size.width / image.size.height
-        let availableWidth = context.width-context.theme.contentPadding*2
+        let availableWidth = context.width*0.7
         
         // 行内数学公式图片缩放算法，保证图片清晰度和阅读体验
         var targetWidth = image.size.width

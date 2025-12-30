@@ -212,19 +212,29 @@ public class UIKitFrameRender {
             let textColor = renderInfo.textColor
             let onNodeLayoutChanged = context.onNodeLayoutChanged
             
-            Task {
+            let task = Task {
+                // 检查是否已取消
+                try? Task.checkCancellation()
+                
                 // 异步渲染行内公式
-                if let image = await MathHTMLRenderer.renderInlineMath(
+                if (await MathHTMLRenderer.renderInlineMath(
                     mathContent: mathNode.content,
                     textColor: textColor,
                     formulaSizeCacheDelegate: formulaSizeCacheDelegate
-                ) {
+                )) != nil {
+                    // 再次检查是否已取消（渲染完成后）
+                    guard !Task.isCancelled else { return }
+                    
                     // 渲染成功，在主线程触发布局更新回调
                     await MainActor.run {
+                        guard !Task.isCancelled else { return }
                         onNodeLayoutChanged?(mathNode)
                     }
                 }
             }
+            
+            // 注册 Task 以便后续可以取消
+            context.onRenderTaskCreated?(task)
         }
     }
     
@@ -965,8 +975,11 @@ public class UIKitFrameRender {
         }
         
         // 异步渲染
-        Task { @MainActor [weak containerView] in
+        let task = Task { @MainActor [weak containerView] in
             guard let containerView = containerView else { return }
+            
+            // 检查是否已取消
+            try? Task.checkCancellation()
             
             let image = await MathHTMLRenderer.render(
                 mathContent: node.content,
@@ -975,6 +988,9 @@ public class UIKitFrameRender {
                 fontSize: fontSize,
                 formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
             )
+            
+            // 再次检查是否已取消（渲染完成后）
+            guard !Task.isCancelled else { return }
             
             containerView.viewWithTag(RenderConstants.placeholderTag)?.removeFromSuperview()
             
@@ -1003,6 +1019,9 @@ public class UIKitFrameRender {
                 containerView.addSubview(label)
             }
         }
+        
+        // 注册 Task 以便后续可以取消
+        context.onRenderTaskCreated?(task)
         
         return containerView
     }
@@ -1206,8 +1225,11 @@ public class UIKitFrameRender {
         }
         
         // 异步渲染
-        Task { @MainActor [weak previewView] in
+        let task = Task { @MainActor [weak previewView] in
             guard let previewView = previewView else { return }
+            
+            // 检查是否已取消
+            try? Task.checkCancellation()
             
             let image = await MermaidHTMLRenderer.render(
                 mermaidCode: node.content,
@@ -1215,6 +1237,9 @@ public class UIKitFrameRender {
                 backgroundColor: cacheKey.2,
                 formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
             )
+            
+            // 再次检查是否已取消（渲染完成后）
+            guard !Task.isCancelled else { return }
             
             previewView.viewWithTag(RenderConstants.mermaidPlaceholderTag)?.removeFromSuperview()
             
@@ -1240,6 +1265,9 @@ public class UIKitFrameRender {
                 previewView.addSubview(label)
             }
         }
+        
+        // 注册 Task 以便后续可以取消
+        context.onRenderTaskCreated?(task)
     }
     
     private static func addMermaidImageView(
