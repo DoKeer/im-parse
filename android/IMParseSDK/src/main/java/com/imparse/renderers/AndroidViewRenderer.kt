@@ -187,7 +187,7 @@ class AndroidViewRenderer {
         
         // 异步渲染行内数学公式
         if (mathNodes.isNotEmpty()) {
-            renderInlineMathNodes(textView, spannable, mathNodes, context)
+            AndroidViewRenderer.renderInlineMathNodes(textView, spannable, mathNodes, context)
         }
         
         return textView
@@ -1385,39 +1385,43 @@ class AndroidViewRenderer {
             }
         }
     }
-    
-    /**
-     * 异步渲染行内数学公式（使用统一的渲染方法）
-     */
-    private fun renderInlineMathNodes(
-        textView: TextView,
-        spannable: SpannableStringBuilder,
-        mathNodes: List<Pair<Int, MathNode>>,
-        context: AndroidRenderContext
-    ) {
-        if (mathNodes.isEmpty()) return
-        
-        // 用于跟踪已完成的渲染数量
-        var completedCount = 0
-        val totalCount = mathNodes.size
-        
-        // 为每个数学公式使用统一的渲染方法
-        mathNodes.forEach { (position, mathNode) ->
-            MathFormulaRenderer.renderInlineMath(
-                textView = textView,
-                spannable = spannable,
-                position = position,
-                placeholderLength = 3,
-                mathNode = mathNode,
-                context = context,
-                onComplete = {
-                    completedCount++
-                    if (completedCount == totalCount) {
-                        textView.text = spannable
+
+    object AndroidViewRenderer {
+
+        /**
+         * 异步渲染行内数学公式（使用统一的渲染方法）
+         */
+        fun renderInlineMathNodes(
+            textView: TextView,
+            spannable: SpannableStringBuilder,
+            mathNodes: List<Pair<Int, MathNode>>,
+            context: AndroidRenderContext
+        ) {
+            if (mathNodes.isEmpty()) return
+
+            // 用于跟踪已完成的渲染数量
+            var completedCount = 0
+            val totalCount = mathNodes.size
+
+            // 为每个数学公式使用统一的渲染方法
+            mathNodes.forEach { (position, mathNode) ->
+                MathFormulaRenderer.renderInlineMath(
+                    textView = textView,
+                    spannable = spannable,
+                    position = position,
+                    placeholderLength = 3,
+                    mathNode = mathNode,
+                    context = context,
+                    onComplete = {
+                        completedCount++
+                        if (completedCount == totalCount) {
+                            textView.text = spannable
+                        }
                     }
-                }
-            )
+                )
+            }
         }
     }
+
 }
 
