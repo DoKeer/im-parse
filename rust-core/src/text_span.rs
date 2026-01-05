@@ -318,7 +318,7 @@ impl MathParser {
 pub struct SpanBasedBuilder;
 
 impl SpanBasedBuilder {
-    /// 从 TextBuffer 和 ContentSpan 构造 AST 节点
+    /// 从 TextBuffer 和 ContentSpan 构造 AST 节点（V2 - 扁平化）
     /// 
     /// 时间复杂度：O(n + m log m)
     /// - n: 文本长度
@@ -329,16 +329,16 @@ impl SpanBasedBuilder {
         for content_span in content_spans {
             match content_span {
                 ContentSpan::BlockMath { range } => {
-                    nodes.push(ASTNode::Math(MathNode {
+                    // 块级数学公式
+                    nodes.push(ASTNode::MathBlock(MathNode {
                         content: buffer.get_text(range.clone()).to_string(),
-                        display: true,
                     }));
                 }
                 
                 ContentSpan::InlineMath { range } => {
-                    nodes.push(ASTNode::Math(MathNode {
+                    // 行内数学公式
+                    nodes.push(ASTNode::InlineMath(MathNode {
                         content: buffer.get_text(range.clone()).to_string(),
-                        display: false,
                     }));
                 }
                 
@@ -347,12 +347,12 @@ impl SpanBasedBuilder {
                     let style_spans = buffer.find_overlapping_spans(range.clone());
                     
                     if style_spans.is_empty() {
-                        // 无样式文本
-                        nodes.push(ASTNode::Text(TextNode {
-                            content: buffer.get_text(range.clone()).to_string(),
-                        }));
+                        // 无样式文本 - 使用 TextRun
+                        nodes.push(ASTNode::Text(TextRun::new(
+                            buffer.get_text(range.clone()).to_string()
+                        )));
                     } else {
-                        // 构造带样式的节点
+                        // 构造带样式的文本节点
                         nodes.extend(Self::build_styled_text(
                             buffer,
                             range.clone(),
@@ -366,7 +366,7 @@ impl SpanBasedBuilder {
         nodes
     }
     
-    /// 构造带样式的文本节点
+    /// 构造带样式的文本节点（V2 - 扁平化）
     fn build_styled_text(
         buffer: &TextBuffer,
         text_range: Range<usize>,
@@ -390,64 +390,42 @@ impl SpanBasedBuilder {
             
             // 如果有间隙，添加无样式文本
             if current_pos < overlap_start {
-                nodes.push(ASTNode::Text(TextNode {
-                    content: buffer.get_text(current_pos..overlap_start).to_string(),
-                }));
+                nodes.push(ASTNode::Text(TextRun::new(
+                    buffer.get_text(current_pos..overlap_start).to_string()
+                )));
             }
             
-            // 添加带样式的文本
+            // 添加带样式的文本 - 使用扁平化 TextRun
             let content = buffer.get_text(overlap_start..overlap_end).to_string();
-            if let Some(styled) = Self::apply_styles(content, &span.styles) {
-                nodes.push(styled);
-            }
+            let text_styles = Self::convert_inline_styles(&span.styles);
+            
+            nodes.push(ASTNode::Text(TextRun::with_styles(content, text_styles)));
             
             current_pos = overlap_end;
         }
         
         // 添加剩余的无样式文本
         if current_pos < text_range.end {
-            nodes.push(ASTNode::Text(TextNode {
-                content: buffer.get_text(current_pos..text_range.end).to_string(),
-            }));
+            nodes.push(ASTNode::Text(TextRun::new(
+                buffer.get_text(current_pos..text_range.end).to_string()
+            )));
         }
         
         nodes
     }
     
-    /// 应用样式到文本
-    fn apply_styles(content: String, styles: &[InlineStyle]) -> Option<ASTNode> {
-        if styles.is_empty() {
-            return Some(ASTNode::Text(TextNode { content }));
-        }
-        
-        let mut current = ASTNode::Text(TextNode { content });
-        
-        for style in styles.iter().rev() {
-            current = match style {
-                InlineStyle::Strong => ASTNode::Strong(StrongNode {
-                    children: vec![current],
-                }),
-                InlineStyle::Em => ASTNode::Em(EmNode {
-                    children: vec![current],
-                }),
-                InlineStyle::Strike => ASTNode::Strike(StrikeNode {
-                    children: vec![current],
-                }),
-                InlineStyle::Link(url) => ASTNode::Link(LinkNode {
-                    url: url.clone(),
-                    children: vec![current],
-                }),
-                InlineStyle::Underline => ASTNode::Underline(UnderlineNode {
-                    children: vec![current],
-                }),
-                InlineStyle::Color(color) => ASTNode::Color(ColorNode {
-                    color: color.clone(),
-                    children: vec![current],
-                }),
-            };
-        }
-        
-        Some(current)
+    /// 转换 InlineStyle 到 TextStyle（扁平化样式系统）
+    fn convert_inline_styles(inline_styles: &[InlineStyle]) -> Vec<TextStyle> {
+        inline_styles.iter().map(|s| {
+            match s {
+                InlineStyle::Strong => TextStyle::Bold,
+                InlineStyle::Em => TextStyle::Italic,
+                InlineStyle::Strike => TextStyle::Strikethrough,
+                InlineStyle::Link(_) => TextStyle::Underline, // 链接显示为下划线
+                InlineStyle::Underline => TextStyle::Underline,
+                InlineStyle::Color(color) => TextStyle::Color { color: color.clone() },
+            }
+        }).collect()
     }
 }
 

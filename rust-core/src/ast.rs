@@ -1,248 +1,19 @@
+// AST 节点定义 - 优化版 V2
+// 
+// 设计原则：
+// 1. 样式与内容分离：文本样式作为属性而非节点类型
+// 2. 扁平化结构：减少嵌套层级，提升渲染性能
+// 3. 渲染友好：直接映射到原生UI控件
+// 4. 易于扩展：新增样式只需修改 TextStyle
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// AST 节点类型
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum ASTNode {
-    #[serde(rename = "root")]
-    Root(RootNode),
-    #[serde(rename = "paragraph")]
-    Paragraph(ParagraphNode),
-    #[serde(rename = "heading")]
-    Heading(HeadingNode),
-    #[serde(rename = "text")]
-    Text(TextNode),
-    #[serde(rename = "strong")]
-    Strong(StrongNode),
-    #[serde(rename = "em")]
-    Em(EmNode),
-    #[serde(rename = "underline")]
-    Underline(UnderlineNode),
-    #[serde(rename = "strike")]
-    Strike(StrikeNode),
-    #[serde(rename = "color")]
-    Color(ColorNode),
-    #[serde(rename = "code")]
-    Code(CodeNode),
-    #[serde(rename = "codeBlock")]
-    CodeBlock(CodeBlockNode),
-    #[serde(rename = "link")]
-    Link(LinkNode),
-    #[serde(rename = "image")]
-    Image(ImageNode),
-    #[serde(rename = "list")]
-    List(ListNode),
-    #[serde(rename = "listItem")]
-    ListItem(ListItemNode),
-    #[serde(rename = "table")]
-    Table(TableNode),
-    #[serde(rename = "tableRow")]
-    TableRow(TableRow),
-    #[serde(rename = "tableCell")]
-    TableCell(TableCell),
-    #[serde(rename = "math")]
-    Math(MathNode),
-    #[serde(rename = "mermaid")]
-    Mermaid(MermaidNode),
-    #[serde(rename = "card")]
-    Card(CardNode),
-    #[serde(rename = "mention")]
-    Mention(MentionNode),
-    #[serde(rename = "emoji")]
-    Emoji(EmojiNode),
-    #[serde(rename = "horizontalRule")]
-    HorizontalRule(HorizontalRuleNode),
-    #[serde(rename = "blockquote")]
-    Blockquote(BlockquoteNode),
-    #[serde(rename = "html")]
-    Html(HtmlNode),
-}
+// ========== 根节点 ==========
 
-/// 根节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RootNode {
     pub children: Vec<ASTNode>,
-}
-
-/// 段落节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ParagraphNode {
-    pub children: Vec<ASTNode>,
-}
-
-/// 标题节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HeadingNode {
-    pub level: u8, // 1-6
-    pub children: Vec<ASTNode>,
-}
-
-/// 文本节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TextNode {
-    pub content: String,
-}
-
-/// 粗体节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StrongNode {
-    pub children: Vec<ASTNode>,
-}
-
-/// 斜体节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EmNode {
-    pub children: Vec<ASTNode>,
-}
-
-/// 下划线节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UnderlineNode {
-    pub children: Vec<ASTNode>,
-}
-
-/// 删除线节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StrikeNode {
-    pub children: Vec<ASTNode>,
-}
-
-/// 颜色节点（用于文本颜色）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ColorNode {
-    pub color: String, // CSS color string (e.g., "#FF0000", "rgb(255,0,0)")
-    pub children: Vec<ASTNode>,
-}
-
-/// 行内代码节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodeNode {
-    pub content: String,
-}
-
-/// 代码块节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodeBlockNode {
-    pub language: Option<String>,
-    pub content: String,
-}
-
-/// 链接节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LinkNode {
-    pub url: String,
-    pub children: Vec<ASTNode>,
-}
-
-/// 图片节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ImageNode {
-    pub url: String,
-    pub width: Option<f32>,
-    pub height: Option<f32>,
-    pub alt: Option<String>,
-}
-
-/// 列表类型
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ListType {
-    Bullet,
-    Ordered,
-}
-
-/// 列表节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListNode {
-    #[serde(rename = "listType")]
-    pub list_type: ListType,
-    pub items: Vec<ListItemNode>,
-}
-
-/// 列表项节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListItemNode {
-    pub children: Vec<ASTNode>,
-    pub checked: Option<bool>, // None = 普通列表项, Some(true) = 已完成, Some(false) = 未完成
-}
-
-/// 文本对齐方式
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum TextAlign {
-    Left,
-    Center,
-    Right,
-}
-
-/// 表格行
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TableRow {
-    pub cells: Vec<TableCell>,
-}
-
-/// 表格单元格
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TableCell {
-    pub children: Vec<ASTNode>,
-    pub align: Option<TextAlign>,
-}
-
-/// 表格节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TableNode {
-    pub rows: Vec<TableRow>,
-}
-
-/// 数学公式节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MathNode {
-    pub content: String,
-    pub display: bool, // true for $$, false for $
-}
-
-/// Mermaid 图表节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MermaidNode {
-    pub content: String,
-}
-
-/// 卡片节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CardNode {
-    pub subtype: String,
-    pub content: String,
-    pub metadata: HashMap<String, String>,
-}
-
-/// @提及节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MentionNode {
-    pub id: String,
-    pub name: String,
-}
-
-/// 表情节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EmojiNode {
-    pub content: String,
-}
-
-/// 水平分割线节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HorizontalRuleNode;
-
-/// 引用块节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BlockquoteNode {
-    pub children: Vec<ASTNode>,
-}
-
-/// HTML 节点（原始 HTML 内容）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HtmlNode {
-    pub content: String,
 }
 
 impl RootNode {
@@ -259,4 +30,361 @@ impl Default for RootNode {
     }
 }
 
+// ========== 文本样式系统（核心优化）==========
 
+/// 文本样式 - 统一的样式系统
+/// 
+/// 设计说明：
+/// - 支持 Markdown 的所有样式（粗体、斜体、删除线等）
+/// - 支持 Delta 的富文本样式（字体、颜色等）
+/// - 可叠加应用多个样式（通过 Vec<TextStyle>）
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum TextStyle {
+    /// 粗体
+    Bold,
+    /// 斜体
+    Italic,
+    /// 下划线
+    Underline,
+    /// 删除线
+    Strikethrough,
+    
+    /// 字体颜色（CSS color string，如 "#FF0000", "rgb(255,0,0)"）
+    Color { color: String },
+    /// 背景颜色
+    BackgroundColor { color: String },
+    
+    /// 字体大小（相对于基础字号的倍数，如 1.0 = 100%, 1.5 = 150%）
+    /// 使用相对值而非绝对值，便于适配不同屏幕和主题
+    FontSize { scale: f32 },
+    
+    /// 字体族（如 "monospace", "serif", "sans-serif"，或具体字体名）
+    FontFamily { family: String },
+    
+    /// 上标
+    Superscript,
+    /// 下标
+    Subscript,
+    
+    /// 行内代码（特殊样式，不与其他样式叠加）
+    Code,
+}
+
+/// 文本运行 - 扁平化的文本+样式单元
+/// 
+/// 设计说明：
+/// - 最小的文本渲染单元
+/// - 样式列表按优先级排序（后面的覆盖前面的）
+/// - 渲染时直接转换为 NSAttributedString / SpannableString
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TextRun {
+    /// 文本内容
+    pub content: String,
+    /// 应用的样式列表（可叠加）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub styles: Vec<TextStyle>,
+}
+
+impl TextRun {
+    pub fn new(content: String) -> Self {
+        Self {
+            content,
+            styles: Vec::new(),
+        }
+    }
+    
+    pub fn with_styles(content: String, styles: Vec<TextStyle>) -> Self {
+        Self { content, styles }
+    }
+}
+
+// ========== AST 节点类型 ==========
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ASTNode {
+    // ===== 块级元素 =====
+    
+    /// 段落
+    Paragraph(ParagraphNode),
+    
+    /// 标题（h1-h6）
+    Heading(HeadingNode),
+    
+    /// 代码块
+    CodeBlock(CodeBlockNode),
+    
+    /// 引用块
+    Blockquote(BlockquoteNode),
+    
+    /// 列表（有序/无序/任务列表）
+    List(ListNode),
+    
+    /// 表格
+    Table(TableNode),
+    
+    /// 水平分割线
+    HorizontalRule(HorizontalRuleNode),
+    
+    /// 数学公式块（块级）
+    MathBlock(MathNode),
+    
+    /// Mermaid 图表块
+    MermaidBlock(MermaidNode),
+    
+    /// HTML 块
+    HtmlBlock(HtmlNode),
+    
+    // ===== 行内元素 =====
+    
+    /// 文本运行（带样式）
+    Text(TextRun),
+    
+    /// 链接
+    Link(LinkNode),
+    
+    /// 图片
+    Image(ImageNode),
+    
+    /// 行内数学公式
+    InlineMath(MathNode),
+    
+    /// @提及
+    Mention(MentionNode),
+    
+    /// 表情
+    Emoji(EmojiNode),
+    
+    /// 换行
+    LineBreak(LineBreakNode),
+    
+    /// HTML 行内
+    InlineHtml(HtmlNode),
+}
+
+// ========== 块级节点 ==========
+
+/// 段落节点
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ParagraphNode {
+    /// 行内内容（Text、Link、InlineMath 等）
+    pub children: Vec<ASTNode>,
+    /// 对齐方式（可选，用于 Delta 段落属性）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub align: Option<TextAlign>,
+    /// 缩进级别（用于 Delta 段落缩进）
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub indent: u32,
+}
+
+/// 标题节点
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HeadingNode {
+    /// 标题级别（1-6）
+    pub level: u8,
+    /// 行内内容
+    pub children: Vec<ASTNode>,
+}
+
+/// 代码块节点
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CodeBlockNode {
+    /// 语言标识（如 "rust", "javascript"）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// 代码内容
+    pub content: String,
+}
+
+/// 引用块节点
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BlockquoteNode {
+    /// 块级内容（可嵌套段落、列表等）
+    pub children: Vec<ASTNode>,
+}
+
+/// 列表节点
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ListNode {
+    /// 列表类型
+    #[serde(rename = "listType")]
+    pub list_type: ListType,
+    /// 列表项
+    pub items: Vec<ListItemNode>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ListType {
+    /// 有序列表
+    Ordered,
+    /// 无序列表
+    Bullet,
+}
+
+/// 列表项节点
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ListItemNode {
+    /// 块级内容（支持段落、嵌套列表等）
+    pub children: Vec<ASTNode>,
+    /// 任务列表勾选状态（None = 非任务列表）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checked: Option<bool>,
+}
+
+/// 表格节点
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TableNode {
+    /// 表格行
+    pub rows: Vec<TableRow>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TableRow {
+    /// 单元格
+    pub cells: Vec<TableCell>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TableCell {
+    /// 行内内容
+    pub children: Vec<ASTNode>,
+    /// 对齐方式
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub align: Option<TextAlign>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TextAlign {
+    Left,
+    Center,
+    Right,
+}
+
+/// 水平分割线节点
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HorizontalRuleNode;
+
+/// 数学公式节点
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MathNode {
+    /// LaTeX 公式内容
+    pub content: String,
+}
+
+/// Mermaid 图表节点
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MermaidNode {
+    /// Mermaid 代码
+    pub content: String,
+}
+
+/// HTML 节点
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HtmlNode {
+    /// HTML 内容
+    pub content: String,
+}
+
+// ========== 行内节点 ==========
+
+/// 链接节点
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LinkNode {
+    /// 链接 URL
+    pub url: String,
+    /// 链接文本（行内内容）
+    pub children: Vec<ASTNode>,
+    /// 链接标题（可选）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+}
+
+/// 图片节点
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ImageNode {
+    /// 图片 URL
+    pub url: String,
+    /// 宽度（像素，可选）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<f32>,
+    /// 高度（像素，可选）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<f32>,
+    /// 替代文本
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alt: Option<String>,
+}
+
+/// @提及节点
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MentionNode {
+    /// 用户 ID
+    pub id: String,
+    /// 显示名称
+    pub name: String,
+}
+
+/// 表情节点
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EmojiNode {
+    /// 表情内容（如 emoji code 或图片 URL）
+    pub content: String,
+}
+
+/// 换行节点
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LineBreakNode {
+    /// 软换行 vs 硬换行
+    #[serde(default)]
+    pub hard: bool,
+}
+
+// ========== 辅助函数 ==========
+
+fn is_zero(value: &u32) -> bool {
+    *value == 0
+}
+
+// ========== 便捷构造函数 ==========
+
+impl ASTNode {
+    /// 创建纯文本节点
+    pub fn text(content: impl Into<String>) -> Self {
+        ASTNode::Text(TextRun::new(content.into()))
+    }
+    
+    /// 创建带样式的文本节点
+    pub fn styled_text(content: impl Into<String>, styles: Vec<TextStyle>) -> Self {
+        ASTNode::Text(TextRun::with_styles(content.into(), styles))
+    }
+    
+    /// 创建段落
+    pub fn paragraph(children: Vec<ASTNode>) -> Self {
+        ASTNode::Paragraph(ParagraphNode {
+            children,
+            align: None,
+            indent: 0,
+        })
+    }
+    
+    /// 创建标题
+    pub fn heading(level: u8, children: Vec<ASTNode>) -> Self {
+        ASTNode::Heading(HeadingNode {
+            level: level.clamp(1, 6),
+            children,
+        })
+    }
+}
+
+// ========== 兼容性支持（可选）==========
+
+/// 将旧版本的嵌套样式节点转换为新版本的 TextRun
+/// 
+/// 示例：Strong(Em(Text("hello"))) -> TextRun { content: "hello", styles: [Bold, Italic] }
+pub fn flatten_legacy_styles(/* 旧节点 */) -> TextRun {
+    // TODO: 实现兼容性转换
+    unimplemented!("Legacy format conversion")
+}

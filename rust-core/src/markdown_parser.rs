@@ -34,7 +34,7 @@
 use crate::ast::*;
 use crate::ast_builder::ASTBuilder;
 use crate::event_stream::EventStream;
-use crate::text_span::{TextBuffer, MathParser, SpanBasedBuilder, InlineStyle as SpanInlineStyle};
+use crate::text_span::{TextBuffer, MathParser, SpanBasedBuilder, InlineStyle};
 use crate::ParseError;
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd, HeadingLevel};
 
@@ -145,7 +145,7 @@ impl MarkdownParser {
                 let node = self.parse_code_block(stream, kind)?;
                 match node {
                     ASTNode::CodeBlock(cb) => builder.add_code_block(cb.language, cb.content),
-                    ASTNode::Mermaid(m) => builder.add_mermaid(m.content),
+                    ASTNode::MermaidBlock(m) => builder.add_mermaid(m.content),
                     _ => unreachable!(),
                 }
             }
@@ -178,7 +178,7 @@ impl MarkdownParser {
             }
             
             Event::Html(html) => {
-                builder.add_html(html.to_string());
+                builder.add_html_block(html.to_string());
             }
             
             Event::Start(Tag::Image { dest_url, title, .. }) => {
@@ -234,12 +234,12 @@ impl MarkdownParser {
         Ok(self.build_inline_nodes(&events))
     }
     
-    /// 从事件列表构造行内节点（纯函数）
+    /// 从事件列表构造行内节点（V2 - 使用扁平化样式）
     /// 
     /// 职责：
     /// - 累积文本和样式
     /// - 识别数学公式（使用优化的 Span-based 处理）
-    /// - 构造样式节点
+    /// - 构造 TextRun 节点
     fn build_inline_nodes(&self, events: &[Event]) -> Vec<ASTNode> {
         let mut nodes = Vec::new();
         let mut text_buffer = Vec::new();
@@ -257,61 +257,74 @@ impl MarkdownParser {
                 Event::Code(code) => {
                     // 先 flush 文本缓冲区
                     self.flush_text_buffer(&mut text_buffer, &mut nodes);
-                    nodes.push(ASTNode::Code(CodeNode {
-                        content: code.to_string(),
-                    }));
+                    // 行内代码使用 Code 样式
+                    nodes.push(ASTNode::Text(TextRun::with_styles(
+                        code.to_string(),
+                        vec![TextStyle::Code],
+                    )));
                 }
                 
-                Event::SoftBreak | Event::HardBreak => {
+                Event::SoftBreak => {
+                    // 软换行直接添加到文本中
                     text_buffer.push(TextFragment {
                         content: "\n".to_string(),
                         styles: current_styles.clone(),
                     });
                 }
                 
+                Event::HardBreak => {
+                    // 硬换行需要先flush文本，然后添加换行节点
+                    self.flush_text_buffer(&mut text_buffer, &mut nodes);
+                    nodes.push(ASTNode::LineBreak(LineBreakNode { hard: true }));
+                }
+                
                 Event::Html(html) => {
                     self.flush_text_buffer(&mut text_buffer, &mut nodes);
-                    nodes.push(ASTNode::Html(HtmlNode {
+                    nodes.push(ASTNode::InlineHtml(HtmlNode {
                         content: html.to_string(),
                     }));
                 }
                 
                 Event::Start(Tag::Strong) => {
-                    current_styles.push(SpanAttr::Strong);
+                    current_styles.push(TextStyle::Bold);
                 }
                 
                 Event::End(TagEnd::Strong) => {
-                    if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, SpanAttr::Strong)) {
+                    if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, TextStyle::Bold)) {
                         current_styles.remove(pos);
                     }
                 }
                 
                 Event::Start(Tag::Emphasis) => {
-                    current_styles.push(SpanAttr::Em);
+                    current_styles.push(TextStyle::Italic);
                 }
                 
                 Event::End(TagEnd::Emphasis) => {
-                    if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, SpanAttr::Em)) {
+                    if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, TextStyle::Italic)) {
                         current_styles.remove(pos);
                     }
                 }
                 
-                Event::Start(Tag::Link { dest_url, .. }) => {
-                    current_styles.push(SpanAttr::Link(dest_url.to_string()));
+                Event::Start(Tag::Link { dest_url, title, .. }) => {
+                    // Flush文本，准备构造链接节点
+                    self.flush_text_buffer(&mut text_buffer, &mut nodes);
+                    // 标记进入链接上下文（在实际实现中需要更复杂的处理）
+                    current_styles.push(TextStyle::Underline); // 链接默认下划线
                 }
                 
                 Event::End(TagEnd::Link) => {
-                    if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, SpanAttr::Link(_))) {
+                    // 移除链接样式
+                    if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, TextStyle::Underline)) {
                         current_styles.remove(pos);
                     }
                 }
                 
                 Event::Start(Tag::Strikethrough) => {
-                    current_styles.push(SpanAttr::Strike);
+                    current_styles.push(TextStyle::Strikethrough);
                 }
                 
                 Event::End(TagEnd::Strikethrough) => {
-                    if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, SpanAttr::Strike)) {
+                    if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, TextStyle::Strikethrough)) {
                         current_styles.remove(pos);
                     }
                 }
@@ -348,7 +361,11 @@ impl MarkdownParser {
                     Event::Start(Tag::Paragraph) => {
                         let para_children = self.parse_inline_context(stream, TagEnd::Paragraph)?;
                         if !para_children.is_empty() {
-                            children.push(ASTNode::Paragraph(ParagraphNode { children: para_children }));
+                            children.push(ASTNode::Paragraph(ParagraphNode { 
+                            children: para_children,
+                            align: None,
+                            indent: 0,
+                        }));
                         }
                     }
                     
@@ -447,7 +464,11 @@ impl MarkdownParser {
                                 stream.next();
                                 let para_children = self.parse_inline_context(stream, TagEnd::Paragraph)?;
                                 if !para_children.is_empty() {
-                                    children.push(ASTNode::Paragraph(ParagraphNode { children: para_children }));
+                                    children.push(ASTNode::Paragraph(ParagraphNode { 
+                            children: para_children,
+                            align: None,
+                            indent: 0,
+                        }));
                                 }
                             }
                             
@@ -568,7 +589,9 @@ impl MarkdownParser {
                                     let inline_nodes = self.build_inline_nodes(&temp_events);
                                     if !inline_nodes.is_empty() {
                                         children.push(ASTNode::Paragraph(ParagraphNode { 
-                                            children: inline_nodes 
+                                            children: inline_nodes,
+                                            align: None,
+                                            indent: 0,
                                         }));
                                     }
                                 }
@@ -688,7 +711,7 @@ impl MarkdownParser {
         // 检查是否是 Mermaid
         if let Some(ref lang) = language {
             if lang.to_lowercase() == "mermaid" {
-                return Ok(ASTNode::Mermaid(MermaidNode { content }));
+                return Ok(ASTNode::MermaidBlock(MermaidNode { content }));
             }
         }
         
@@ -709,52 +732,40 @@ impl MarkdownParser {
     /// - 如果有，将段落拆分为多个段落，块级公式独立成节点
     /// - 这是为了兼容 Markdown 中块级公式可以出现在段落中的语法特性
     fn handle_paragraph(&self, children: Vec<ASTNode>, builder: &mut ASTBuilder) {
-        // 检查是否包含块级公式
+        if children.is_empty() {
+            return;
+        }
+        
+        // V2: 检查是否包含块级数学公式
         let has_block_math = children.iter().any(|node| {
-            if let ASTNode::Math(math) = node {
-                math.display
-            } else {
-                false
-            }
+            matches!(node, ASTNode::MathBlock(_))
         });
         
         if has_block_math {
-            // 拆分段落
+            // 拆分段落：块级公式独立，其他内容形成段落
             let mut pending = Vec::new();
             
             for child in children {
-                if let ASTNode::Math(math) = &child {
-                    if math.display {
-                        if !pending.is_empty() {
-                            builder.start_paragraph();
-                            // 使用演进友好的方法访问段落
-                            if let Some(para) = builder.current_paragraph_mut() {
-                                para.children.extend(pending.drain(..));
-                            }
-                            builder.end_paragraph();
-                        }
-                        builder.add_math(math.content.clone(), true);
-                        continue;
+                if matches!(&child, ASTNode::MathBlock(_)) {
+                    // 先提交待处理的内容
+                    if !pending.is_empty() {
+                        builder.add_paragraph_with_attrs(pending, None, 0);
+                        pending = Vec::new();
                     }
+                    // 块级公式直接添加
+                    builder.emit_block(child);
+                } else {
+                    pending.push(child);
                 }
-                pending.push(child);
             }
             
+            // 提交剩余内容
             if !pending.is_empty() {
-                builder.start_paragraph();
-                // 使用演进友好的方法访问段落
-                if let Some(para) = builder.current_paragraph_mut() {
-                    para.children.extend(pending);
-                }
-                builder.end_paragraph();
+                builder.add_paragraph_with_attrs(pending, None, 0);
             }
-        } else if !children.is_empty() {
-            builder.start_paragraph();
-            // 使用演进友好的方法访问段落
-            if let Some(para) = builder.current_paragraph_mut() {
-                para.children.extend(children);
-            }
-            builder.end_paragraph();
+        } else {
+            // 无块级公式，直接创建段落
+            builder.add_paragraph_with_attrs(children, None, 0);
         }
     }
     
@@ -771,12 +782,12 @@ impl MarkdownParser {
         }
     }
     
-    /// 处理累积的文本缓冲区（优化版 - 使用 Span-based 处理）
+    /// 处理累积的文本缓冲区（V2 - 使用扁平化 TextRun）
     /// 
     /// Phase 2 优化：
     /// - 使用 TextBuffer 避免重复字符串分配
     /// - 使用 MathParser 一次遍历完成公式解析
-    /// - 复杂度从 O(n²) 降至 O(n)
+    /// - 直接构造 TextRun 节点，复杂度 O(n)
     fn flush_text_buffer(
         &self,
         buffer: &mut Vec<TextFragment>,
@@ -789,14 +800,16 @@ impl MarkdownParser {
         // 1. 构建 TextBuffer（Span-based）
         let mut text_buffer = TextBuffer::new();
         for fragment in buffer.iter() {
-            // 转换 SpanAttr（Parser 私有）到 SpanInlineStyle（语义层）
-            // 演进说明：SpanBasedBuilder 只认识语义化的 span，不认识 Parser 特定的样式
-            let span_styles: Vec<SpanInlineStyle> = fragment.styles.iter().map(|s| {
+            // TextStyle 已经是语义化的样式
+            let span_styles: Vec<InlineStyle> = fragment.styles.iter().map(|s| {
                 match s {
-                    SpanAttr::Strong => SpanInlineStyle::Strong,
-                    SpanAttr::Em => SpanInlineStyle::Em,
-                    SpanAttr::Strike => SpanInlineStyle::Strike,
-                    SpanAttr::Link(url) => SpanInlineStyle::Link(url.clone()),
+                    TextStyle::Bold => InlineStyle::Strong,
+                    TextStyle::Italic => InlineStyle::Em,
+                    TextStyle::Strikethrough => InlineStyle::Strike,
+                    TextStyle::Underline => InlineStyle::Underline,
+                    TextStyle::Color { color } => InlineStyle::Color(color.clone()),
+                    // 其他样式暂不支持在 SpanBasedBuilder 中
+                    _ => InlineStyle::Strong, // fallback
                 }
             }).collect();
             
@@ -817,69 +830,19 @@ impl MarkdownParser {
         children.extend(nodes);
         buffer.clear();
     }
-    
-    fn build_styled_nodes(&self, content: String, styles: &[SpanAttr]) -> Vec<ASTNode> {
-        if styles.is_empty() {
-            return vec![ASTNode::Text(TextNode { content })];
-        }
-
-        if let Some(node) = self.build_styled_node(content.clone(), styles) {
-            vec![node]
-        } else {
-            vec![ASTNode::Text(TextNode { content })]
-        }
-    }
-
-    fn build_styled_node(&self, content: String, styles: &[SpanAttr]) -> Option<ASTNode> {
-        if styles.is_empty() {
-            return None;
-        }
-
-        let text_node = ASTNode::Text(TextNode { content: content.clone() });
-        let mut current = text_node;
-
-        for style in styles.iter().rev() {
-            current = match style {
-                SpanAttr::Strong => ASTNode::Strong(StrongNode {
-                    children: vec![current],
-                }),
-                SpanAttr::Em => ASTNode::Em(EmNode {
-                    children: vec![current],
-                }),
-                SpanAttr::Strike => ASTNode::Strike(StrikeNode {
-                    children: vec![current],
-                }),
-                SpanAttr::Link(url) => ASTNode::Link(LinkNode {
-                    url: url.clone(),
-                    children: vec![current],
-                }),
-            };
-        }
-
-        Some(current)
-    }
 }
 
 // ========== 辅助数据结构 ==========
 
-/// Parser 内部的样式属性（Parser 私有）
+/// 文本片段（内部使用）
 /// 
-/// 演进说明：
-/// - 这是 Markdown Parser 的私有类型，不应该暴露给 SpanBasedBuilder
-/// - SpanBasedBuilder 只认识语义化的 span，不认识 Markdown 特定的样式
-/// - 未来可以演进为更通用的 SpanAttr
-#[derive(Debug, Clone)]
-enum SpanAttr {
-    Strong,
-    Em,
-    Strike,
-    Link(String),
-}
-
+/// V2 说明：
+/// - 直接使用 TextStyle 而不是私有的 SpanAttr
+/// - 与 ASTBuilder 的样式系统一致
 #[derive(Debug, Clone)]
 struct TextFragment {
     content: String,
-    styles: Vec<SpanAttr>,
+    styles: Vec<TextStyle>,
 }
 
 impl Default for MarkdownParser {

@@ -261,16 +261,32 @@ hr {{
 
     fn render_node(&self, node: &ASTNode) -> String {
         match node {
-            ASTNode::Root(root) => {
-                root.children.iter()
-                    .map(|child| self.render_node(child))
-                    .collect()
-            }
             ASTNode::Paragraph(para) => {
                 let content: String = para.children.iter()
                     .map(|child| self.render_node(child))
                     .collect();
-                format!("<p>{}</p>\n", content)
+                
+                // 添加对齐和缩进样式
+                let mut style_parts = Vec::new();
+                if let Some(align) = &para.align {
+                    let align_str = match align {
+                        TextAlign::Left => "left",
+                        TextAlign::Center => "center",
+                        TextAlign::Right => "right",
+                    };
+                    style_parts.push(format!("text-align: {}", align_str));
+                }
+                if para.indent > 0 {
+                    style_parts.push(format!("padding-left: {}em", para.indent));
+                }
+                
+                let style_attr = if !style_parts.is_empty() {
+                    format!(" style=\"{}\"", style_parts.join("; "))
+                } else {
+                    String::new()
+                };
+                
+                format!("<p{}>{}</p>\n", style_attr, content)
             }
             ASTNode::Heading(heading) => {
                 let content: String = heading.children.iter()
@@ -278,36 +294,22 @@ hr {{
                     .collect();
                 format!("<h{}>{}</h{}>\n", heading.level, content, heading.level)
             }
-            ASTNode::Text(text) => {
-                escape_html(&text.content)
+            
+            // V2: TextRun 带扁平化样式
+            ASTNode::Text(text_run) => {
+                self.render_text_run(text_run)
             }
-            ASTNode::Strong(strong) => {
-                let content: String = strong.children.iter()
-                    .map(|child| self.render_node(child))
-                    .collect();
-                format!("<strong>{}</strong>", content)
+            
+            // 换行
+            ASTNode::LineBreak(br) => {
+                if br.hard {
+                    "<br/>".to_string()
+                } else {
+                    " ".to_string()
+                }
             }
-            ASTNode::Em(em) => {
-                let content: String = em.children.iter()
-                    .map(|child| self.render_node(child))
-                    .collect();
-                format!("<em>{}</em>", content)
-            }
-            ASTNode::Underline(underline) => {
-                let content: String = underline.children.iter()
-                    .map(|child| self.render_node(child))
-                    .collect();
-                format!("<u>{}</u>", content)
-            }
-            ASTNode::Strike(strike) => {
-                let content: String = strike.children.iter()
-                    .map(|child| self.render_node(child))
-                    .collect();
-                format!("<s>{}</s>", content)
-            }
-            ASTNode::Code(code) => {
-                format!("<code>{}</code>", escape_html(&code.content))
-            }
+            
+            // 代码块
             ASTNode::CodeBlock(code_block) => {
                 let lang_attr = if let Some(lang) = &code_block.language {
                     format!(" class=\"language-{}\"", escape_html_attr(lang))
@@ -341,88 +343,103 @@ hr {{
                     .collect();
                 format!("<{}>\n{}</{}>\n", tag, items, tag)
             }
-            ASTNode::ListItem(item) => {
-                self.render_list_item(item)
-            }
             ASTNode::Table(table) => {
                 let rows: String = table.rows.iter()
                     .map(|row| self.render_table_row(row))
                     .collect();
                 format!("<table>\n{}</table>\n", rows)
             }
-            ASTNode::TableRow(row) => {
-                self.render_table_row(row)
-            }
-            ASTNode::TableCell(cell) => {
-                let content: String = cell.children.iter()
-                    .map(|child| self.render_node(child))
-                    .collect();
-                let align_attr = cell.align.as_ref()
-                    .map(|align| format!(" style=\"text-align: {};\"", match align {
-                        TextAlign::Left => "left",
-                        TextAlign::Center => "center",
-                        TextAlign::Right => "right",
-                    }))
-                    .unwrap_or_default();
-                format!("<td{}>{}</td>", align_attr, content)
-            }
-            ASTNode::Math(math) => {
-                // 将数学公式转换为 HTML
-                match crate::math_to_html(&math.content, math.display) {
-                    Ok(html) => {
-                        if math.display {
-                            format!("<div class=\"math-display\">{}</div>\n", html)
-                        } else {
-                            format!("<span class=\"math-inline\">{}</span>", html)
-                        }
-                    }
-                    Err(_) => {
-                        // 如果 HTML 转换失败，回退到原始格式
-                        if math.display {
-                            format!("<div class=\"math-display\">\\( {}\\)</div>\n", escape_html(&math.content))
-                        } else {
-                            format!("<span class=\"math-inline\">\\( {}\\)</span>", escape_html(&math.content))
-                        }
-                    }
+            // V2: 块级数学公式
+            ASTNode::MathBlock(math) => {
+                match crate::math_to_html(&math.content, true) {
+                    Ok(html) => format!("<div class=\"math-display\">{}</div>\n", html),
+                    Err(_) => format!("<div class=\"math-display\">$${}$$</div>\n", escape_html(&math.content)),
                 }
             }
-            ASTNode::Mermaid(mermaid) => {
+            
+            // V2: 行内数学公式
+            ASTNode::InlineMath(math) => {
+                match crate::math_to_html(&math.content, false) {
+                    Ok(html) => format!("<span class=\"math-inline\">{}</span>", html),
+                    Err(_) => format!("<span class=\"math-inline\">${}$</span>", escape_html(&math.content)),
+                }
+            }
+            
+            // V2: Mermaid 图表
+            ASTNode::MermaidBlock(mermaid) => {
                 format!("<div class=\"mermaid\">{}</div>\n", escape_html(&mermaid.content))
             }
-            ASTNode::Card(card) => {
-                format!("<div class=\"card\" data-subtype=\"{}\">{}</div>\n", 
-                    escape_html_attr(&card.subtype), escape_html(&card.content))
-            }
+            
+            // V2: Mention
             ASTNode::Mention(mention) => {
                 format!("<span class=\"mention\" data-id=\"{}\">@{}</span>", 
                     escape_html_attr(&mention.id), escape_html(&mention.name))
             }
+            
+            // V2: Emoji
             ASTNode::Emoji(emoji) => {
                 format!("<span class=\"emoji\">{}</span>", escape_html(&emoji.content))
             }
-            ASTNode::Color(color) => {
-                let content: String = color.children.iter()
-                    .map(|child| self.render_node(child))
-                    .collect();
-                format!("<span style=\"color: {}\">{}</span>", 
-                    escape_html_attr(&color.color), content)
-            }
+            
+            // V2: 水平线
             ASTNode::HorizontalRule(_) => {
                 "<hr/>\n".to_string()
             }
+            
+            // V2: 引用块
             ASTNode::Blockquote(blockquote) => {
                 let content: String = blockquote.children.iter()
                     .map(|child| self.render_node(child))
                     .collect();
                 format!("<blockquote>{}</blockquote>\n", content)
             }
-            ASTNode::Html(html) => {
-                // 直接输出 HTML 内容（已经是 HTML 格式）
-                // 注意：这里假设 HTML 内容是安全的，如果需要更严格的安全控制，
-                // 可以在这里添加 HTML 过滤/清理逻辑
+            
+            // V2: HTML 块
+            ASTNode::HtmlBlock(html) => {
+                format!("{}\n", html.content)
+            }
+            
+            // V2: 行内 HTML
+            ASTNode::InlineHtml(html) => {
                 html.content.clone()
             }
         }
+    }
+
+    /// 渲染 TextRun（带扁平化样式）
+    fn render_text_run(&self, text_run: &TextRun) -> String {
+        let mut content = escape_html(&text_run.content);
+        
+        if text_run.styles.is_empty() {
+            return content;
+        }
+        
+        // 应用样式（从外到内）
+        for style in text_run.styles.iter().rev() {
+            content = match style {
+                TextStyle::Bold => format!("<strong>{}</strong>", content),
+                TextStyle::Italic => format!("<em>{}</em>", content),
+                TextStyle::Underline => format!("<u>{}</u>", content),
+                TextStyle::Strikethrough => format!("<s>{}</s>", content),
+                TextStyle::Code => format!("<code>{}</code>", content),
+                TextStyle::Superscript => format!("<sup>{}</sup>", content),
+                TextStyle::Subscript => format!("<sub>{}</sub>", content),
+                TextStyle::Color { color } => {
+                    format!("<span style=\"color: {}\">{}</span>", escape_html_attr(color), content)
+                }
+                TextStyle::BackgroundColor { color } => {
+                    format!("<span style=\"background-color: {}\">{}</span>", escape_html_attr(color), content)
+                }
+                TextStyle::FontSize { scale } => {
+                    format!("<span style=\"font-size: {}em\">{}</span>", scale, content)
+                }
+                TextStyle::FontFamily { family } => {
+                    format!("<span style=\"font-family: {}\">{}</span>", escape_html_attr(family), content)
+                }
+            };
+        }
+        
+        content
     }
 
     fn render_list_item(&self, item: &ListItemNode) -> String {
@@ -441,9 +458,23 @@ hr {{
 
     fn render_table_row(&self, row: &TableRow) -> String {
         let cells: String = row.cells.iter()
-            .map(|cell| self.render_node(&ASTNode::TableCell(cell.clone())))
+            .map(|cell| self.render_table_cell(cell))
             .collect();
         format!("<tr>{}</tr>\n", cells)
+    }
+    
+    fn render_table_cell(&self, cell: &TableCell) -> String {
+        let content: String = cell.children.iter()
+            .map(|child| self.render_node(child))
+            .collect();
+        let align_attr = cell.align.as_ref()
+            .map(|align| format!(" style=\"text-align: {};\"", match align {
+                TextAlign::Left => "left",
+                TextAlign::Center => "center",
+                TextAlign::Right => "right",
+            }))
+            .unwrap_or_default();
+        format!("<td{}>{}</td>", align_attr, content)
     }
 }
 

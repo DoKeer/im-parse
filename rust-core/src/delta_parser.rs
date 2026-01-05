@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::ast_builder::ASTBuilder;
 use crate::ParseError;
-use crate::text_span::{TextBuffer, MathParser, SpanBasedBuilder, InlineStyle as SpanInlineStyle};
+use crate::text_span::{TextBuffer, MathParser, SpanBasedBuilder, InlineStyle};
 use serde_json::Value;
 
 
@@ -133,11 +133,11 @@ impl DeltaParser {
                                 }
                                 // 处理段落（无论是否在列表中，换行后都可能是新段落）
                                 if !current_paragraph_children.is_empty() {
-                                    builder.start_paragraph();
-                                    if let Some(para) = builder.current_paragraph_mut() {
-                                        para.children = std::mem::take(&mut current_paragraph_children);
-                                    }
-                                    builder.end_paragraph();
+                                    builder.add_paragraph_with_attrs(
+                                        std::mem::take(&mut current_paragraph_children),
+                                        None,
+                                        0,
+                                    );
                                 } else {
                                     // 空行，创建空段落
                                     builder.start_paragraph();
@@ -174,11 +174,11 @@ impl DeltaParser {
                                 } else if !in_list {
                                     // 不在列表中，结束当前段落
                                     if !current_paragraph_children.is_empty() {
-                                        builder.start_paragraph();
-                                        if let Some(para) = builder.current_paragraph_mut() {
-                                            para.children = std::mem::take(&mut current_paragraph_children);
-                                        }
-                                        builder.end_paragraph();
+                                        builder.add_paragraph_with_attrs(
+                                            std::mem::take(&mut current_paragraph_children),
+                                            None,
+                                            0,
+                                        );
                                     } else {
                                         builder.start_paragraph();
                                         builder.end_paragraph();
@@ -263,11 +263,11 @@ impl DeltaParser {
                                                     None,
                                                 );
                                             } else {
-                                                builder.start_paragraph();
-                                                if let Some(para) = builder.current_paragraph_mut() {
-                                                    para.children = std::mem::take(&mut current_paragraph_children);
-                                                }
-                                                builder.end_paragraph();
+                                                builder.add_paragraph_with_attrs(
+                                                    std::mem::take(&mut current_paragraph_children),
+                                                    None,
+                                                    0,
+                                                );
                                             }
                                         }
                                         
@@ -312,14 +312,14 @@ impl DeltaParser {
                         InsertValue::Formula { formula } => {
                             // 结束当前段落
                             if !in_list && !current_paragraph_children.is_empty() {
-                                builder.start_paragraph();
-                                if let Some(para) = builder.current_paragraph_mut() {
-                                    para.children = std::mem::take(&mut current_paragraph_children);
-                                }
-                                builder.end_paragraph();
+                                builder.add_paragraph_with_attrs(
+                                    std::mem::take(&mut current_paragraph_children),
+                                    None,
+                                    0,
+                                );
                             }
 
-                            builder.add_math(formula.clone(), true); // Delta 公式通常是 display 模式
+                            builder.add_math_block(formula.clone()); // Delta 公式通常是块级模式
                         }
                     }
 
@@ -336,11 +336,11 @@ impl DeltaParser {
 
         // 处理剩余的段落和列表
         if !current_paragraph_children.is_empty() {
-            builder.start_paragraph();
-            if let Some(para) = builder.current_paragraph_mut() {
-                para.children = current_paragraph_children;
-            }
-            builder.end_paragraph();
+            builder.add_paragraph_with_attrs(
+                current_paragraph_children,
+                None,
+                0,
+            );
         }
 
         if in_list {
@@ -350,12 +350,12 @@ impl DeltaParser {
         Ok(builder.end_document())
     }
 
-    /// 构建带样式的文本（优化版 - 使用 Span-based 处理）
+    /// 构建带样式的文本（V2 - 直接构造 TextRun）
     /// 
-    /// 使用与 markdown_parser.rs 相同的架构：
-    /// - 使用 TextBuffer 避免重复字符串分配
-    /// - 使用 MathParser 一次遍历完成公式解析（O(n) 复杂度）
-    /// - 使用 SpanBasedBuilder 构造 AST 节点
+    /// V2 优化：
+    /// - 直接映射 Delta 属性到 TextStyle
+    /// - 构造扁平化的 TextRun 节点
+    /// - 支持所有 Delta 富文本样式
     fn build_styled_text(
         &self,
         text: &str,
@@ -365,56 +365,93 @@ impl DeltaParser {
             return Vec::new();
         }
 
-        // 1. 转换 Delta 属性到 SpanInlineStyle
-        let span_styles: Vec<SpanInlineStyle> = if let Some(attrs) = attributes {
-            let mut styles = Vec::new();
-            
+        // 1. 转换 Delta 属性到 TextStyle（直接映射）
+        let mut text_styles: Vec<TextStyle> = Vec::new();
+        
+        if let Some(attrs) = attributes {
+            // Markdown 样式
             if attrs.get("bold").and_then(|v| v.as_bool()).unwrap_or(false) {
-                styles.push(SpanInlineStyle::Strong);
+                text_styles.push(TextStyle::Bold);
             }
             if attrs.get("italic").and_then(|v| v.as_bool()).unwrap_or(false) {
-                styles.push(SpanInlineStyle::Em);
+                text_styles.push(TextStyle::Italic);
             }
             if attrs.get("underline").and_then(|v| v.as_bool()).unwrap_or(false) {
-                styles.push(SpanInlineStyle::Underline);
+                text_styles.push(TextStyle::Underline);
             }
             if attrs.get("strike").and_then(|v| v.as_bool()).unwrap_or(false) {
-                styles.push(SpanInlineStyle::Strike);
-            }
-            if let Some(link) = attrs.get("link").and_then(|v| v.as_str()) {
-                styles.push(SpanInlineStyle::Link(link.to_string()));
-            }
-            if let Some(color) = attrs.get("color").and_then(|v| v.as_str()) {
-                styles.push(SpanInlineStyle::Color(color.to_string()));
+                text_styles.push(TextStyle::Strikethrough);
             }
             
-            styles
-        } else {
-            Vec::new()
-        };
-
-        // 2. 检查是否是代码（代码需要特殊处理，不使用样式系统）
-        if let Some(attrs) = attributes {
+            // Delta 富文本样式
+            if let Some(color) = attrs.get("color").and_then(|v| v.as_str()) {
+                text_styles.push(TextStyle::Color { color: color.to_string() });
+            }
+            if let Some(background) = attrs.get("background").and_then(|v| v.as_str()) {
+                text_styles.push(TextStyle::BackgroundColor { color: background.to_string() });
+            }
+            if let Some(size) = attrs.get("size").and_then(|v| v.as_str()) {
+                // Delta size: "small", "large", "huge" 或数字
+                let scale = match size {
+                    "small" => 0.75,
+                    "large" => 1.5,
+                    "huge" => 2.0,
+                    _ => size.parse::<f32>().unwrap_or(1.0),
+                };
+                text_styles.push(TextStyle::FontSize { scale });
+            }
+            if let Some(font) = attrs.get("font").and_then(|v| v.as_str()) {
+                text_styles.push(TextStyle::FontFamily { family: font.to_string() });
+            }
+            
+            // 代码样式（优先级最高）
             if attrs.get("code").and_then(|v| v.as_bool()).unwrap_or(false) {
-                return vec![ASTNode::Code(CodeNode {
-                    content: text.to_string(),
-                })];
+                return vec![ASTNode::Text(TextRun::with_styles(
+                    text.to_string(),
+                    vec![TextStyle::Code],
+                ))];
+            }
+            
+            // 上标/下标
+            if let Some(script) = attrs.get("script").and_then(|v| v.as_str()) {
+                match script {
+                    "super" => text_styles.push(TextStyle::Superscript),
+                    "sub" => text_styles.push(TextStyle::Subscript),
+                    _ => {}
+                }
             }
         }
 
-        // 3. 构建 TextBuffer（Span-based）
-        let mut text_buffer = TextBuffer::new();
-        text_buffer.push(text, &span_styles);
-        
-        if text_buffer.is_empty() {
-            return Vec::new();
+        // 2. 检查是否包含数学公式（如果包含 $ 符号）
+        if text.contains('$') {
+            // 使用 MathParser 解析数学公式
+            let mut text_buffer = TextBuffer::new();
+            let span_styles: Vec<InlineStyle> = text_styles.iter().filter_map(|s| {
+                match s {
+                    TextStyle::Bold => Some(InlineStyle::Strong),
+                    TextStyle::Italic => Some(InlineStyle::Em),
+                    TextStyle::Strikethrough => Some(InlineStyle::Strike),
+                    TextStyle::Underline => Some(InlineStyle::Underline),
+                    TextStyle::Color { color } => Some(InlineStyle::Color(color.clone())),
+                    _ => None,
+                }
+            }).collect();
+            
+            text_buffer.push(text, &span_styles);
+            let content_spans = MathParser::parse(text_buffer.full_text());
+            
+            // 使用 SpanBasedBuilder 构造节点（处理数学公式）
+            return SpanBasedBuilder::build_nodes(&text_buffer, &content_spans);
         }
 
-        // 4. 使用 MathParser 解析数学公式（O(n) 复杂度）
-        let content_spans = MathParser::parse(text_buffer.full_text());
+        // 3. 直接构造 TextRun（无数学公式）
+        let text_run = if text_styles.is_empty() {
+            TextRun::new(text.to_string())
+        } else {
+            TextRun::with_styles(text.to_string(), text_styles)
+        };
         
-        // 5. 使用 SpanBasedBuilder 构造 AST 节点
-        SpanBasedBuilder::build_nodes(&text_buffer, &content_spans)
+        vec![ASTNode::Text(text_run)]
     }
 
 }

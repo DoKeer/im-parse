@@ -1,17 +1,29 @@
-use crate::ast::*;
-use std::collections::HashMap;
+// AST Builder V2 - 适配新的扁平化样式系统
+// 
+// 主要改进：
+// 1. 样式栈管理：跟踪当前激活的文本样式
+// 2. 自动合并 TextRun：相邻且样式相同的文本会合并
+// 3. 清晰的块级/行内分离：避免混淆
 
-/// AST 构建器，用于构建统一的 HTML AST
-/// 
-/// 演进友好化设计：
-/// - 所有内部状态字段都是 private
-/// - Parser 只能通过 emit_block / finish_* 等方法操作
-/// - 不允许直接访问 current_list / current_table
+use crate::ast::*;
+
+/// AST 构建器 V2
 pub struct ASTBuilder {
     root: RootNode,
-    node_stack: Vec<ASTNode>,
-    current_paragraph: Option<ParagraphNode>,
+    
+    // 当前段落的行内内容缓冲区
+    current_paragraph_children: Vec<ASTNode>,
+    
+    // 文本样式栈（用于跟踪嵌套样式）
+    style_stack: Vec<TextStyle>,
+    
+    // 文本缓冲区（用于合并相邻的相同样式文本）
+    text_buffer: String,
+    
+    // 当前列表
     current_list: Option<ListNode>,
+    
+    // 当前表格
     current_table: Option<TableNode>,
     current_table_row: Option<TableRow>,
 }
@@ -20,151 +32,233 @@ impl ASTBuilder {
     pub fn new() -> Self {
         Self {
             root: RootNode::new(),
-            node_stack: Vec::new(),
-            current_paragraph: None,
+            current_paragraph_children: Vec::new(),
+            style_stack: Vec::new(),
+            text_buffer: String::new(),
             current_list: None,
             current_table: None,
             current_table_row: None,
         }
     }
-
-    /// 开始构建文档
+    
+    // ========== 文档级别操作 ==========
+    
     pub fn start_document(&mut self) {
         self.root = RootNode::new();
-        self.node_stack.clear();
-        self.current_paragraph = None;
+        self.current_paragraph_children.clear();
+        self.style_stack.clear();
+        self.text_buffer.clear();
         self.current_list = None;
         self.current_table = None;
         self.current_table_row = None;
     }
-
-    /// 结束构建文档，返回根节点
+    
     pub fn end_document(&mut self) -> RootNode {
-        // 结束当前段落（只有当段落不为空时才添加）
-        if let Some(para) = self.current_paragraph.take() {
-            if !para.children.is_empty() {
-                self.root.children.push(ASTNode::Paragraph(para));
-            }
-        }
-
+        // 结束当前段落
+        self.finish_current_paragraph();
+        
         // 结束当前列表
         if let Some(list) = self.current_list.take() {
             self.root.children.push(ASTNode::List(list));
         }
-
+        
         // 结束当前表格
         if let Some(table) = self.current_table.take() {
             self.root.children.push(ASTNode::Table(table));
         }
-
+        
         std::mem::take(&mut self.root)
     }
-
-    /// 开始段落
-    pub fn start_paragraph(&mut self) {
-        if let Some(para) = self.current_paragraph.take() {
-            // 只有当段落不为空时才添加到 AST
-            if !para.children.is_empty() {
-                self.root.children.push(ASTNode::Paragraph(para));
-            }
-        }
-        self.current_paragraph = Some(ParagraphNode {
-            children: Vec::new(),
-        });
+    
+    // ========== 样式管理（核心优化）==========
+    
+    /// 推入样式到样式栈
+    pub fn push_style(&mut self, style: TextStyle) {
+        // 刷新当前文本（因为样式要改变了）
+        self.flush_text_buffer();
+        self.style_stack.push(style);
     }
-
-    /// 结束段落
-    pub fn end_paragraph(&mut self) {
-        if let Some(para) = self.current_paragraph.take() {
-            // 只有当段落不为空时才添加到 AST
-            if !para.children.is_empty() {
-                self.root.children.push(ASTNode::Paragraph(para));
-            }
+    
+    /// 弹出样式
+    pub fn pop_style(&mut self, style_type: &str) {
+        // 刷新当前文本
+        self.flush_text_buffer();
+        
+        // 从栈中移除最后一个匹配的样式
+        if let Some(pos) = self.style_stack.iter().rposition(|s| {
+            matches!(
+                (s, style_type),
+                (TextStyle::Bold, "bold") |
+                (TextStyle::Italic, "italic") |
+                (TextStyle::Underline, "underline") |
+                (TextStyle::Strikethrough, "strikethrough") |
+                (TextStyle::Code, "code") |
+                (TextStyle::Superscript, "superscript") |
+                (TextStyle::Subscript, "subscript")
+            )
+        }) {
+            self.style_stack.remove(pos);
         }
     }
-
-    /// 添加文本
-    pub fn add_text(&mut self, text: String) {
+    
+    /// 设置颜色样式
+    pub fn set_color(&mut self, color: String) {
+        self.flush_text_buffer();
+        self.style_stack.push(TextStyle::Color { color });
+    }
+    
+    /// 移除颜色样式
+    pub fn remove_color(&mut self) {
+        self.flush_text_buffer();
+        self.style_stack.retain(|s| !matches!(s, TextStyle::Color { .. }));
+    }
+    
+    /// 设置字体大小
+    pub fn set_font_size(&mut self, scale: f32) {
+        self.flush_text_buffer();
+        self.style_stack.push(TextStyle::FontSize { scale });
+    }
+    
+    /// 移除字体大小样式
+    pub fn remove_font_size(&mut self) {
+        self.flush_text_buffer();
+        self.style_stack.retain(|s| !matches!(s, TextStyle::FontSize { .. }));
+    }
+    
+    /// 设置字体族
+    pub fn set_font_family(&mut self, family: String) {
+        self.flush_text_buffer();
+        self.style_stack.push(TextStyle::FontFamily { family });
+    }
+    
+    /// 移除字体族样式
+    pub fn remove_font_family(&mut self) {
+        self.flush_text_buffer();
+        self.style_stack.retain(|s| !matches!(s, TextStyle::FontFamily { .. }));
+    }
+    
+    /// 获取当前激活的样式
+    fn current_styles(&self) -> Vec<TextStyle> {
+        self.style_stack.clone()
+    }
+    
+    // ========== 文本操作 ==========
+    
+    /// 添加文本（会自动应用当前样式栈的样式）
+    pub fn add_text(&mut self, text: impl Into<String>) {
+        let text = text.into();
         if text.is_empty() {
             return;
         }
-
-        let text_node = ASTNode::Text(TextNode { content: text });
-
-        if let Some(para) = &mut self.current_paragraph {
-            para.children.push(text_node);
-        } else {
-            // 如果没有当前段落，创建一个
-            self.start_paragraph();
-            if let Some(para) = &mut self.current_paragraph {
-                para.children.push(text_node);
-            }
-        }
+        
+        self.text_buffer.push_str(&text);
     }
-
-    /// 添加标题
+    
+    /// 刷新文本缓冲区（生成 TextRun）
+    fn flush_text_buffer(&mut self) {
+        if self.text_buffer.is_empty() {
+            return;
+        }
+        
+        let content = std::mem::take(&mut self.text_buffer);
+        let styles = self.current_styles();
+        
+        let text_run = if styles.is_empty() {
+            TextRun::new(content)
+        } else {
+            TextRun::with_styles(content, styles)
+        };
+        
+        self.current_paragraph_children.push(ASTNode::Text(text_run));
+    }
+    
+    /// 添加换行
+    pub fn add_line_break(&mut self, hard: bool) {
+        self.flush_text_buffer();
+        self.current_paragraph_children.push(ASTNode::LineBreak(LineBreakNode { hard }));
+    }
+    
+    // ========== 段落操作 ==========
+    
+    /// 开始新段落
+    pub fn start_paragraph(&mut self) {
+        self.finish_current_paragraph();
+    }
+    
+    /// 结束段落
+    pub fn end_paragraph(&mut self) {
+        self.finish_current_paragraph();
+    }
+    
+    /// 完成当前段落（内部方法）
+    fn finish_current_paragraph(&mut self) {
+        self.flush_text_buffer();
+        
+        if self.current_paragraph_children.is_empty() {
+            return;
+        }
+        
+        let children = std::mem::take(&mut self.current_paragraph_children);
+        let para = ParagraphNode {
+            children,
+            align: None,
+            indent: 0,
+        };
+        
+        self.root.children.push(ASTNode::Paragraph(para));
+    }
+    
+    /// 添加段落（带对齐和缩进）
+    pub fn add_paragraph_with_attrs(&mut self, children: Vec<ASTNode>, align: Option<TextAlign>, indent: u32) {
+        self.finish_current_paragraph();
+        
+        if children.is_empty() {
+            return;
+        }
+        
+        let para = ParagraphNode {
+            children,
+            align,
+            indent,
+        };
+        
+        self.root.children.push(ASTNode::Paragraph(para));
+    }
+    
+    // ========== 标题操作 ==========
+    
     pub fn add_heading(&mut self, level: u8, children: Vec<ASTNode>) {
-        self.end_paragraph(); // 结束当前段落
+        self.finish_current_paragraph();
+        
+        if children.is_empty() {
+            return;
+        }
+        
         self.root.children.push(ASTNode::Heading(HeadingNode {
-            level: level.min(6).max(1),
+            level: level.clamp(1, 6),
             children,
         }));
     }
-
-    /// 添加粗体
-    pub fn add_strong(&mut self, children: Vec<ASTNode>) {
-        let strong_node = ASTNode::Strong(StrongNode { children });
-        self.add_inline_node(strong_node);
-    }
-
-    /// 添加斜体
-    pub fn add_em(&mut self, children: Vec<ASTNode>) {
-        let em_node = ASTNode::Em(EmNode { children });
-        self.add_inline_node(em_node);
-    }
-
-    /// 添加下划线
-    pub fn add_underline(&mut self, children: Vec<ASTNode>) {
-        let underline_node = ASTNode::Underline(UnderlineNode { children });
-        self.add_inline_node(underline_node);
-    }
-
-    /// 添加删除线
-    pub fn add_strike(&mut self, children: Vec<ASTNode>) {
-        let strike_node = ASTNode::Strike(StrikeNode { children });
-        self.add_inline_node(strike_node);
-    }
-
-    /// 添加行内代码
-    pub fn add_code(&mut self, content: String) {
-        let code_node = ASTNode::Code(CodeNode { content });
-        self.add_inline_node(code_node);
-    }
-
-    /// 添加代码块
-    pub fn add_code_block(&mut self, language: Option<String>, content: String) {
-        self.end_paragraph(); // 结束当前段落
-        self.root.children.push(ASTNode::CodeBlock(CodeBlockNode {
-            language,
-            content,
+    
+    // ========== 链接操作 ==========
+    
+    /// 添加链接到当前段落
+    pub fn add_link(&mut self, url: String, children: Vec<ASTNode>) {
+        self.flush_text_buffer();
+        
+        self.current_paragraph_children.push(ASTNode::Link(LinkNode {
+            url,
+            children,
+            title: None,
         }));
     }
-
-    /// 添加链接
-    pub fn add_link(&mut self, url: String, children: Vec<ASTNode>) {
-        let link_node = ASTNode::Link(LinkNode { url, children });
-        self.add_inline_node(link_node);
-    }
-
-    /// 添加图片
-    pub fn add_image(
-        &mut self,
-        url: String,
-        width: Option<f32>,
-        height: Option<f32>,
-        alt: Option<String>,
-    ) {
-        self.end_paragraph(); // 结束当前段落
+    
+    // ========== 图片操作 ==========
+    
+    /// 添加图片（块级）
+    pub fn add_image(&mut self, url: String, width: Option<f32>, height: Option<f32>, alt: Option<String>) {
+        self.finish_current_paragraph();
+        
         self.root.children.push(ASTNode::Image(ImageNode {
             url,
             width,
@@ -172,97 +266,101 @@ impl ASTBuilder {
             alt,
         }));
     }
-
-    /// 开始列表
+    
+    /// 添加行内图片
+    pub fn add_inline_image(&mut self, url: String, width: Option<f32>, height: Option<f32>, alt: Option<String>) {
+        self.flush_text_buffer();
+        
+        self.current_paragraph_children.push(ASTNode::Image(ImageNode {
+            url,
+            width,
+            height,
+            alt,
+        }));
+    }
+    
+    // ========== 代码块操作 ==========
+    
+    pub fn add_code_block(&mut self, language: Option<String>, content: String) {
+        self.finish_current_paragraph();
+        
+        self.root.children.push(ASTNode::CodeBlock(CodeBlockNode {
+            language,
+            content,
+        }));
+    }
+    
+    // ========== 引用块操作 ==========
+    
+    pub fn add_blockquote(&mut self, children: Vec<ASTNode>) {
+        self.finish_current_paragraph();
+        
+        self.root.children.push(ASTNode::Blockquote(BlockquoteNode { children }));
+    }
+    
+    // ========== 列表操作 ==========
+    
     pub fn start_list(&mut self, list_type: ListType) {
-        self.end_paragraph(); // 结束当前段落
+        self.finish_current_paragraph();
+        
         if let Some(list) = self.current_list.take() {
             self.root.children.push(ASTNode::List(list));
         }
+        
         self.current_list = Some(ListNode {
             list_type,
             items: Vec::new(),
         });
     }
-
-    /// 结束列表
+    
     pub fn end_list(&mut self) {
         if let Some(list) = self.current_list.take() {
             self.root.children.push(ASTNode::List(list));
         }
     }
-
-    /// 添加列表项
+    
     pub fn add_list_item(&mut self, children: Vec<ASTNode>, checked: Option<bool>) {
         if let Some(list) = &mut self.current_list {
             list.items.push(ListItemNode { children, checked });
-        } else {
-            // 如果没有当前列表，创建一个无序列表
-            self.start_list(ListType::Bullet);
-            if let Some(list) = &mut self.current_list {
-                list.items.push(ListItemNode { children, checked });
-            }
         }
     }
-
-    /// 开始表格
+    
+    pub fn finish_list(&mut self) -> Option<ListNode> {
+        self.current_list.take()
+    }
+    
+    // ========== 表格操作 ==========
+    
     pub fn start_table(&mut self) {
-        self.end_paragraph(); // 结束当前段落
+        self.finish_current_paragraph();
+        
         if let Some(table) = self.current_table.take() {
             self.root.children.push(ASTNode::Table(table));
         }
+        
         self.current_table = Some(TableNode {
             rows: Vec::new(),
         });
     }
-
-    /// 结束表格
+    
     pub fn end_table(&mut self) {
         if let Some(table) = self.current_table.take() {
             self.root.children.push(ASTNode::Table(table));
         }
     }
-
-    // ========== 演进友好化：Block 节点提取方法 ==========
     
-    /// 提取并完成当前列表（用于嵌套场景）
-    /// 
-    /// 演进说明：Parser 不应该直接访问 current_list，
-    /// 应该通过这个方法提取已完成的列表节点
-    pub fn finish_list(&mut self) -> Option<ListNode> {
-        self.current_list.take()
-    }
-    
-    /// 提取并完成当前表格（用于嵌套场景）
-    /// 
-    /// 演进说明：Parser 不应该直接访问 current_table，
-    /// 应该通过这个方法提取已完成的表格节点
-    pub fn finish_table(&mut self) -> Option<TableNode> {
-        self.current_table.take()
-    }
-    
-    /// 发出块级节点到文档根节点
-    /// 
-    /// 演进说明：统一的块级节点输出接口，
-    /// 未来可以在这里添加语义分析等处理
-    pub fn emit_block(&mut self, node: ASTNode) {
-        self.end_paragraph(); // 先结束当前段落
-        self.root.children.push(node);
-    }
-
-    /// 开始表格行
     pub fn start_table_row(&mut self) {
         if let Some(row) = self.current_table_row.take() {
             if let Some(table) = &mut self.current_table {
                 table.rows.push(row);
             }
         }
+        
         self.current_table_row = Some(TableRow {
             cells: Vec::new(),
         });
     }
-
-    /// 结束表格行
+    
     pub fn end_table_row(&mut self) {
         if let Some(row) = self.current_table_row.take() {
             if let Some(table) = &mut self.current_table {
@@ -270,91 +368,78 @@ impl ASTBuilder {
             }
         }
     }
-
-    /// 添加表格单元格
+    
     pub fn add_table_cell(&mut self, children: Vec<ASTNode>, align: Option<TextAlign>) {
         if let Some(row) = &mut self.current_table_row {
             row.cells.push(TableCell { children, align });
         }
     }
-
-    /// 添加数学公式（块级）
-    pub fn add_math(&mut self, content: String, display: bool) {
-        self.end_paragraph(); // 结束当前段落
-        self.root.children.push(ASTNode::Math(MathNode { content, display }));
-    }
-
-    /// 添加行内数学公式
-    pub fn add_inline_math(&mut self, content: String) {
-        let math_node = ASTNode::Math(MathNode { content, display: false });
-        self.add_inline_node(math_node);
-    }
-
-    /// 添加 Mermaid 图表
-    pub fn add_mermaid(&mut self, content: String) {
-        self.end_paragraph(); // 结束当前段落
-        self.root.children.push(ASTNode::Mermaid(MermaidNode { content }));
-    }
-
-    /// 添加卡片
-    pub fn add_card(&mut self, subtype: String, content: String, metadata: HashMap<String, String>) {
-        self.end_paragraph(); // 结束当前段落
-        self.root.children.push(ASTNode::Card(CardNode {
-            subtype,
-            content,
-            metadata,
-        }));
-    }
-
-    /// 添加@提及
-    pub fn add_mention(&mut self, id: String, name: String) {
-        let mention_node = ASTNode::Mention(MentionNode { id, name });
-        self.add_inline_node(mention_node);
-    }
-
-    /// 添加表情
-    pub fn add_emoji(&mut self, content: String) {
-        let emoji_node = ASTNode::Emoji(EmojiNode { content });
-        self.add_inline_node(emoji_node);
-    }
-
-    /// 添加水平分割线
-    pub fn add_horizontal_rule(&mut self) {
-        self.end_paragraph(); // 结束当前段落
-        self.root.children.push(ASTNode::HorizontalRule(HorizontalRuleNode));
-    }
-
-    /// 添加引用块
-    pub fn add_blockquote(&mut self, children: Vec<ASTNode>) {
-        self.end_paragraph(); // 结束当前段落
-        self.root.children.push(ASTNode::Blockquote(BlockquoteNode { children }));
-    }
-
-    /// 添加 HTML 内容
-    pub fn add_html(&mut self, content: String) {
-        self.end_paragraph(); // 结束当前段落
-        self.root.children.push(ASTNode::Html(HtmlNode { content }));
-    }
-
-    /// 添加内联节点到当前段落
-    fn add_inline_node(&mut self, node: ASTNode) {
-        if let Some(para) = &mut self.current_paragraph {
-            para.children.push(node);
-        } else {
-            // 如果没有当前段落，创建一个
-            self.start_paragraph();
-            if let Some(para) = &mut self.current_paragraph {
-                para.children.push(node);
-            }
-        }
+    
+    pub fn finish_table(&mut self) -> Option<TableNode> {
+        self.current_table.take()
     }
     
-    /// 获取当前段落的可变引用（用于 Delta Parser 的特殊需求）
-    /// 
-    /// 演进说明：这是临时方案，未来 Delta Parser 应该通过统一的接口操作
-    /// TODO: 重构 Delta Parser 使用统一的 add_inline_node 接口
-    pub(crate) fn current_paragraph_mut(&mut self) -> Option<&mut ParagraphNode> {
-        self.current_paragraph.as_mut()
+    // ========== 数学公式操作 ==========
+    
+    /// 添加块级数学公式
+    pub fn add_math_block(&mut self, content: String) {
+        self.finish_current_paragraph();
+        
+        self.root.children.push(ASTNode::MathBlock(MathNode { content }));
+    }
+    
+    /// 添加行内数学公式
+    pub fn add_inline_math(&mut self, content: String) {
+        self.flush_text_buffer();
+        
+        self.current_paragraph_children.push(ASTNode::InlineMath(MathNode { content }));
+    }
+    
+    // ========== Mermaid 操作 ==========
+    
+    pub fn add_mermaid(&mut self, content: String) {
+        self.finish_current_paragraph();
+        
+        self.root.children.push(ASTNode::MermaidBlock(MermaidNode { content }));
+    }
+    
+    // ========== 其他操作 ==========
+    
+    pub fn add_horizontal_rule(&mut self) {
+        self.finish_current_paragraph();
+        
+        self.root.children.push(ASTNode::HorizontalRule(HorizontalRuleNode));
+    }
+    
+    pub fn add_mention(&mut self, id: String, name: String) {
+        self.flush_text_buffer();
+        
+        self.current_paragraph_children.push(ASTNode::Mention(MentionNode { id, name }));
+    }
+    
+    pub fn add_emoji(&mut self, content: String) {
+        self.flush_text_buffer();
+        
+        self.current_paragraph_children.push(ASTNode::Emoji(EmojiNode { content }));
+    }
+    
+    pub fn add_html_block(&mut self, content: String) {
+        self.finish_current_paragraph();
+        
+        self.root.children.push(ASTNode::HtmlBlock(HtmlNode { content }));
+    }
+    
+    pub fn add_inline_html(&mut self, content: String) {
+        self.flush_text_buffer();
+        
+        self.current_paragraph_children.push(ASTNode::InlineHtml(HtmlNode { content }));
+    }
+    
+    // ========== 块级节点发射 ==========
+    
+    pub fn emit_block(&mut self, node: ASTNode) {
+        self.finish_current_paragraph();
+        self.root.children.push(node);
     }
 }
 
@@ -363,4 +448,3 @@ impl Default for ASTBuilder {
         Self::new()
     }
 }
-
