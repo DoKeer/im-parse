@@ -67,15 +67,20 @@ public struct Message: Identifiable, Codable {
         if astJSON == nil {
             parse()
         }
-        
-        guard let astJSON = astJSON,
-              let jsonData = astJSON.data(using: .utf8),
-              let rootNode = try? JSONDecoder().decode(RootNode.self, from: jsonData) else {
-            return
+        do {
+            guard let astJSON = astJSON,
+                  let jsonData = astJSON.data(using: .utf8) else {
+                return
+            }
+            
+            let rootNode = try JSONDecoder().decode(RootNode.self, from: jsonData)
+            // 计算布局
+            self.layout = UIKitFrameAsyncCalculator.calculateLayout(ast: rootNode, context: context)
+            self.estimatedHeight = self.layout?.frame.height
+        }catch {
+            print("RootNode 解析失败"+error.localizedDescription)
         }
-        // 计算布局
-        self.layout = UIKitFrameAsyncCalculator.calculateLayout(ast: rootNode, context: context)
-        self.estimatedHeight = self.layout?.frame.height
+      
     }
     
     /// 转换为 HTML
