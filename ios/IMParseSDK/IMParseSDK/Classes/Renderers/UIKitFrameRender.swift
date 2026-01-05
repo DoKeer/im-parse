@@ -142,12 +142,19 @@ public class UIKitFrameRender {
             return renderHorizontalRule(frame: layout.frame, context: context)
         case .table(let tNode):
             return renderTable(tNode, layout: layout, context: context)
-        case .math(let mNode):
+        // V2: 区分块级和行内数学公式
+        case .mathBlock(let mNode):
             return renderMath(mNode, frame: layout.frame, context: context)
-        case .mermaid(let mNode):
+        case .inlineMath(let mNode):
+            return renderInlineMath(mNode, frame: layout.frame, context: context)
+        // V2: MermaidBlock
+        case .mermaidBlock(let mNode):
             return renderMermaid(mNode, frame: layout.frame, context: context)
-        case .html(let hNode):
+        // V2: HtmlBlock 和 InlineHtml
+        case .htmlBlock(let hNode):
             return renderHtml(hNode, frame: layout.frame, context: context)
+        case .inlineHtml(let hNode):
+            return renderInlineHtml(hNode, frame: layout.frame, context: context)
         case .emoji(let eNode):
             return renderEmoji(eNode, frame: layout.frame, context: context)
         case .mention(let mNode):
@@ -923,8 +930,10 @@ public class UIKitFrameRender {
     // MARK: - Math Rendering
     
     /// 渲染数学公式
+    /// V2: 渲染块级数学公式
     static func renderMath(_ node: MathNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
-        assert(node.display, "行内数学公式应该使用 MathTextAttachment 在 NSAttributedString 中处理")
+        // V2: 此方法只处理块级数学公式（mathBlock）
+        // 行内数学公式通过 MathTextAttachment 在 NSAttributedString 中处理
         let font = context.currentFont ?? context.theme.font
 
         let containerView = createEmptyView(size: frame.size)
@@ -983,7 +992,7 @@ public class UIKitFrameRender {
             
             let image = await MathHTMLRenderer.render(
                 mathContent: node.content,
-                display: node.display,
+                display: true,
                 textColor: textColor,
                 fontSize: fontSize,
                 formulaSizeCacheDelegate: context.formulaSizeCacheDelegate
@@ -1325,6 +1334,36 @@ public class UIKitFrameRender {
         return label
     }
     
+    /// V2: 渲染行内数学公式（应该不会被直接调用，因为行内公式在AttributedString中处理）
+    static func renderInlineMath(_ node: MathNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
+        // 行内数学公式通常通过 MathTextAttachment 在 NSAttributedString 中处理
+        // 如果到这里，说明有特殊情况，我们简单渲染为文本
+        let label = UILabel()
+        label.text = "$\(node.content)$"
+        label.font = context.theme.font
+        label.textColor = context.theme.textColor
+        label.frame = CGRect(origin: .zero, size: frame.size)
+        return label
+    }
+    
+    /// V2: 渲染行内HTML
+    static func renderInlineHtml(_ node: HtmlNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
+        // 行内HTML简单渲染为文本
+        let textContent = stripHtmlTags(from: node.content)
+        
+        if textContent.isEmpty {
+            return UIView()
+        }
+        
+        let label = UILabel()
+        label.text = textContent
+        label.font = context.theme.font
+        label.textColor = context.theme.textColor
+        label.frame = CGRect(origin: .zero, size: frame.size)
+        
+        return label
+    }
+    
     static func stripHtmlTags(from html: String) -> String {
         let pattern = "<[^>]+>"
         let regex = try? NSRegularExpression(pattern: pattern, options: [])
@@ -1457,7 +1496,7 @@ public class UIKitFrameRender {
         }
         
         switch nodeWrapper {
-        case .codeBlock, .image, .math, .mermaid, .html, .emoji, .mention, .horizontalRule, .table:
+        case .codeBlock, .image, .mathBlock, .mermaidBlock, .htmlBlock, .emoji, .mention, .horizontalRule, .table:
             return false
         case .paragraph, .heading, .list, .blockquote:
             return false

@@ -63,7 +63,7 @@ class UIKitFrameMessageListViewController: UIViewController {
             },
             onMathTap: { mathNode in
                 // 数学公式点击：打印 log
-                print("数学公式被点击: \(mathNode.display ? "块级" : "行内") - \(mathNode.content)")
+                print("数学公式被点击: - \(mathNode.content)")
             },
             onMermaidTap: { mermaidNode in
                 // Mermaid 图表点击：打印 log

@@ -45,7 +45,7 @@ public class NodeLayout {
 
 // MARK: - Node Classification
 
-/// 节点分类辅助
+/// 节点分类辅助（V2）
 private enum NodeClassification {
     case blockLevel  // 块级节点（图片、块级数学公式、Mermaid）
     case inline      // 行内节点（mention、emoji、行内数学公式）
@@ -53,12 +53,15 @@ private enum NodeClassification {
     
     static func classify(_ node: ASTNodeWrapper) -> NodeClassification {
         switch node {
-        case .image, .mermaid:
+        // V2: 块级节点
+        case .image, .mermaidBlock:
             return .blockLevel
-        case .math(let mathNode):
-            return mathNode.display ? .blockLevel : .inline
-        case .mention, .emoji:
+        case .mathBlock:
+            return .blockLevel
+        // V2: 行内节点
+        case .inlineMath, .mention, .emoji:
             return .inline
+        // V2: 其他都是文本节点（包括TextRun）
         default:
             return .text
         }
@@ -171,9 +174,12 @@ public class UIKitFrameAsyncCalculator {
             )
         case .table(let tNode):
             return calculateTableLayout(tNode, context: context, origin: origin, width: width)
-        case .math(let mNode):
+        // V2: 区分块级和行内数学公式
+        case .mathBlock(let mNode):
             return calculateMathLayout(mNode, context: context, origin: origin, width: width)
-        case .mermaid(let mNode):
+        case .inlineMath(let mNode):
+            return calculateInlineMathLayout(mNode, context: context, origin: origin, width: width)
+        case .mermaidBlock(let mNode):
             return calculateMermaidLayout(mNode, context: context, origin: origin, width: width)
         case .emoji(let eNode):
             return calculateEmojiLayout(eNode, context: context, origin: origin, width: width)
@@ -373,7 +379,7 @@ public class UIKitFrameAsyncCalculator {
             appendMentionNode(mentionNode, to: attrString, context: context)
         case .emoji(let emojiNode):
             appendEmojiNode(emojiNode, to: attrString, context: context)
-        case .math(let mathNode):
+        case .inlineMath(let mathNode):  // V2: 使用 inlineMath
             appendInlineMathNode(mathNode, to: attrString, context: context)
         default:
             break
@@ -902,16 +908,20 @@ public class UIKitFrameAsyncCalculator {
     
     // MARK: - Math & Mermaid Layout
     
+    /// V2: 计算行内数学公式布局
+    private static func calculateInlineMathLayout(_ node: MathNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
+        let font = context.currentFont ?? context.theme.font
+        let lineHeight = font.lineHeight
+        let estimatedWidth = min(CGFloat(node.content.count * 8), width)
+        return NodeLayout(
+            frame: CGRect(origin: origin, size: CGSize(width: estimatedWidth, height: lineHeight)),
+            node: .inlineMath(node)
+        )
+    }
+    
+    /// V2: 计算块级数学公式布局
     private static func calculateMathLayout(_ node: MathNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
         let font = context.currentFont ?? context.theme.font
-        if !node.display {
-            let lineHeight = font.lineHeight
-            let estimatedWidth = min(CGFloat(node.content.count * 8), width)
-            return NodeLayout(
-                frame: CGRect(origin: origin, size: CGSize(width: estimatedWidth, height: lineHeight)),
-                node: .math(node)
-            )
-        }
         
         let textColor = context.theme.textColor
         let fontSize = font.pointSize
@@ -929,7 +939,7 @@ public class UIKitFrameAsyncCalculator {
             let totalHeight = imageFrame.origin.y*2+imageFrame.height
             return NodeLayout(
                 frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
-                node: .math(node)
+                node: .mathBlock(node)
             )
         }
         else if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0) {
@@ -937,7 +947,7 @@ public class UIKitFrameAsyncCalculator {
             let totalHeight = imageFrame.origin.y*2+imageFrame.height
             return NodeLayout(
                 frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
-                node: .math(node)
+                node: .mathBlock(node)
             )
         }
         
@@ -949,7 +959,7 @@ public class UIKitFrameAsyncCalculator {
         
         return NodeLayout(
             frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
-            node: .math(node)
+            node: .mathBlock(node)
         )
     }
     
@@ -994,7 +1004,7 @@ public class UIKitFrameAsyncCalculator {
 
         return NodeLayout(
             frame: CGRect(origin: origin, size: CGSize(width: width, height: totalHeight)),
-            node: .mermaid(node)
+            node: .mermaidBlock(node)
         )
     }
     

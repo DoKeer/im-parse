@@ -1,6 +1,9 @@
 import Foundation
 
-// MARK: - AST 节点类型定义（简化版，实际应从 Rust 绑定生成）
+// MARK: - AST V2 节点定义
+// 对应 Rust 的扁平化样式系统
+
+// MARK: - Root Node
 
 public struct RootNode: Codable {
     public var children: [ASTNodeWrapper]
@@ -9,46 +12,161 @@ public struct RootNode: Codable {
         case children
     }
     
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        // RootNode 直接包含 children，没有 type 字段
-        children = try container.decode([ASTNodeWrapper].self, forKey: .children)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(children, forKey: .children)
-    }
-    
     public init(children: [ASTNodeWrapper]) {
         self.children = children
     }
 }
 
-public struct ParagraphNode: Codable {
-    public var children: [ASTNodeWrapper]
+// MARK: - Text Style (V2 扁平化样式)
+
+public enum TextStyle: Codable, Equatable {
+    case bold
+    case italic
+    case underline
+    case strikethrough
+    case code
+    case superscript
+    case `subscript`
+    case color(String)
+    case backgroundColor(String)
+    case fontSize(Float)
+    case fontFamily(String)
     
     enum CodingKeys: String, CodingKey {
         case type
-        case children
+        case color
+        case scale
+        case family
+    }
+    
+    enum StyleType: String, Codable {
+        case Bold
+        case Italic
+        case Underline
+        case Strikethrough
+        case Code
+        case Superscript
+        case Subscript
+        case Color
+        case BackgroundColor
+        case FontSize
+        case FontFamily
     }
     
     public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "paragraph" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'paragraph', got '\(typeString)'"
-            ))
+        if let container = try? decoder.container(keyedBy: CodingKeys.self) {
+            let type = try container.decode(StyleType.self, forKey: .type)
+            switch type {
+            case .Bold:
+                self = .bold
+            case .Italic:
+                self = .italic
+            case .Underline:
+                self = .underline
+            case .Strikethrough:
+                self = .strikethrough
+            case .Code:
+                self = .code
+            case .Superscript:
+                self = .superscript
+            case .Subscript:
+                self = .`subscript`
+            case .Color:
+                let color = try container.decode(String.self, forKey: .color)
+                self = .color(color)
+            case .BackgroundColor:
+                let color = try container.decode(String.self, forKey: .color)
+                self = .backgroundColor(color)
+            case .FontSize:
+                let scale = try container.decode(Float.self, forKey: .scale)
+                self = .fontSize(scale)
+            case .FontFamily:
+                let family = try container.decode(String.self, forKey: .family)
+                self = .fontFamily(family)
+            }
+        } else {
+            // 简单字符串格式
+            let container = try decoder.singleValueContainer()
+            let str = try container.decode(String.self)
+            switch str {
+            case "Bold": self = .bold
+            case "Italic": self = .italic
+            case "Underline": self = .underline
+            case "Strikethrough": self = .strikethrough
+            case "Code": self = .code
+            case "Superscript": self = .superscript
+            case "Subscript": self = .`subscript`
+            default:
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown style type: \(str)")
+            }
         }
-        children = try container.decode([ASTNodeWrapper].self, forKey: .children)
     }
     
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("paragraph", forKey: .type)
-        try container.encode(children, forKey: .children)
+        
+        switch self {
+        case .bold:
+            try container.encode(StyleType.Bold, forKey: .type)
+        case .italic:
+            try container.encode(StyleType.Italic, forKey: .type)
+        case .underline:
+            try container.encode(StyleType.Underline, forKey: .type)
+        case .strikethrough:
+            try container.encode(StyleType.Strikethrough, forKey: .type)
+        case .code:
+            try container.encode(StyleType.Code, forKey: .type)
+        case .superscript:
+            try container.encode(StyleType.Superscript, forKey: .type)
+        case .`subscript`:
+            try container.encode(StyleType.Subscript, forKey: .type)
+        case .color(let color):
+            try container.encode(StyleType.Color, forKey: .type)
+            try container.encode(color, forKey: .color)
+        case .backgroundColor(let color):
+            try container.encode(StyleType.BackgroundColor, forKey: .type)
+            try container.encode(color, forKey: .color)
+        case .fontSize(let scale):
+            try container.encode(StyleType.FontSize, forKey: .type)
+            try container.encode(scale, forKey: .scale)
+        case .fontFamily(let family):
+            try container.encode(StyleType.FontFamily, forKey: .type)
+            try container.encode(family, forKey: .family)
+        }
+    }
+}
+
+// MARK: - Text Align
+
+public enum TextAlign: String, Codable {
+    case left = "Left"
+    case center = "Center"
+    case right = "Right"
+}
+
+// MARK: - TextRun (V2 核心节点)
+
+public struct TextRun: Codable {
+    public var content: String
+    public var styles: [TextStyle]
+    
+    public init(content: String, styles: [TextStyle] = []) {
+        self.content = content
+        self.styles = styles
+    }
+}
+
+// MARK: - Block Nodes
+
+public struct ParagraphNode: Codable {
+    public var children: [ASTNodeWrapper]
+    public var align: TextAlign?
+    public var indent: UInt32
+    
+    public init(children: [ASTNodeWrapper], align: TextAlign? = nil, indent: UInt32 = 0) {
+        self.children = children
+        self.align = align
+        self.indent = indent
     }
 }
 
@@ -56,192 +174,9 @@ public struct HeadingNode: Codable {
     public var level: UInt8
     public var children: [ASTNodeWrapper]
     
-    enum CodingKeys: String, CodingKey {
-        case type
-        case level
-        case children
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "heading" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'heading', got '\(typeString)'"
-            ))
-        }
-        level = try container.decode(UInt8.self, forKey: .level)
-        children = try container.decode([ASTNodeWrapper].self, forKey: .children)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("heading", forKey: .type)
-        try container.encode(level, forKey: .level)
-        try container.encode(children, forKey: .children)
-    }
-}
-
-public struct TextNode: Codable {
-    public var content: String
-    
-    enum CodingKeys: String, CodingKey {
-        case type
-        case content
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "text" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'text', got '\(typeString)'"
-            ))
-        }
-        content = try container.decode(String.self, forKey: .content)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("text", forKey: .type)
-        try container.encode(content, forKey: .content)
-    }
-}
-
-public struct StrongNode: Codable {
-    public var children: [ASTNodeWrapper]
-    
-    enum CodingKeys: String, CodingKey {
-        case type
-        case children
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "strong" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'strong', got '\(typeString)'"
-            ))
-        }
-        children = try container.decode([ASTNodeWrapper].self, forKey: .children)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("strong", forKey: .type)
-        try container.encode(children, forKey: .children)
-    }
-}
-
-public struct EmNode: Codable {
-    public var children: [ASTNodeWrapper]
-    
-    enum CodingKeys: String, CodingKey {
-        case type
-        case children
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "em" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'em', got '\(typeString)'"
-            ))
-        }
-        children = try container.decode([ASTNodeWrapper].self, forKey: .children)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("em", forKey: .type)
-        try container.encode(children, forKey: .children)
-    }
-}
-
-public struct UnderlineNode: Codable {
-    public var children: [ASTNodeWrapper]
-    
-    enum CodingKeys: String, CodingKey {
-        case type
-        case children
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "underline" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'underline', got '\(typeString)'"
-            ))
-        }
-        children = try container.decode([ASTNodeWrapper].self, forKey: .children)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("underline", forKey: .type)
-        try container.encode(children, forKey: .children)
-    }
-}
-
-public struct StrikeNode: Codable {
-    public var children: [ASTNodeWrapper]
-    
-    enum CodingKeys: String, CodingKey {
-        case type
-        case children
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "strike" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'strike', got '\(typeString)'"
-            ))
-        }
-        children = try container.decode([ASTNodeWrapper].self, forKey: .children)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("strike", forKey: .type)
-        try container.encode(children, forKey: .children)
-    }
-}
-
-public struct CodeNode: Codable {
-    public var content: String
-    
-    enum CodingKeys: String, CodingKey {
-        case type
-        case content
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "code" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'code', got '\(typeString)'"
-            ))
-        }
-        content = try container.decode(String.self, forKey: .content)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("code", forKey: .type)
-        try container.encode(content, forKey: .content)
+    public init(level: UInt8, children: [ASTNodeWrapper]) {
+        self.level = level
+        self.children = children
     }
 }
 
@@ -249,61 +184,112 @@ public struct CodeBlockNode: Codable {
     public var language: String?
     public var content: String
     
-    enum CodingKeys: String, CodingKey {
-        case type
-        case language
-        case content
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "codeBlock" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'codeBlock', got '\(typeString)'"
-            ))
-        }
-        language = try container.decodeIfPresent(String.self, forKey: .language)
-        content = try container.decode(String.self, forKey: .content)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("codeBlock", forKey: .type)
-        try container.encodeIfPresent(language, forKey: .language)
-        try container.encode(content, forKey: .content)
+    public init(language: String? = nil, content: String) {
+        self.language = language
+        self.content = content
     }
 }
+
+public struct ListNode: Codable {
+    public var listType: ListType
+    public var items: [ListItemNode]
+    
+    public enum ListType: String, Codable {
+        case bullet = "Bullet"
+        case ordered = "Ordered"
+    }
+    
+    public init(listType: ListType, items: [ListItemNode]) {
+        self.listType = listType
+        self.items = items
+    }
+}
+
+public struct ListItemNode: Codable {
+    public var children: [ASTNodeWrapper]
+    public var checked: Bool?
+    
+    public init(children: [ASTNodeWrapper], checked: Bool? = nil) {
+        self.children = children
+        self.checked = checked
+    }
+}
+
+public struct TableNode: Codable {
+    public var rows: [TableRow]
+    
+    public init(rows: [TableRow]) {
+        self.rows = rows
+    }
+}
+
+public struct TableRow: Codable {
+    public var cells: [TableCell]
+    
+    public init(cells: [TableCell]) {
+        self.cells = cells
+    }
+}
+
+public struct TableCell: Codable {
+    public var children: [ASTNodeWrapper]
+    public var align: TextAlign?
+    
+    public init(children: [ASTNodeWrapper], align: TextAlign? = nil) {
+        self.children = children
+        self.align = align
+    }
+}
+
+public struct BlockquoteNode: Codable {
+    public var children: [ASTNodeWrapper]
+    
+    public init(children: [ASTNodeWrapper]) {
+        self.children = children
+    }
+}
+
+public struct HorizontalRuleNode: Codable {
+    public init() {}
+}
+
+// MARK: - Math & Special Blocks
+
+public struct MathNode: Codable {
+    public var content: String
+    
+    public init(content: String) {
+        self.content = content
+    }
+}
+
+public struct MermaidNode: Codable {
+    public var content: String
+    
+    public init(content: String) {
+        self.content = content
+    }
+}
+
+public struct HtmlNode: Codable {
+    public var content: String
+    
+    public init(content: String) {
+        self.content = content
+    }
+}
+
+// MARK: - Inline Nodes
 
 public struct LinkNode: Codable {
     public var url: String
     public var children: [ASTNodeWrapper]
+    public var title: String?
     
-    enum CodingKeys: String, CodingKey {
-        case type
-        case url
-        case children
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "link" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'link', got '\(typeString)'"
-            ))
-        }
-        url = try container.decode(String.self, forKey: .url)
-        children = try container.decode([ASTNodeWrapper].self, forKey: .children)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("link", forKey: .type)
-        try container.encode(url, forKey: .url)
-        try container.encode(children, forKey: .children)
+    public init(url: String, children: [ASTNodeWrapper], title: String? = nil) {
+        self.url = url
+        self.children = children
+        self.title = title
     }
 }
 
@@ -313,261 +299,25 @@ public struct ImageNode: Codable {
     public var height: Float?
     public var alt: String?
     
-    enum CodingKeys: String, CodingKey {
-        case type
-        case url
-        case width
-        case height
-        case alt
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "image" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'image', got '\(typeString)'"
-            ))
-        }
-        url = try container.decode(String.self, forKey: .url)
-        width = try container.decodeIfPresent(Float.self, forKey: .width)
-        height = try container.decodeIfPresent(Float.self, forKey: .height)
-        alt = try container.decodeIfPresent(String.self, forKey: .alt)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("image", forKey: .type)
-        try container.encode(url, forKey: .url)
-        try container.encodeIfPresent(width, forKey: .width)
-        try container.encodeIfPresent(height, forKey: .height)
-        try container.encodeIfPresent(alt, forKey: .alt)
+    public init(url: String, width: Float? = nil, height: Float? = nil, alt: String? = nil) {
+        self.url = url
+        self.width = width
+        self.height = height
+        self.alt = alt
     }
 }
 
-public enum ListType: String, Codable {
-    case bullet = "bullet"
-    case ordered = "ordered"
-}
-
-public struct ListItemNode: Codable {
-    public var children: [ASTNodeWrapper]
-    public var checked: Bool?
+public struct LineBreakNode: Codable {
+    public var hard: Bool
     
-    enum CodingKeys: String, CodingKey {
-        case children
-        case checked
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        // ListItemNode 在 items 数组中时没有 type 字段，直接解码
-        // 如果作为 ASTNode 枚举的一部分，ASTNodeWrapper 会处理 type 字段
-        children = try container.decode([ASTNodeWrapper].self, forKey: .children)
-        checked = try container.decodeIfPresent(Bool.self, forKey: .checked)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(children, forKey: .children)
-        try container.encodeIfPresent(checked, forKey: .checked)
-    }
-}
-
-public struct ListNode: Codable {
-    public var listType: ListType
-    public var items: [ListItemNode]
-    
-    enum CodingKeys: String, CodingKey {
-        case type
-        case listType
-        case items
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "list" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'list', got '\(typeString)'"
-            ))
-        }
-        listType = try container.decode(ListType.self, forKey: .listType)
-        items = try container.decode([ListItemNode].self, forKey: .items)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("list", forKey: .type)
-        try container.encode(listType, forKey: .listType)
-        try container.encode(items, forKey: .items)
-    }
-}
-
-public struct TableNode: Codable {
-    public var rows: [TableRow]
-    
-    enum CodingKeys: String, CodingKey {
-        case type
-        case rows
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "table" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'table', got '\(typeString)'"
-            ))
-        }
-        rows = try container.decode([TableRow].self, forKey: .rows)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("table", forKey: .type)
-        try container.encode(rows, forKey: .rows)
-    }
-}
-
-public struct TableRow: Codable {
-    public var cells: [TableCell]
-    
-    enum CodingKeys: String, CodingKey {
-        case cells
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        // TableRow 直接包含 cells，没有 type 字段（因为它不是 ASTNode 枚举）
-        cells = try container.decode([TableCell].self, forKey: .cells)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(cells, forKey: .cells)
-    }
-}
-
-public struct TableCell: Codable {
-    public var children: [ASTNodeWrapper]
-    public var align: TextAlign?
-    
-    enum CodingKeys: String, CodingKey {
-        case children
-        case align
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        // TableCell 直接包含 children 和 align，没有 type 字段（因为它不是 ASTNode 枚举）
-        children = try container.decode([ASTNodeWrapper].self, forKey: .children)
-        align = try container.decodeIfPresent(TextAlign.self, forKey: .align)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(children, forKey: .children)
-        try container.encodeIfPresent(align, forKey: .align)
-    }
-}
-
-public enum TextAlign: String, Codable {
-    case left
-    case center
-    case right
-}
-
-public struct MathNode: Codable {
-    public var content: String
-    public var display: Bool
-    
-    enum CodingKeys: String, CodingKey {
-        case type
-        case content
-        case display
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "math" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'math', got '\(typeString)'"
-            ))
-        }
-        content = try container.decode(String.self, forKey: .content)
-        display = try container.decode(Bool.self, forKey: .display)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("math", forKey: .type)
-        try container.encode(content, forKey: .content)
-        try container.encode(display, forKey: .display)
-    }
-}
-
-public struct MermaidNode: Codable {
-    public var content: String
-    
-    enum CodingKeys: String, CodingKey {
-        case type
-        case content
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "mermaid" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'mermaid', got '\(typeString)'"
-            ))
-        }
-        content = try container.decode(String.self, forKey: .content)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("mermaid", forKey: .type)
-        try container.encode(content, forKey: .content)
+    public init(hard: Bool = false) {
+        self.hard = hard
     }
 }
 
 public struct MentionNode: Codable {
     public var id: String
     public var name: String
-    
-    enum CodingKeys: String, CodingKey {
-        case type
-        case id
-        case name
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "mention" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'mention', got '\(typeString)'"
-            ))
-        }
-        id = try container.decode(String.self, forKey: .id)
-        name = try container.decode(String.self, forKey: .name)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("mention", forKey: .type)
-        try container.encode(id, forKey: .id)
-        try container.encode(name, forKey: .name)
-    }
     
     public init(id: String, name: String) {
         self.id = id
@@ -578,288 +328,221 @@ public struct MentionNode: Codable {
 public struct EmojiNode: Codable {
     public var content: String
     
-    enum CodingKeys: String, CodingKey {
-        case type
-        case content
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "emoji" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'emoji', got '\(typeString)'"
-            ))
-        }
-        content = try container.decode(String.self, forKey: .content)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("emoji", forKey: .type)
-        try container.encode(content, forKey: .content)
+    public init(content: String) {
+        self.content = content
     }
 }
 
-public struct ColorNode: Codable {
-    public var color: String
-    public var children: [ASTNodeWrapper]
-    
-    enum CodingKeys: String, CodingKey {
-        case type
-        case color
-        case children
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "color" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'color', got '\(typeString)'"
-            ))
-        }
-        color = try container.decode(String.self, forKey: .color)
-        children = try container.decode([ASTNodeWrapper].self, forKey: .children)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("color", forKey: .type)
-        try container.encode(color, forKey: .color)
-        try container.encode(children, forKey: .children)
-    }
-}
+// MARK: - AST Node Wrapper
 
-public struct HtmlNode: Codable {
-    public var content: String
-    
-    enum CodingKeys: String, CodingKey {
-        case type
-        case content
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "html" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'html', got '\(typeString)'"
-            ))
-        }
-        content = try container.decode(String.self, forKey: .content)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("html", forKey: .type)
-        try container.encode(content, forKey: .content)
-    }
-}
-
-public struct BlockquoteNode: Codable {
-    public var children: [ASTNodeWrapper]
-    
-    enum CodingKeys: String, CodingKey {
-        case type
-        case children
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "blockquote" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'blockquote', got '\(typeString)'"
-            ))
-        }
-        children = try container.decode([ASTNodeWrapper].self, forKey: .children)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("blockquote", forKey: .type)
-        try container.encode(children, forKey: .children)
-    }
-}
-
-public struct HorizontalRuleNode: Codable {
-    
-    enum CodingKeys: String, CodingKey {
-        case type
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
-        guard typeString == "horizontalRule" else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Expected type 'horizontalRule', got '\(typeString)'"
-            ))
-        }
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("horizontalRule", forKey: .type)
-    }
-}
-
-// MARK: - ASTNodeWrapper
-
-/// ASTNode 包装器，用于 JSON 序列化/反序列化
 public enum ASTNodeWrapper: Codable {
-    case root(RootNode)
+    // 块级节点
     case paragraph(ParagraphNode)
     case heading(HeadingNode)
-    case text(TextNode)
-    case strong(StrongNode)
-    case em(EmNode)
-    case underline(UnderlineNode)
-    case strike(StrikeNode)
-    case code(CodeNode)
     case codeBlock(CodeBlockNode)
+    case list(ListNode)
+    case table(TableNode)
+    case blockquote(BlockquoteNode)
+    case mathBlock(MathNode)
+    case mermaidBlock(MermaidNode)
+    case htmlBlock(HtmlNode)
+    case horizontalRule(HorizontalRuleNode)
+    
+    // 行内节点 (V2: Text 现在是 TextRun)
+    case text(TextRun)
     case link(LinkNode)
     case image(ImageNode)
-    case list(ListNode)
-    case listItem(ListItemNode)
-    case table(TableNode)
-    case tableRow(TableRow)
-    case tableCell(TableCell)
-    case math(MathNode)
-    case mermaid(MermaidNode)
+    case inlineMath(MathNode)
+    case inlineHtml(HtmlNode)
+    case lineBreak(LineBreakNode)
     case mention(MentionNode)
     case emoji(EmojiNode)
-    case color(ColorNode)
-    case blockquote(BlockquoteNode)
-    case horizontalRule(HorizontalRuleNode)
-    case html(HtmlNode)
     
     enum CodingKeys: String, CodingKey {
         case type
     }
     
+    enum NodeType: String, Codable {
+        case Paragraph
+        case Heading
+        case CodeBlock
+        case List
+        case Table
+        case Blockquote
+        case MathBlock
+        case MermaidBlock
+        case HtmlBlock
+        case HorizontalRule
+        case Text
+        case Link
+        case Image
+        case InlineMath
+        case InlineHtml
+        case LineBreak
+        case Mention
+        case Emoji
+    }
+    
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let typeString = try container.decode(String.self, forKey: .type)
+        let type = try container.decode(NodeType.self, forKey: .type)
         
-        switch typeString {
-        case "root":
-            self = .root(try RootNode(from: decoder))
-        case "paragraph":
+        switch type {
+        case .Paragraph:
             self = .paragraph(try ParagraphNode(from: decoder))
-        case "heading":
+        case .Heading:
             self = .heading(try HeadingNode(from: decoder))
-        case "text":
-            self = .text(try TextNode(from: decoder))
-        case "strong":
-            self = .strong(try StrongNode(from: decoder))
-        case "em":
-            self = .em(try EmNode(from: decoder))
-        case "underline":
-            self = .underline(try UnderlineNode(from: decoder))
-        case "strike":
-            self = .strike(try StrikeNode(from: decoder))
-        case "code":
-            self = .code(try CodeNode(from: decoder))
-        case "codeBlock":
+        case .CodeBlock:
             self = .codeBlock(try CodeBlockNode(from: decoder))
-        case "link":
-            self = .link(try LinkNode(from: decoder))
-        case "image":
-            self = .image(try ImageNode(from: decoder))
-        case "list":
+        case .List:
             self = .list(try ListNode(from: decoder))
-        case "listItem":
-            self = .listItem(try ListItemNode(from: decoder))
-        case "table":
+        case .Table:
             self = .table(try TableNode(from: decoder))
-        case "tableRow":
-            self = .tableRow(try TableRow(from: decoder))
-        case "tableCell":
-            self = .tableCell(try TableCell(from: decoder))
-        case "math":
-            self = .math(try MathNode(from: decoder))
-        case "mermaid":
-            self = .mermaid(try MermaidNode(from: decoder))
-        case "mention":
-            self = .mention(try MentionNode(from: decoder))
-        case "emoji":
-            self = .emoji(try EmojiNode(from: decoder))
-        case "color":
-            self = .color(try ColorNode(from: decoder))
-        case "blockquote":
+        case .Blockquote:
             self = .blockquote(try BlockquoteNode(from: decoder))
-        case "horizontalRule":
+        case .MathBlock:
+            self = .mathBlock(try MathNode(from: decoder))
+        case .MermaidBlock:
+            self = .mermaidBlock(try MermaidNode(from: decoder))
+        case .HtmlBlock:
+            self = .htmlBlock(try HtmlNode(from: decoder))
+        case .HorizontalRule:
             self = .horizontalRule(try HorizontalRuleNode(from: decoder))
-        case "html":
-            self = .html(try HtmlNode(from: decoder))
-        default:
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath,
-                debugDescription: "Unknown node type: \(typeString)"
-            ))
+        case .Text:
+            self = .text(try TextRun(from: decoder))
+        case .Link:
+            self = .link(try LinkNode(from: decoder))
+        case .Image:
+            self = .image(try ImageNode(from: decoder))
+        case .InlineMath:
+            self = .inlineMath(try MathNode(from: decoder))
+        case .InlineHtml:
+            self = .inlineHtml(try HtmlNode(from: decoder))
+        case .LineBreak:
+            self = .lineBreak(try LineBreakNode(from: decoder))
+        case .Mention:
+            self = .mention(try MentionNode(from: decoder))
+        case .Emoji:
+            self = .emoji(try EmojiNode(from: decoder))
         }
     }
     
     public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        
         switch self {
-        case .root(let node):
-            try node.encode(to: encoder)
         case .paragraph(let node):
+            try container.encode(NodeType.Paragraph, forKey: .type)
             try node.encode(to: encoder)
         case .heading(let node):
-            try node.encode(to: encoder)
-        case .text(let node):
-            try node.encode(to: encoder)
-        case .strong(let node):
-            try node.encode(to: encoder)
-        case .em(let node):
-            try node.encode(to: encoder)
-        case .underline(let node):
-            try node.encode(to: encoder)
-        case .strike(let node):
-            try node.encode(to: encoder)
-        case .code(let node):
+            try container.encode(NodeType.Heading, forKey: .type)
             try node.encode(to: encoder)
         case .codeBlock(let node):
-            try node.encode(to: encoder)
-        case .link(let node):
-            try node.encode(to: encoder)
-        case .image(let node):
+            try container.encode(NodeType.CodeBlock, forKey: .type)
             try node.encode(to: encoder)
         case .list(let node):
-            try node.encode(to: encoder)
-        case .listItem(let node):
+            try container.encode(NodeType.List, forKey: .type)
             try node.encode(to: encoder)
         case .table(let node):
-            try node.encode(to: encoder)
-        case .tableRow(let node):
-            try node.encode(to: encoder)
-        case .tableCell(let node):
-            try node.encode(to: encoder)
-        case .math(let node):
-            try node.encode(to: encoder)
-        case .mermaid(let node):
-            try node.encode(to: encoder)
-        case .mention(let node):
-            try node.encode(to: encoder)
-        case .emoji(let node):
-            try node.encode(to: encoder)
-        case .color(let node):
+            try container.encode(NodeType.Table, forKey: .type)
             try node.encode(to: encoder)
         case .blockquote(let node):
+            try container.encode(NodeType.Blockquote, forKey: .type)
+            try node.encode(to: encoder)
+        case .mathBlock(let node):
+            try container.encode(NodeType.MathBlock, forKey: .type)
+            try node.encode(to: encoder)
+        case .mermaidBlock(let node):
+            try container.encode(NodeType.MermaidBlock, forKey: .type)
+            try node.encode(to: encoder)
+        case .htmlBlock(let node):
+            try container.encode(NodeType.HtmlBlock, forKey: .type)
             try node.encode(to: encoder)
         case .horizontalRule(let node):
+            try container.encode(NodeType.HorizontalRule, forKey: .type)
             try node.encode(to: encoder)
-        case .html(let node):
+        case .text(let node):
+            try container.encode(NodeType.Text, forKey: .type)
+            try node.encode(to: encoder)
+        case .link(let node):
+            try container.encode(NodeType.Link, forKey: .type)
+            try node.encode(to: encoder)
+        case .image(let node):
+            try container.encode(NodeType.Image, forKey: .type)
+            try node.encode(to: encoder)
+        case .inlineMath(let node):
+            try container.encode(NodeType.InlineMath, forKey: .type)
+            try node.encode(to: encoder)
+        case .inlineHtml(let node):
+            try container.encode(NodeType.InlineHtml, forKey: .type)
+            try node.encode(to: encoder)
+        case .lineBreak(let node):
+            try container.encode(NodeType.LineBreak, forKey: .type)
+            try node.encode(to: encoder)
+        case .mention(let node):
+            try container.encode(NodeType.Mention, forKey: .type)
+            try node.encode(to: encoder)
+        case .emoji(let node):
+            try container.encode(NodeType.Emoji, forKey: .type)
             try node.encode(to: encoder)
         }
     }
 }
 
+// MARK: - Backward Compatibility Helpers (临时过渡)
+
+// 为了支持旧代码中可能存在的访问方式，提供一些便利属性
+extension ASTNodeWrapper {
+    // V1兼容：访问text节点的content
+    public var textContent: String? {
+        if case .text(let textRun) = self {
+            return textRun.content
+        }
+        return nil
+    }
+    
+    // V1兼容：判断是否是特定节点类型
+    public var isBlockLevel: Bool {
+        switch self {
+        case .paragraph, .heading, .codeBlock, .list, .table, .blockquote,
+             .mathBlock, .mermaidBlock, .htmlBlock, .horizontalRule:
+            return true
+        default:
+            return false
+        }
+    }
+    
+    public var isInline: Bool {
+        return !isBlockLevel
+    }
+}
+
+// MARK: - 旧节点类型定义（临时保留以支持可能的旧代码）
+
+@available(*, deprecated, message: "Use TextRun instead")
+public typealias TextNode = TextRun
+
+@available(*, deprecated, message: "Use TextRun with .bold style instead")
+public struct StrongNode: Codable {
+    public var children: [ASTNodeWrapper]
+}
+
+@available(*, deprecated, message: "Use TextRun with .italic style instead")
+public struct EmNode: Codable {
+    public var children: [ASTNodeWrapper]
+}
+
+@available(*, deprecated, message: "Use TextRun with .underline style instead")
+public struct UnderlineNode: Codable {
+    public var children: [ASTNodeWrapper]
+}
+
+@available(*, deprecated, message: "Use TextRun with .strikethrough style instead")
+public struct StrikeNode: Codable {
+    public var children: [ASTNodeWrapper]
+}
+
+@available(*, deprecated, message: "Use TextRun with .code style instead")
+public struct CodeNode: Codable {
+    public var content: String
+}

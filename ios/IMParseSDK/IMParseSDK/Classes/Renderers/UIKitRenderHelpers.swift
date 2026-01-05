@@ -537,9 +537,9 @@ public func updateNodeLayout(in layout: NodeLayout, with updatedLayout: NodeLayo
 /// 判断两个 AST 节点是否匹配（用于查找要更新的节点）
 public func nodesMatch(_ node1: ASTNodeWrapper, _ node2: ASTNodeWrapper) -> Bool {
     switch (node1, node2) {
-    case (.math(let math1), .math(let math2)):
-        return math1.content == math2.content && math1.display == math2.display
-    case (.mermaid(let mermaid1), .mermaid(let mermaid2)):
+    case (.mathBlock(let math1), .mathBlock(let math2)):
+        return math1.content == math2.content
+    case (.mermaidBlock(let mermaid1), .mermaidBlock(let mermaid2)):
         return mermaid1.content == mermaid2.content
     default:
         return false
