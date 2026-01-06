@@ -1489,12 +1489,7 @@ class AndroidViewRenderer {
      */
     private fun renderMathBlock(node: MathBlockNode, context: AndroidRenderContext = this.defaultContext!!): View {
         val container = FrameLayout(context.context)
-        container.setBackgroundColor(context.theme.codeBackgroundColor)
-        val cornerRadius = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP, 8f,
-            context.context.resources.displayMetrics
-        )
-        container.applyRoundedBackground(context.theme.codeBackgroundColor, cornerRadius)
+        // 不设置背景色，与iOS保持一致
         
         // 使用统一的数学公式渲染器（临时转换为MathNode用于渲染器）
         val mathNode = MathNode(node.content, true)
