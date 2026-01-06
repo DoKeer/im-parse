@@ -4,6 +4,137 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
+ * AST V2 - 扁平化样式系统
+ */
+
+/**
+ * TextStyle 枚举 - 统一的文本样式系统
+ */
+sealed class TextStyle {
+    object Bold : TextStyle()
+    object Italic : TextStyle()
+    object Underline : TextStyle()
+    object Strikethrough : TextStyle()
+    object Code : TextStyle()
+    object Superscript : TextStyle()
+    object Subscript : TextStyle()
+    data class Color(val color: String) : TextStyle()
+    data class BackgroundColor(val color: String) : TextStyle()
+    data class FontSize(val scale: Float) : TextStyle()
+    data class FontFamily(val family: String) : TextStyle()
+    
+    companion object {
+        fun fromJSON(json: JSONObject): TextStyle {
+            // Rust 格式: {"type": "bold"} 或 {"type": "color", "color": "#FF0000"}
+            if (!json.has("type")) {
+                throw IllegalArgumentException("TextStyle JSON missing 'type' field")
+            }
+            
+            val type = json.getString("type")
+            return when (type) {
+                "bold" -> Bold
+                "italic" -> Italic
+                "underline" -> Underline
+                "strikethrough" -> Strikethrough
+                "code" -> Code
+                "superscript" -> Superscript
+                "subscript" -> Subscript
+                "color" -> {
+                    if (!json.has("color")) {
+                        throw IllegalArgumentException("TextStyle.Color missing 'color' field")
+                    }
+                    Color(json.getString("color"))
+                }
+                "backgroundColor" -> {
+                    if (!json.has("color")) {
+                        throw IllegalArgumentException("TextStyle.BackgroundColor missing 'color' field")
+                    }
+                    BackgroundColor(json.getString("color"))
+                }
+                "fontSize" -> {
+                    if (!json.has("scale")) {
+                        throw IllegalArgumentException("TextStyle.FontSize missing 'scale' field")
+                    }
+                    FontSize(json.getDouble("scale").toFloat())
+                }
+                "fontFamily" -> {
+                    if (!json.has("family")) {
+                        throw IllegalArgumentException("TextStyle.FontFamily missing 'family' field")
+                    }
+                    FontFamily(json.getString("family"))
+                }
+                else -> throw IllegalArgumentException("Unknown TextStyle type: $type")
+            }
+        }
+    }
+    
+    fun toJSON(): JSONObject {
+        val json = JSONObject()
+        when (this) {
+            is Bold -> json.put("type", "bold")
+            is Italic -> json.put("type", "italic")
+            is Underline -> json.put("type", "underline")
+            is Strikethrough -> json.put("type", "strikethrough")
+            is Code -> json.put("type", "code")
+            is Superscript -> json.put("type", "superscript")
+            is Subscript -> json.put("type", "subscript")
+            is Color -> {
+                json.put("type", "color")
+                json.put("color", this.color)
+            }
+            is BackgroundColor -> {
+                json.put("type", "backgroundColor")
+                json.put("color", this.color)
+            }
+            is FontSize -> {
+                json.put("type", "fontSize")
+                json.put("scale", this.scale)
+            }
+            is FontFamily -> {
+                json.put("type", "fontFamily")
+                json.put("family", this.family)
+            }
+        }
+        return json
+    }
+}
+
+/**
+ * TextRun - 扁平化的文本节点（替代嵌套的 Strong, Em, Underline 等）
+ */
+data class TextRun(
+    val content: String,
+    val styles: List<TextStyle> = emptyList()
+) {
+    companion object {
+        fun fromJSON(json: JSONObject): TextRun {
+            val content = json.getString("content")
+            val styles = mutableListOf<TextStyle>()
+            
+            if (json.has("styles") && !json.isNull("styles")) {
+                val stylesArray = json.getJSONArray("styles")
+                for (i in 0 until stylesArray.length()) {
+                    styles.add(TextStyle.fromJSON(stylesArray.getJSONObject(i)))
+                }
+            }
+            
+            return TextRun(content, styles)
+        }
+    }
+    
+    fun toJSON(): JSONObject {
+        val json = JSONObject()
+        json.put("content", content)
+        if (styles.isNotEmpty()) {
+            val stylesArray = JSONArray()
+            styles.forEach { stylesArray.put(it.toJSON()) }
+            json.put("styles", stylesArray)
+        }
+        return json
+    }
+}
+
+/**
  * AST 节点基类
  */
 sealed class ASTNode {
@@ -43,14 +174,10 @@ object ASTNodeWrapper {
     fun fromJSON(json: JSONObject): ASTNode {
         val type = json.getString("type")
         return when (type) {
+            // V2: Rust core 生成的节点类型（camelCase）
             "paragraph" -> ParagraphNode.fromJSON(json)
             "heading" -> HeadingNode.fromJSON(json)
-            "text" -> TextNode.fromJSON(json)
-            "strong" -> StrongNode.fromJSON(json)
-            "em" -> EmNode.fromJSON(json)
-            "underline" -> UnderlineNode.fromJSON(json)
-            "strike" -> StrikeNode.fromJSON(json)
-            "code" -> CodeNode.fromJSON(json)
+            "text" -> TextRunNode.fromJSON(json)
             "codeBlock" -> CodeBlockNode.fromJSON(json)
             "link" -> LinkNode.fromJSON(json)
             "image" -> ImageNode.fromJSON(json)
@@ -61,29 +188,53 @@ object ASTNodeWrapper {
             "tableCell" -> TableCellNode.fromJSON(json)
             "blockquote" -> BlockquoteNode.fromJSON(json)
             "horizontalRule" -> HorizontalRuleNode
-            "math" -> MathNode.fromJSON(json)
-            "mermaid" -> MermaidNode.fromJSON(json)
-            "html" -> HtmlNode.fromJSON(json)
+            "mathBlock" -> MathBlockNode.fromJSON(json)
+            "inlineMath" -> InlineMathNode.fromJSON(json)
+            "mermaidBlock" -> MermaidNode.fromJSON(json)
+            "htmlBlock" -> HtmlBlockNode.fromJSON(json)
+            "inlineHtml" -> InlineHtmlNode.fromJSON(json)
             "emoji" -> EmojiNode.fromJSON(json)
             "mention" -> MentionNode.fromJSON(json)
-            "card" -> CardNode.fromJSON(json)
+            "lineBreak" -> LineBreakNode.fromJSON(json)
             else -> throw IllegalArgumentException("Unknown node type: $type")
         }
     }
 }
 
 /**
- * 段落节点
+ * 文本对齐方式
+ */
+enum class TextAlign {
+    Left, Center, Right;
+    
+    companion object {
+        fun fromString(str: String?): TextAlign? {
+            return when (str?.lowercase()) {
+                "left" -> Left
+                "center" -> Center
+                "right" -> Right
+                else -> null
+            }
+        }
+    }
+}
+
+/**
+ * 段落节点 - V2: 添加 align 和 indent
  */
 data class ParagraphNode(
-    val children: List<ASTNode>
+    val children: List<ASTNode>,
+    val align: TextAlign? = null,
+    val indent: Int = 0
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "paragraph")
+        json.put("type", "Paragraph")
         val childrenArray = JSONArray()
         children.forEach { childrenArray.put(it.toJSON()) }
         json.put("children", childrenArray)
+        align?.let { json.put("align", it.name) }
+        if (indent > 0) json.put("indent", indent)
         return json
     }
     
@@ -94,7 +245,14 @@ data class ParagraphNode(
             for (i in 0 until childrenArray.length()) {
                 children.add(ASTNodeWrapper.fromJSON(childrenArray.getJSONObject(i)))
             }
-            return ParagraphNode(children)
+            
+            val align = if (json.has("align") && !json.isNull("align")) {
+                TextAlign.fromString(json.getString("align"))
+            } else null
+            
+            val indent = json.optInt("indent", 0)
+            
+            return ParagraphNode(children, align, indent)
         }
     }
 }
@@ -108,7 +266,7 @@ data class HeadingNode(
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "heading")
+        json.put("type", "Heading")
         json.put("level", level)
         val childrenArray = JSONArray()
         children.forEach { childrenArray.put(it.toJSON()) }
@@ -130,149 +288,27 @@ data class HeadingNode(
 }
 
 /**
- * 文本节点
+ * TextRun 节点 - V2: 扁平化样式
  */
-data class TextNode(
-    val content: String
+data class TextRunNode(
+    val textRun: TextRun
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "text")
-        json.put("content", content)
-        return json
-    }
-    
-    companion object {
-        fun fromJSON(json: JSONObject): TextNode {
-            return TextNode(json.getString("content"))
+        json.put("type", "TextRun")
+        json.put("content", textRun.content)
+        if (textRun.styles.isNotEmpty()) {
+            val stylesArray = JSONArray()
+            textRun.styles.forEach { stylesArray.put(it.toJSON()) }
+            json.put("styles", stylesArray)
         }
-    }
-}
-
-/**
- * 粗体节点
- */
-data class StrongNode(
-    val children: List<ASTNode>
-) : ASTNode() {
-    override fun toJSON(): JSONObject {
-        val json = JSONObject()
-        json.put("type", "strong")
-        val childrenArray = JSONArray()
-        children.forEach { childrenArray.put(it.toJSON()) }
-        json.put("children", childrenArray)
         return json
     }
     
     companion object {
-        fun fromJSON(json: JSONObject): StrongNode {
-            val childrenArray = json.getJSONArray("children")
-            val children = mutableListOf<ASTNode>()
-            for (i in 0 until childrenArray.length()) {
-                children.add(ASTNodeWrapper.fromJSON(childrenArray.getJSONObject(i)))
-            }
-            return StrongNode(children)
-        }
-    }
-}
-
-/**
- * 斜体节点
- */
-data class EmNode(
-    val children: List<ASTNode>
-) : ASTNode() {
-    override fun toJSON(): JSONObject {
-        val json = JSONObject()
-        json.put("type", "em")
-        val childrenArray = JSONArray()
-        children.forEach { childrenArray.put(it.toJSON()) }
-        json.put("children", childrenArray)
-        return json
-    }
-    
-    companion object {
-        fun fromJSON(json: JSONObject): EmNode {
-            val childrenArray = json.getJSONArray("children")
-            val children = mutableListOf<ASTNode>()
-            for (i in 0 until childrenArray.length()) {
-                children.add(ASTNodeWrapper.fromJSON(childrenArray.getJSONObject(i)))
-            }
-            return EmNode(children)
-        }
-    }
-}
-
-/**
- * 下划线节点
- */
-data class UnderlineNode(
-    val children: List<ASTNode>
-) : ASTNode() {
-    override fun toJSON(): JSONObject {
-        val json = JSONObject()
-        json.put("type", "underline")
-        val childrenArray = JSONArray()
-        children.forEach { childrenArray.put(it.toJSON()) }
-        json.put("children", childrenArray)
-        return json
-    }
-    
-    companion object {
-        fun fromJSON(json: JSONObject): UnderlineNode {
-            val childrenArray = json.getJSONArray("children")
-            val children = mutableListOf<ASTNode>()
-            for (i in 0 until childrenArray.length()) {
-                children.add(ASTNodeWrapper.fromJSON(childrenArray.getJSONObject(i)))
-            }
-            return UnderlineNode(children)
-        }
-    }
-}
-
-/**
- * 删除线节点
- */
-data class StrikeNode(
-    val children: List<ASTNode>
-) : ASTNode() {
-    override fun toJSON(): JSONObject {
-        val json = JSONObject()
-        json.put("type", "strike")
-        val childrenArray = JSONArray()
-        children.forEach { childrenArray.put(it.toJSON()) }
-        json.put("children", childrenArray)
-        return json
-    }
-    
-    companion object {
-        fun fromJSON(json: JSONObject): StrikeNode {
-            val childrenArray = json.getJSONArray("children")
-            val children = mutableListOf<ASTNode>()
-            for (i in 0 until childrenArray.length()) {
-                children.add(ASTNodeWrapper.fromJSON(childrenArray.getJSONObject(i)))
-            }
-            return StrikeNode(children)
-        }
-    }
-}
-
-/**
- * 行内代码节点
- */
-data class CodeNode(
-    val content: String
-) : ASTNode() {
-    override fun toJSON(): JSONObject {
-        val json = JSONObject()
-        json.put("type", "code")
-        json.put("content", content)
-        return json
-    }
-    
-    companion object {
-        fun fromJSON(json: JSONObject): CodeNode {
-            return CodeNode(json.getString("content"))
+        fun fromJSON(json: JSONObject): TextRunNode {
+            val textRun = TextRun.fromJSON(json)
+            return TextRunNode(textRun)
         }
     }
 }
@@ -286,7 +322,7 @@ data class CodeBlockNode(
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "codeBlock")
+        json.put("type", "CodeBlock")
         language?.let { json.put("language", it) }
         json.put("content", content)
         return json
@@ -296,9 +332,7 @@ data class CodeBlockNode(
         fun fromJSON(json: JSONObject): CodeBlockNode {
             val language = if (json.has("language") && !json.isNull("language")) {
                 json.getString("language")
-            } else {
-                null
-            }
+            } else null
             return CodeBlockNode(language, json.getString("content"))
         }
     }
@@ -313,7 +347,7 @@ data class LinkNode(
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "link")
+        json.put("type", "Link")
         json.put("url", url)
         val childrenArray = JSONArray()
         children.forEach { childrenArray.put(it.toJSON()) }
@@ -345,7 +379,7 @@ data class ImageNode(
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "image")
+        json.put("type", "Image")
         json.put("url", url)
         width?.let { json.put("width", it) }
         height?.let { json.put("height", it) }
@@ -356,22 +390,15 @@ data class ImageNode(
     companion object {
         fun fromJSON(json: JSONObject): ImageNode {
             val url = json.getString("url")
-            // 检查字段是否存在且不为 null
             val width = if (json.has("width") && !json.isNull("width")) {
                 json.getDouble("width").toFloat()
-            } else {
-                null
-            }
+            } else null
             val height = if (json.has("height") && !json.isNull("height")) {
                 json.getDouble("height").toFloat()
-            } else {
-                null
-            }
+            } else null
             val alt = if (json.has("alt") && !json.isNull("alt")) {
                 json.getString("alt")
-            } else {
-                null
-            }
+            } else null
             return ImageNode(url, width, height, alt)
         }
     }
@@ -386,8 +413,8 @@ data class ListNode(
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "list")
-        json.put("listType", listType.name.lowercase())
+        json.put("type", "List")
+        json.put("listType", listType.name)
         val itemsArray = JSONArray()
         items.forEach { itemsArray.put(it.toJSON()) }
         json.put("items", itemsArray)
@@ -397,9 +424,9 @@ data class ListNode(
     companion object {
         fun fromJSON(json: JSONObject): ListNode {
             val listTypeStr = json.getString("listType")
-            val listType = when (listTypeStr.lowercase()) {
-                "bullet", "unordered" -> ListType.Bullet
-                "ordered", "number" -> ListType.Ordered
+            val listType = when (listTypeStr) {
+                "Bullet" -> ListType.Bullet
+                "Ordered" -> ListType.Ordered
                 else -> ListType.Bullet
             }
             val itemsArray = json.getJSONArray("items")
@@ -426,7 +453,7 @@ data class ListItemNode(
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "listItem")
+        json.put("type", "ListItem")
         val childrenArray = JSONArray()
         children.forEach { childrenArray.put(it.toJSON()) }
         json.put("children", childrenArray)
@@ -441,12 +468,9 @@ data class ListItemNode(
             for (i in 0 until childrenArray.length()) {
                 children.add(ASTNodeWrapper.fromJSON(childrenArray.getJSONObject(i)))
             }
-            // 使用 optBoolean 处理 null 值：如果字段不存在或值为 null，返回 null
             val checked = if (json.has("checked") && !json.isNull("checked")) {
                 json.getBoolean("checked")
-            } else {
-                null
-            }
+            } else null
             return ListItemNode(children, checked)
         }
     }
@@ -460,7 +484,7 @@ data class TableNode(
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "table")
+        json.put("type", "Table")
         val rowsArray = JSONArray()
         rows.forEach { rowsArray.put(it.toJSON()) }
         json.put("rows", rowsArray)
@@ -487,7 +511,7 @@ data class TableRowNode(
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "tableRow")
+        json.put("type", "TableRow")
         val cellsArray = JSONArray()
         cells.forEach { cellsArray.put(it.toJSON()) }
         json.put("cells", cellsArray)
@@ -515,7 +539,7 @@ data class TableCellNode(
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "tableCell")
+        json.put("type", "TableCell")
         val childrenArray = JSONArray()
         children.forEach { childrenArray.put(it.toJSON()) }
         json.put("children", childrenArray)
@@ -532,9 +556,7 @@ data class TableCellNode(
             }
             val align = if (json.has("align") && !json.isNull("align")) {
                 json.getString("align")
-            } else {
-                null
-            }
+            } else null
             return TableCellNode(children, align)
         }
     }
@@ -548,7 +570,7 @@ data class BlockquoteNode(
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "blockquote")
+        json.put("type", "Blockquote")
         val childrenArray = JSONArray()
         children.forEach { childrenArray.put(it.toJSON()) }
         json.put("children", childrenArray)
@@ -573,45 +595,60 @@ data class BlockquoteNode(
 object HorizontalRuleNode : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "horizontalRule")
+        json.put("type", "HorizontalRule")
         return json
     }
 }
 
 /**
- * 数学公式节点
+ * 块级数学公式节点 - V2
  */
-data class MathNode(
-    val content: String,
-    val display: Boolean
+data class MathBlockNode(
+    val content: String
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "math")
+        json.put("type", "MathBlock")
         json.put("content", content)
-        json.put("display", display)
         return json
     }
     
     companion object {
-        fun fromJSON(json: JSONObject): MathNode {
-            return MathNode(
-                json.getString("content"),
-                json.optBoolean("display", false)
-            )
+        fun fromJSON(json: JSONObject): MathBlockNode {
+            return MathBlockNode(json.getString("content"))
         }
     }
 }
 
 /**
- * Mermaid 图表节点
+ * 行内数学公式节点 - V2
+ */
+data class InlineMathNode(
+    val content: String
+) : ASTNode() {
+    override fun toJSON(): JSONObject {
+        val json = JSONObject()
+        json.put("type", "InlineMath")
+        json.put("content", content)
+        return json
+    }
+    
+    companion object {
+        fun fromJSON(json: JSONObject): InlineMathNode {
+            return InlineMathNode(json.getString("content"))
+        }
+    }
+}
+
+/**
+ * Mermaid 图表节点 - V2
  */
 data class MermaidNode(
     val content: String
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "mermaid")
+        json.put("type", "MermaidBlock")
         json.put("content", content)
         return json
     }
@@ -624,21 +661,41 @@ data class MermaidNode(
 }
 
 /**
- * HTML 节点
+ * 块级HTML节点 - V2
  */
-data class HtmlNode(
+data class HtmlBlockNode(
     val content: String
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "html")
+        json.put("type", "HtmlBlock")
         json.put("content", content)
         return json
     }
     
     companion object {
-        fun fromJSON(json: JSONObject): HtmlNode {
-            return HtmlNode(json.getString("content"))
+        fun fromJSON(json: JSONObject): HtmlBlockNode {
+            return HtmlBlockNode(json.getString("content"))
+        }
+    }
+}
+
+/**
+ * 行内HTML节点 - V2
+ */
+data class InlineHtmlNode(
+    val content: String
+) : ASTNode() {
+    override fun toJSON(): JSONObject {
+        val json = JSONObject()
+        json.put("type", "InlineHtml")
+        json.put("content", content)
+        return json
+    }
+    
+    companion object {
+        fun fromJSON(json: JSONObject): InlineHtmlNode {
+            return InlineHtmlNode(json.getString("content"))
         }
     }
 }
@@ -652,7 +709,7 @@ data class EmojiNode(
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "emoji")
+        json.put("type", "Emoji")
         json.put("emoji", emoji)
         shortcode?.let { json.put("shortcode", it) }
         return json
@@ -663,9 +720,7 @@ data class EmojiNode(
             val emoji = json.getString("emoji")
             val shortcode = if (json.has("shortcode") && !json.isNull("shortcode")) {
                 json.getString("shortcode")
-            } else {
-                null
-            }
+            } else null
             return EmojiNode(emoji, shortcode)
         }
     }
@@ -680,7 +735,7 @@ data class MentionNode(
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "mention")
+        json.put("type", "Mention")
         json.put("id", id)
         json.put("name", name)
         return json
@@ -697,60 +752,31 @@ data class MentionNode(
 }
 
 /**
- * Card 节点
+ * 换行节点 - V2
  */
-data class CardNode(
-    val url: String,
-    val title: String? = null,
-    val description: String? = null,
-    val image: String? = null,
-    val children: List<ASTNode> = emptyList()
+data class LineBreakNode(
+    val hard: Boolean = false
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
-        json.put("type", "card")
-        json.put("url", url)
-        title?.let { json.put("title", it) }
-        description?.let { json.put("description", it) }
-        image?.let { json.put("image", it) }
-        if (children.isNotEmpty()) {
-            val childrenArray = JSONArray()
-            children.forEach { childrenArray.put(it.toJSON()) }
-            json.put("children", childrenArray)
-        }
+        json.put("type", "LineBreak")
+        json.put("hard", hard)
         return json
     }
     
     companion object {
-        fun fromJSON(json: JSONObject): CardNode {
-            val url = json.getString("url")
-            val title = if (json.has("title") && !json.isNull("title")) {
-                json.getString("title")
-            } else {
-                null
-            }
-            val description = if (json.has("description") && !json.isNull("description")) {
-                json.getString("description")
-            } else {
-                null
-            }
-            val image = if (json.has("image") && !json.isNull("image")) {
-                json.getString("image")
-            } else {
-                null
-            }
-            val children = if (json.has("children") && !json.isNull("children")) {
-                val childrenArray = json.getJSONArray("children")
-                val childrenList = mutableListOf<ASTNode>()
-                for (i in 0 until childrenArray.length()) {
-                    childrenList.add(ASTNodeWrapper.fromJSON(childrenArray.getJSONObject(i)))
-                }
-                childrenList
-            } else {
-                emptyList()
-            }
-            return CardNode(url, title, description, image, children)
+        fun fromJSON(json: JSONObject): LineBreakNode {
+            val hard = json.optBoolean("hard", false)
+            return LineBreakNode(hard)
         }
     }
 }
 
+/**
+ * MathNode - 内部辅助类，用于MathFormulaRenderer
+ * 注意：这不是ASTNode，仅用于与现有渲染器的兼容
+ */
+data class MathNode(
+    val content: String,
+    val display: Boolean
+)

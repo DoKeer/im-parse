@@ -1,9 +1,6 @@
 package com.imparse.renderers
 
-import android.content.Context
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
 import android.graphics.Typeface
 import android.os.Build
 import android.text.*
@@ -16,8 +13,6 @@ import android.view.ViewGroup
 import android.widget.*
 import androidx.core.view.setPadding
 import com.imparse.models.*
-import androidx.core.graphics.withTranslation
-import androidx.core.graphics.scale
 
 /**
  * Android View 渲染器
@@ -109,15 +104,21 @@ class AndroidViewRenderer {
      * 渲染单个节点
      */
     private fun renderNode(node: ASTNode, context: AndroidRenderContext): View {
+        // 保存context以备V2方法使用
+        defaultContext = context
+        
         return when (node) {
+            // V2: 新节点类型
+            is TextRunNode -> renderTextRun(node, context)
+            is MathBlockNode -> renderMathBlock(node, context)
+            is InlineMathNode -> renderInlineMath(node, context)
+            is HtmlBlockNode -> renderHtmlBlock(node, context)
+            is InlineHtmlNode -> renderInlineHtml(node, context)
+            is LineBreakNode -> renderLineBreak(node, context)
+            
+            // 现有块级节点
             is ParagraphNode -> renderParagraph(node, context)
             is HeadingNode -> renderHeading(node, context)
-            is TextNode -> renderText(node, context)
-            is StrongNode -> renderStrong(node, context)
-            is EmNode -> renderEm(node, context)
-            is UnderlineNode -> renderUnderline(node, context)
-            is StrikeNode -> renderStrike(node, context)
-            is CodeNode -> renderCode(node, context)
             is CodeBlockNode -> renderCodeBlock(node, context)
             is LinkNode -> renderLink(node, context)
             is ImageNode -> renderImage(node, context)
@@ -136,14 +137,13 @@ class AndroidViewRenderer {
             }
             is BlockquoteNode -> renderBlockquote(node, context)
             is HorizontalRuleNode -> renderHorizontalRule(context)
-            is MathNode -> renderMath(node, context)
             is MermaidNode -> renderMermaid(node, context)
-            is HtmlNode -> renderHtml(node, context)
             is EmojiNode -> renderEmoji(node, context)
             is MentionNode -> renderMention(node, context)
-            is CardNode -> renderCard(node, context)
+            
             else -> TextView(context.context).apply {
-                text = "Unknown node type"
+                text = "Unknown node type: ${node::class.simpleName}"
+                setTextColor(Color.RED)
             }
         }
     }
@@ -247,129 +247,6 @@ class AndroidViewRenderer {
     /**
      * 渲染文本
      */
-    private fun renderText(node: TextNode, context: AndroidRenderContext): View {
-        val textView = TextView(context.context)
-        textView.text = node.content
-        textView.textSize = context.theme.fontSize
-        textView.setTextColor(context.theme.textColor)
-        return textView
-    }
-    
-    /**
-     * 渲染粗体
-     */
-    private fun renderStrong(node: StrongNode, context: AndroidRenderContext): View {
-        val textView = TextView(context.context)
-        val spannable = SpannableStringBuilder()
-        for (child in node.children) {
-            appendInlineNode(spannable, child, context)
-        }
-        spannable.setSpan(
-            StyleSpan(Typeface.BOLD),
-            0,
-            spannable.length,
-            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-        )
-        textView.text = spannable
-        textView.textSize = context.theme.fontSize
-        textView.setTextColor(context.theme.textColor)
-        return textView
-    }
-    
-    /**
-     * 渲染斜体
-     */
-    private fun renderEm(node: EmNode, context: AndroidRenderContext): View {
-        val textView = TextView(context.context)
-        val spannable = SpannableStringBuilder()
-        for (child in node.children) {
-            appendInlineNode(spannable, child, context)
-        }
-        spannable.setSpan(
-            StyleSpan(Typeface.ITALIC),
-            0,
-            spannable.length,
-            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-        )
-        textView.text = spannable
-        textView.textSize = context.theme.fontSize
-        textView.setTextColor(context.theme.textColor)
-        return textView
-    }
-    
-    /**
-     * 渲染下划线
-     */
-    private fun renderUnderline(node: UnderlineNode, context: AndroidRenderContext): View {
-        val textView = TextView(context.context)
-        val spannable = SpannableStringBuilder()
-        for (child in node.children) {
-            appendInlineNode(spannable, child, context)
-        }
-        spannable.setSpan(
-            UnderlineSpan(),
-            0,
-            spannable.length,
-            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-        )
-        textView.text = spannable
-        textView.textSize = context.theme.fontSize
-        textView.setTextColor(context.theme.textColor)
-        return textView
-    }
-    
-    /**
-     * 渲染删除线
-     */
-    private fun renderStrike(node: StrikeNode, context: AndroidRenderContext): View {
-        val textView = TextView(context.context)
-        val spannable = SpannableStringBuilder()
-        for (child in node.children) {
-            appendInlineNode(spannable, child, context)
-        }
-        spannable.setSpan(
-            StrikethroughSpan(),
-            0,
-            spannable.length,
-            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-        )
-        textView.text = spannable
-        textView.textSize = context.theme.fontSize
-        textView.setTextColor(context.theme.textColor)
-        return textView
-    }
-    
-    /**
-     * 渲染行内代码
-     */
-    private fun renderCode(node: CodeNode, context: AndroidRenderContext): View {
-        val textView = TextView(context.context)
-        textView.text = node.content
-        textView.textSize = context.theme.codeFontSize
-        textView.setTypeface(Typeface.MONOSPACE)
-        textView.setTextColor(context.theme.codeTextColor)
-        textView.setBackgroundColor(context.theme.codeBackgroundColor)
-        textView.setPadding(
-            TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 4f,
-                context.context.resources.displayMetrics
-            ).toInt(),
-            TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 2f,
-                context.context.resources.displayMetrics
-            ).toInt(),
-            TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 4f,
-                context.context.resources.displayMetrics
-            ).toInt(),
-            TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 2f,
-                context.context.resources.displayMetrics
-            ).toInt()
-        )
-        return textView
-    }
-    
     /**
      * 渲染代码块
      */
@@ -811,11 +688,11 @@ class AndroidViewRenderer {
         val text = StringBuilder()
         for (child in cell.children) {
             when (child) {
-                is TextNode -> text.append(child.content)
+                is TextRunNode -> text.append(child.textRun.content)
                 is ParagraphNode -> {
                     for (pChild in child.children) {
-                        if (pChild is TextNode) {
-                            text.append(pChild.content)
+                        if (pChild is TextRunNode) {
+                            text.append(pChild.textRun.content)
                         }
                     }
                 }
@@ -885,17 +762,6 @@ class AndroidViewRenderer {
             ).toInt()
         )
         return view
-    }
-    
-    /**
-     * 渲染数学公式
-     */
-    private fun renderMath(node: MathNode, context: AndroidRenderContext): View {
-        val containerView = android.widget.FrameLayout(context.context)
-        containerView.setPadding(context.theme.codeBlockPadding)
-
-        // 使用统一的块级数学公式渲染方法
-        return MathFormulaRenderer.renderBlockMath(containerView, node, context)
     }
     
     /**
@@ -1159,16 +1025,6 @@ class AndroidViewRenderer {
     /**
      * 渲染 HTML
      */
-    private fun renderHtml(node: HtmlNode, context: AndroidRenderContext): View {
-        val webView = android.webkit.WebView(context.context)
-        webView.loadDataWithBaseURL(null, node.content, "text/html", "UTF-8", null)
-        webView.layoutParams = ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-        return webView
-    }
-    
     /**
      * 渲染 Emoji
      */
@@ -1213,51 +1069,6 @@ class AndroidViewRenderer {
     }
     
     /**
-     * 渲染 Card
-     */
-    private fun renderCard(node: CardNode, context: AndroidRenderContext): View {
-        val card = LinearLayout(context.context)
-        card.orientation = LinearLayout.VERTICAL
-        card.setBackgroundColor(context.theme.cardBackground)
-        card.setPadding(context.theme.cardPadding)
-        
-        // 标题
-        node.title?.let {
-            val titleView = TextView(context.context)
-            titleView.text = it
-            titleView.textSize = context.theme.fontSize + 2
-            titleView.setTypeface(null, Typeface.BOLD)
-            titleView.setTextColor(context.theme.textColor)
-            card.addView(titleView)
-        }
-        
-        // 描述
-        node.description?.let {
-            val descView = TextView(context.context)
-            descView.text = it
-            descView.textSize = context.theme.fontSize
-            descView.setTextColor(context.theme.textColor)
-            card.addView(descView)
-        }
-        
-        // 图片
-        node.image?.let {
-            val imageView = ImageView(context.context)
-            imageView.scaleType = ImageView.ScaleType.CENTER_CROP
-            context.imageLoader?.loadImage(it, imageView) { }
-            card.addView(imageView)
-        }
-        
-        // 子节点
-        for (child in node.children) {
-            val childView = renderNode(child, context)
-            card.addView(childView)
-        }
-        
-        return card
-    }
-    
-    /**
      * 追加行内节点到 SpannableStringBuilder
      */
     private fun appendInlineNode(
@@ -1269,71 +1080,49 @@ class AndroidViewRenderer {
         textView: TextView? = null
     ) {
         when (node) {
-            is TextNode -> builder.append(node.content)
-            is StrongNode -> {
+            // V2: TextRun with flattened styles
+            is TextRunNode -> {
                 val start = builder.length
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
+                builder.append(node.textRun.content)
+                // 应用所有样式到这段文本
+                applyTextStylesToSpan(builder, start, builder.length, node.textRun.styles, context)
+            }
+            
+            // V2: InlineMath
+            is InlineMathNode -> {
+                val start = builder.length
+                
+                if (displayMetrics != null) {
+                    // 转换为MathNode用于现有渲染器（临时转换）
+                    val mathNode = MathNode(node.content, false)
+                    val cachedSpan = MathFormulaRenderer.checkAndCreateInlineMathSpan(
+                        mathNode,
+                        context,
+                        displayMetrics,
+                        textView
+                    )
+                    
+                    if (cachedSpan != null) {
+                        builder.append("\uFFFC")
+                        val end = builder.length
+                        builder.setSpan(
+                            cachedSpan.imageSpan,
+                            start, end,
+                            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                        cachedSpan.clickableSpan?.let {
+                            builder.setSpan(it, start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        }
+                    } else {
+                        builder.append(node.content)
+                        mathNodes.add(Pair(start, mathNode))
+                    }
+                } else {
+                    builder.append(node.content)
                 }
-                builder.setSpan(
-                    StyleSpan(Typeface.BOLD),
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
             }
-            is EmNode -> {
-                val start = builder.length
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
-                }
-                builder.setSpan(
-                    StyleSpan(Typeface.ITALIC),
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            is UnderlineNode -> {
-                val start = builder.length
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
-                }
-                builder.setSpan(
-                    UnderlineSpan(),
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            is StrikeNode -> {
-                val start = builder.length
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
-                }
-                builder.setSpan(
-                    StrikethroughSpan(),
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            is CodeNode -> {
-                val start = builder.length
-                builder.append(node.content)
-                builder.setSpan(
-                    ForegroundColorSpan(context.theme.codeTextColor),
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-                builder.setSpan(
-                    BackgroundColorSpan(context.theme.codeBackgroundColor),
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
+            
+            // V2: Link
             is LinkNode -> {
                 val start = builder.length
                 for (child in node.children) {
@@ -1356,53 +1145,6 @@ class AndroidViewRenderer {
                     builder.length,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                 )
-            }
-            is MathNode -> {
-                // 行内数学公式：检查缓存，如果有缓存直接创建 ImageSpan，否则添加原文
-                val start = builder.length
-                
-                if (displayMetrics != null) {
-                    // 检查缓存
-                    val cachedSpan = MathFormulaRenderer.checkAndCreateInlineMathSpan(
-                        node,
-                        context,
-                        displayMetrics,
-                        textView
-                    )
-                    
-                    if (cachedSpan != null) {
-                        // 有缓存，直接添加占位符并设置 ImageSpan
-                        // 使用 \uFFFC (对象替换字符) 作为占位符，这是 ImageSpan 的标准做法
-                        builder.append("\uFFFC")
-                        val end = builder.length
-                        
-                        // 设置 ImageSpan
-                        builder.setSpan(
-                            cachedSpan.imageSpan,
-                            start,
-                            end,
-                            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                        )
-                        
-                        // 添加点击事件
-                        if (cachedSpan.clickableSpan != null) {
-                            builder.setSpan(
-                                cachedSpan.clickableSpan,
-                                start,
-                                end,
-                                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                            )
-                        }
-                    } else {
-                        // 没有缓存，添加原文文本，记录需要异步渲染
-                        builder.append(node.content)
-                        mathNodes.add(Pair(start, node))
-                    }
-                } else {
-                    // 没有 displayMetrics，添加原文文本，记录需要异步渲染
-                    builder.append(node.content)
-                    mathNodes.add(Pair(start, node))
-                }
             }
             is EmojiNode -> builder.append(node.emoji)
             is MentionNode -> {
@@ -1520,6 +1262,320 @@ class AndroidViewRenderer {
             }
         }
     }
+    
+    // ==================== V2 AST Support ====================
+    
+    /**
+     * V2: 渲染TextRunNode（扁平化样式）
+     */
+    private fun renderTextRun(node: TextRunNode, context: AndroidRenderContext): View {
+        val textView = TextView(context.context)
+        textView.textSize = context.theme.fontSize
+        textView.setTextColor(context.theme.textColor)
+        
+        // 构建带样式的文本
+        val spannable = buildSpannableFromTextRun(node.textRun, context)
+        textView.text = spannable
+        
+        return textView
+    }
+    
+    /**
+     * V2: 应用TextStyle数组到SpannableStringBuilder的指定范围
+     */
+    private fun applyTextStylesToSpan(
+        builder: SpannableStringBuilder,
+        start: Int,
+        end: Int,
+        styles: List<TextStyle>,
+        context: AndroidRenderContext
+    ) {
+        if (start >= end || styles.isEmpty()) return
+        
+        var typeface = Typeface.DEFAULT
+        var isBold = false
+        var isItalic = false
+        var textColor: Int? = null
+        var backgroundColor: Int? = null
+        val spans = mutableListOf<Any>()
+        
+        // 应用所有样式
+        styles.forEach { style ->
+            when (style) {
+                is TextStyle.Bold -> isBold = true
+                is TextStyle.Italic -> isItalic = true
+                is TextStyle.Underline -> 
+                    spans.add(UnderlineSpan())
+                is TextStyle.Strikethrough -> 
+                    spans.add(StrikethroughSpan())
+                is TextStyle.Color -> {
+                    try {
+                        textColor = Color.parseColor(style.color)
+                    } catch (e: Exception) {
+                        android.util.Log.w("AndroidViewRenderer", "Invalid color: ${style.color}")
+                    }
+                }
+                is TextStyle.BackgroundColor -> {
+                    try {
+                        backgroundColor = Color.parseColor(style.color)
+                    } catch (e: Exception) {
+                        android.util.Log.w("AndroidViewRenderer", "Invalid background color: ${style.color}")
+                    }
+                }
+                is TextStyle.FontSize -> 
+                    spans.add(RelativeSizeSpan(style.scale))
+                is TextStyle.FontFamily -> 
+                    typeface = Typeface.create(style.family, Typeface.NORMAL)
+                is TextStyle.Superscript -> 
+                    spans.add(SuperscriptSpan())
+                is TextStyle.Subscript -> 
+                    spans.add(SubscriptSpan())
+                is TextStyle.Code -> {
+                    typeface = Typeface.MONOSPACE
+                    textColor = context.theme.codeTextColor
+                    backgroundColor = context.theme.codeBackgroundColor
+                }
+            }
+        }
+        
+        // 应用字体样式
+        if (isBold && isItalic) {
+            typeface = Typeface.create(typeface, Typeface.BOLD_ITALIC)
+        } else if (isBold) {
+            typeface = Typeface.create(typeface, Typeface.BOLD)
+        } else if (isItalic) {
+            typeface = Typeface.create(typeface, Typeface.ITALIC)
+        }
+        
+        // 设置spans
+        if (typeface != Typeface.DEFAULT) {
+            builder.setSpan(
+                StyleSpan(typeface.style),
+                start, end,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        
+        textColor?.let {
+            builder.setSpan(
+                ForegroundColorSpan(it),
+                start, end,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        
+        backgroundColor?.let {
+            builder.setSpan(
+                BackgroundColorSpan(it),
+                start, end,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        
+        spans.forEach {
+            builder.setSpan(
+                it,
+                start, end,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+    }
+    
+    /**
+     * V2: 从TextRun构建SpannableString
+     */
+    private fun buildSpannableFromTextRun(
+        textRun: TextRun,
+        context: AndroidRenderContext
+    ): SpannableString {
+        val spannable = SpannableString(textRun.content)
+        if (textRun.content.isEmpty()) return spannable
+        
+        val range = 0 until textRun.content.length
+        
+        var typeface = Typeface.DEFAULT
+        var isBold = false
+        var isItalic = false
+        var textColor: Int? = null
+        var backgroundColor: Int? = null
+        val spans = mutableListOf<Any>()
+        
+        // 应用所有样式
+        textRun.styles.forEach { style ->
+            when (style) {
+                is TextStyle.Bold -> isBold = true
+                is TextStyle.Italic -> isItalic = true
+                is TextStyle.Underline -> 
+                    spans.add(UnderlineSpan())
+                is TextStyle.Strikethrough -> 
+                    spans.add(StrikethroughSpan())
+                is TextStyle.Color -> {
+                    try {
+                        textColor = Color.parseColor(style.color)
+                    } catch (e: Exception) {
+                        android.util.Log.w("AndroidViewRenderer", "Invalid color: ${style.color}")
+                    }
+                }
+                is TextStyle.BackgroundColor -> {
+                    try {
+                        backgroundColor = Color.parseColor(style.color)
+                    } catch (e: Exception) {
+                        android.util.Log.w("AndroidViewRenderer", "Invalid background color: ${style.color}")
+                    }
+                }
+                is TextStyle.FontSize -> 
+                    spans.add(RelativeSizeSpan(style.scale))
+                is TextStyle.FontFamily -> 
+                    typeface = Typeface.create(style.family, Typeface.NORMAL)
+                is TextStyle.Superscript -> 
+                    spans.add(SuperscriptSpan())
+                is TextStyle.Subscript -> 
+                    spans.add(SubscriptSpan())
+                is TextStyle.Code -> {
+                    typeface = Typeface.MONOSPACE
+                    textColor = context.theme.codeTextColor
+                    backgroundColor = context.theme.codeBackgroundColor
+                }
+            }
+        }
+        
+        // 应用字体样式
+        if (isBold && isItalic) {
+            typeface = Typeface.create(typeface, Typeface.BOLD_ITALIC)
+        } else if (isBold) {
+            typeface = Typeface.create(typeface, Typeface.BOLD)
+        } else if (isItalic) {
+            typeface = Typeface.create(typeface, Typeface.ITALIC)
+        }
+        
+        // 设置spans
+        if (typeface != Typeface.DEFAULT) {
+            spannable.setSpan(
+                StyleSpan(typeface.style),
+                range.first, range.last + 1,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        
+        textColor?.let {
+            spannable.setSpan(
+                ForegroundColorSpan(it),
+                range.first, range.last + 1,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        
+        backgroundColor?.let {
+            spannable.setSpan(
+                BackgroundColorSpan(it),
+                range.first, range.last + 1,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        
+        spans.forEach {
+            spannable.setSpan(
+                it,
+                range.first, range.last + 1,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        
+        return spannable
+    }
+    
+    /**
+     * V2: 渲染块级数学公式
+     */
+    private fun renderMathBlock(node: MathBlockNode, context: AndroidRenderContext = this.defaultContext!!): View {
+        val container = FrameLayout(context.context)
+        container.setBackgroundColor(context.theme.codeBackgroundColor)
+        val cornerRadius = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, 8f,
+            context.context.resources.displayMetrics
+        )
+        container.applyRoundedBackground(context.theme.codeBackgroundColor, cornerRadius)
+        
+        // 使用统一的数学公式渲染器（临时转换为MathNode用于渲染器）
+        val mathNode = MathNode(node.content, true)
+        return MathFormulaRenderer.renderBlockMath(container, mathNode, context)
+    }
+    
+    /**
+     * V2: 渲染行内数学公式
+     */
+    private fun renderInlineMath(node: InlineMathNode, context: AndroidRenderContext): View {
+        // 行内数学公式通常在SpannableString中处理，这里作为后备
+        val textView = TextView(context.context)
+        textView.text = "$${node.content}$"
+        textView.textSize = context.theme.fontSize
+        textView.setTextColor(context.theme.textColor)
+        return textView
+    }
+    
+    /**
+     * V2: 渲染块级HTML
+     */
+    private fun renderHtmlBlock(node: HtmlBlockNode, context: AndroidRenderContext): View {
+        val textView = TextView(context.context)
+        textView.text = stripHtmlTags(node.content)
+        textView.textSize = context.theme.fontSize
+        textView.setTextColor(context.theme.textColor)
+        textView.setPadding(
+            context.theme.contentPadding,
+            context.theme.contentPadding,
+            context.theme.contentPadding,
+            context.theme.contentPadding
+        )
+        return textView
+    }
+    
+    /**
+     * V2: 渲染行内HTML
+     */
+    private fun renderInlineHtml(node: InlineHtmlNode, context: AndroidRenderContext): View {
+        val textView = TextView(context.context)
+        textView.text = stripHtmlTags(node.content)
+        textView.textSize = context.theme.fontSize
+        textView.setTextColor(context.theme.textColor)
+        return textView
+    }
+    
+    /**
+     * V2: 渲染换行
+     */
+    private fun renderLineBreak(node: LineBreakNode, context: AndroidRenderContext): View {
+        val view = View(context.context)
+        view.layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            if (node.hard) {
+                TypedValue.applyDimension(
+                    TypedValue.COMPLEX_UNIT_DIP, 16f,
+                    context.context.resources.displayMetrics
+                ).toInt()
+            } else {
+                1
+            }
+        )
+        return view
+    }
+    
+    /**
+     * 辅助方法：去除HTML标签
+     */
+    private fun stripHtmlTags(html: String): String {
+        return html
+            .replace(Regex("<[^>]+>"), "")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&amp;", "&")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'")
+            .trim()
+    }
+    
+    // 默认context（用于某些方法需要context但没有传入的情况）
+    private var defaultContext: AndroidRenderContext? = null
 
 }
 

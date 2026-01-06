@@ -696,57 +696,49 @@ class CustomTableLayout(
         textView: TextView? = null
     ) {
         when (node) {
-            is com.imparse.models.TextNode -> builder.append(node.content)
-            is com.imparse.models.ParagraphNode -> {
-                // 处理段落节点：递归处理其子节点，段落内的内容用空格分隔
-                for ((index, child) in node.children.withIndex()) {
-                    if (index > 0) {
-                        // 段落内的多个子节点之间用空格分隔
-                        builder.append(" ")
+            // V2: TextRun with flattened styles
+            is com.imparse.models.TextRunNode -> {
+                val start = builder.length
+                builder.append(node.textRun.content)
+                // 应用所有样式
+                applyTextStylesToSpan(builder, start, builder.length, node.textRun.styles, context)
+            }
+            
+            // V2: InlineMath
+            is com.imparse.models.InlineMathNode -> {
+                val start = builder.length
+                
+                if (displayMetrics != null) {
+                    // 转换为MathNode用于渲染（临时转换）
+                    val mathNode = com.imparse.models.MathNode(node.content, false)
+                    val cachedSpan = MathFormulaRenderer.checkAndCreateInlineMathSpan(
+                        mathNode,
+                        context,
+                        displayMetrics,
+                        textView
+                    )
+                    
+                    if (cachedSpan != null) {
+                        builder.append("\uFFFC")
+                        val end = builder.length
+                        builder.setSpan(
+                            cachedSpan.imageSpan,
+                            start, end,
+                            android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                        cachedSpan.clickableSpan?.let {
+                            builder.setSpan(it, start, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        }
+                    } else {
+                        builder.append(node.content)
+                        mathNodes.add(Pair(start, mathNode))
                     }
-                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
+                } else {
+                    builder.append(node.content)
                 }
             }
-            is com.imparse.models.StrongNode -> {
-                val start = builder.length
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
-                }
-                builder.setSpan(
-                    android.text.style.StyleSpan(android.graphics.Typeface.BOLD),
-                    start,
-                    builder.length,
-                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            is com.imparse.models.EmNode -> {
-                val start = builder.length
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
-                }
-                builder.setSpan(
-                    android.text.style.StyleSpan(android.graphics.Typeface.ITALIC),
-                    start,
-                    builder.length,
-                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            is com.imparse.models.CodeNode -> {
-                val start = builder.length
-                builder.append(node.content)
-                builder.setSpan(
-                    android.text.style.ForegroundColorSpan(context.theme.codeTextColor),
-                    start,
-                    builder.length,
-                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-                builder.setSpan(
-                    android.text.style.BackgroundColorSpan(context.theme.codeBackgroundColor),
-                    start,
-                    builder.length,
-                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
+            
+            // V2: Link
             is com.imparse.models.LinkNode -> {
                 val start = builder.length
                 for (child in node.children) {
@@ -770,54 +762,23 @@ class CustomTableLayout(
                     android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                 )
             }
-            is com.imparse.models.MathNode -> {
-                // 行内数学公式：检查缓存，如果有缓存直接创建 ImageSpan，否则添加原文
-                val start = builder.length
-                
-                if (displayMetrics != null) {
-                    // 检查缓存
-                    val cachedSpan = MathFormulaRenderer.checkAndCreateInlineMathSpan(
-                        node,
-                        context,
-                        displayMetrics,
-                        textView
-                    )
-                    
-                    if (cachedSpan != null) {
-                        // 有缓存，直接添加占位符并设置 ImageSpan
-                        // 使用 \uFFFC (对象替换字符) 作为占位符，这是 ImageSpan 的标准做法
-                        builder.append("\uFFFC")
-                        val end = builder.length
-                        
-                        // 设置 ImageSpan
-                        builder.setSpan(
-                            cachedSpan.imageSpan,
-                            start,
-                            end,
-                            android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                        )
-                        
-                        // 添加点击事件
-                        if (cachedSpan.clickableSpan != null) {
-                            builder.setSpan(
-                                cachedSpan.clickableSpan,
-                                start,
-                                end,
-                                android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                            )
-                        }
-                    } else {
-                        // 没有缓存，添加原文文本，记录需要异步渲染
-                        builder.append(node.content)
-                        mathNodes.add(Pair(start, node))
+            
+            // V2: Paragraph (处理段落内的行内节点)
+            is com.imparse.models.ParagraphNode -> {
+                // 处理段落节点：递归处理其子节点，段落内的内容用空格分隔
+                for ((index, child) in node.children.withIndex()) {
+                    if (index > 0) {
+                        // 段落内的多个子节点之间用空格分隔
+                        builder.append(" ")
                     }
-                } else {
-                    // 没有 displayMetrics，添加原文文本，记录需要异步渲染
-                    builder.append(node.content)
-                    mathNodes.add(Pair(start, node))
+                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
                 }
             }
+            
+            // V2: Emoji
             is com.imparse.models.EmojiNode -> builder.append(node.emoji)
+            
+            // V2: Mention
             is com.imparse.models.MentionNode -> {
                 val start = builder.length
                 builder.append("@${node.name}")
@@ -834,35 +795,133 @@ class CustomTableLayout(
                     android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                 )
             }
+            
+            // V2: Blockquote (递归处理子节点)
             is com.imparse.models.BlockquoteNode -> {
-                // 块引用节点：递归处理子节点
                 for (child in node.children) {
                     appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
                 }
             }
+            
+            // V2: Heading (递归处理子节点)
             is com.imparse.models.HeadingNode -> {
-                // 标题节点：递归处理子节点
                 for (child in node.children) {
                     appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
                 }
             }
+            
+            // V2: ListItem (递归处理子节点)
             is com.imparse.models.ListItemNode -> {
-                // 列表项节点：递归处理子节点
                 for (child in node.children) {
                     appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
                 }
             }
-            is com.imparse.models.CardNode -> {
-                // 卡片节点：递归处理子节点
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
-                }
-            }
+            
             else -> {
-                // 其他没有 children 的节点类型（如 TextNode, CodeNode, MathNode 等已在上面处理）
-                // 尝试提取文本内容
+                // 其他节点类型，尝试提取文本内容
                 builder.append(node.toString())
             }
+        }
+    }
+    
+    /**
+     * V2: 应用TextStyle数组到SpannableStringBuilder的指定范围
+     */
+    private fun applyTextStylesToSpan(
+        builder: SpannableStringBuilder,
+        start: Int,
+        end: Int,
+        styles: List<com.imparse.models.TextStyle>,
+        context: AndroidRenderContext
+    ) {
+        if (start >= end || styles.isEmpty()) return
+        
+        var typeface = android.graphics.Typeface.DEFAULT
+        var isBold = false
+        var isItalic = false
+        var textColor: Int? = null
+        var backgroundColor: Int? = null
+        val spans = mutableListOf<Any>()
+        
+        // 应用所有样式
+        styles.forEach { style ->
+            when (style) {
+                is com.imparse.models.TextStyle.Bold -> isBold = true
+                is com.imparse.models.TextStyle.Italic -> isItalic = true
+                is com.imparse.models.TextStyle.Underline -> 
+                    spans.add(android.text.style.UnderlineSpan())
+                is com.imparse.models.TextStyle.Strikethrough -> 
+                    spans.add(android.text.style.StrikethroughSpan())
+                is com.imparse.models.TextStyle.Color -> {
+                    try {
+                        textColor = android.graphics.Color.parseColor(style.color)
+                    } catch (e: Exception) {
+                        android.util.Log.w("CustomTableLayout", "Invalid color: ${style.color}")
+                    }
+                }
+                is com.imparse.models.TextStyle.BackgroundColor -> {
+                    try {
+                        backgroundColor = android.graphics.Color.parseColor(style.color)
+                    } catch (e: Exception) {
+                        android.util.Log.w("CustomTableLayout", "Invalid background color: ${style.color}")
+                    }
+                }
+                is com.imparse.models.TextStyle.FontSize -> 
+                    spans.add(android.text.style.RelativeSizeSpan(style.scale))
+                is com.imparse.models.TextStyle.FontFamily -> 
+                    typeface = android.graphics.Typeface.create(style.family, android.graphics.Typeface.NORMAL)
+                is com.imparse.models.TextStyle.Superscript -> 
+                    spans.add(android.text.style.SuperscriptSpan())
+                is com.imparse.models.TextStyle.Subscript -> 
+                    spans.add(android.text.style.SubscriptSpan())
+                is com.imparse.models.TextStyle.Code -> {
+                    typeface = android.graphics.Typeface.MONOSPACE
+                    textColor = context.theme.codeTextColor
+                    backgroundColor = context.theme.codeBackgroundColor
+                }
+            }
+        }
+        
+        // 应用字体样式
+        if (isBold && isItalic) {
+            typeface = android.graphics.Typeface.create(typeface, android.graphics.Typeface.BOLD_ITALIC)
+        } else if (isBold) {
+            typeface = android.graphics.Typeface.create(typeface, android.graphics.Typeface.BOLD)
+        } else if (isItalic) {
+            typeface = android.graphics.Typeface.create(typeface, android.graphics.Typeface.ITALIC)
+        }
+        
+        // 设置spans
+        if (typeface != android.graphics.Typeface.DEFAULT) {
+            builder.setSpan(
+                android.text.style.StyleSpan(typeface.style),
+                start, end,
+                android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        
+        textColor?.let {
+            builder.setSpan(
+                android.text.style.ForegroundColorSpan(it),
+                start, end,
+                android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        
+        backgroundColor?.let {
+            builder.setSpan(
+                android.text.style.BackgroundColorSpan(it),
+                start, end,
+                android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        
+        spans.forEach {
+            builder.setSpan(
+                it,
+                start, end,
+                android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
         }
     }
     

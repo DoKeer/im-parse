@@ -17,6 +17,8 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.core.graphics.scale
 import com.imparse.models.MathNode
+import com.imparse.models.InlineMathNode
+import com.imparse.models.MathBlockNode
 import java.lang.ref.WeakReference
 import androidx.core.graphics.withSave
 
