@@ -109,7 +109,7 @@ public class UIKitFrameAsyncCalculator {
             spacing: context.theme.paragraphSpacing
         )
         
-        let totalWidth = innerLayout.frame.width
+        let totalWidth = innerLayout.frame.width + context.theme.contentPadding * 2
         let totalHeight = innerLayout.frame.height + context.theme.contentPadding * 2
         
         return NodeLayout(
