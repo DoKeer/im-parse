@@ -776,7 +776,7 @@ class CustomTableLayout(
             }
             
             // V2: Emoji
-            is com.imparse.models.EmojiNode -> builder.append(node.emoji)
+            is com.imparse.models.EmojiNode -> builder.append(node.content)
             
             // V2: Mention
             is com.imparse.models.MentionNode -> {

@@ -28,6 +28,7 @@ data class AndroidRenderContext(
     val onMathTap: ((MathNode) -> Unit)? = null,
     val onMermaidTap: ((MermaidNode) -> Unit)? = null,
     val imageLoader: ImageLoader? = null,
+    val inlineImageLoaderDelegate: InlineImageLoaderDelegate? = null,
     val formulaSizeCacheDelegate: FormulaSizeCacheDelegate? = null,
     val toolbarActionDelegate: ToolbarActionDelegate? = null,
 ) {
@@ -36,6 +37,27 @@ data class AndroidRenderContext(
      */
     interface ImageLoader {
         fun loadImage(url: String, imageView: android.widget.ImageView, callback: (Boolean) -> Unit)
+    }
+    
+    /**
+     * 行内图片加载代理
+     * 用于加载 Emoji 和 Mention 状态图片
+     */
+    interface InlineImageLoaderDelegate {
+        /**
+         * 加载 Emoji 图片
+         * @param content Emoji 内容，如 "[加油]"
+         * @param size 图片大小（像素）
+         * @param completion 完成回调，返回 Bitmap 或 null
+         */
+        fun loadEmojiImage(content: String, size: Float, completion: (Bitmap?) -> Unit)
+        
+        /**
+         * 加载 Mention 状态图片
+         * @param mentionNode Mention 节点
+         * @param completion 完成回调，返回 Bitmap 或 null
+         */
+        fun loadMentionStatusImage(mentionNode: MentionNode, completion: (Bitmap?) -> Unit)
     }
     
     /**

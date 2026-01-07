@@ -1028,22 +1028,72 @@ class AndroidViewRenderer {
     /**
      * 渲染 Emoji
      */
+    /**
+     * 渲染 Emoji
+     */
     private fun renderEmoji(node: EmojiNode, context: AndroidRenderContext): View {
-        val textView = TextView(context.context)
-        textView.text = node.emoji
-        textView.textSize = context.theme.fontSize
-        return textView
+        val container = FrameLayout(context.context)
+        
+        // 如果有delegate，尝试加载图片
+        val delegate = context.inlineImageLoaderDelegate
+        if (delegate != null) {
+            val fontSizePx = TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_SP,
+                context.theme.fontSize,
+                context.context.resources.displayMetrics
+            )
+            
+            // 使用emoji的content字段（如"[加油]"）
+            val emojiContent = node.content
+            
+            delegate.loadEmojiImage(emojiContent, fontSizePx) { bitmap ->
+                // completion 回调已经在主线程
+                if (bitmap != null) {
+                    // 加载成功，显示图片
+                    container.removeAllViews()
+                    val imageView = ImageView(context.context)
+                    imageView.setImageBitmap(bitmap)
+                    imageView.scaleType = ImageView.ScaleType.FIT_CENTER
+                    imageView.adjustViewBounds = true
+                    val params = FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    )
+                    container.addView(imageView, params)
+                } else {
+                    // 加载失败，保持文本显示（已经显示为占位符）
+                }
+            }
+            
+            // 先显示文本作为占位符
+            val textView = TextView(context.context)
+            textView.text = node.content
+            textView.textSize = context.theme.fontSize
+            container.addView(textView)
+        } else {
+            // 没有delegate，直接显示文本
+            val textView = TextView(context.context)
+            textView.text = node.content
+            textView.textSize = context.theme.fontSize
+            container.addView(textView)
+        }
+        
+        return container
     }
     
     /**
      * 渲染 Mention
      */
     private fun renderMention(node: MentionNode, context: AndroidRenderContext): View {
+        val container = LinearLayout(context.context)
+        container.orientation = LinearLayout.HORIZONTAL
+        container.gravity = android.view.Gravity.CENTER_VERTICAL
+        
+        // 文本视图
         val textView = TextView(context.context)
         textView.text = "@${node.name}"
         textView.textSize = context.theme.fontSize
         textView.setTextColor(context.theme.mentionTextColor)
-        textView.setBackgroundColor(context.theme.mentionBackground)
         textView.setPadding(
             TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, 4f,
@@ -1065,7 +1115,47 @@ class AndroidViewRenderer {
         textView.setOnClickListener {
             context.onMentionTap?.invoke(node)
         }
-        return textView
+        container.addView(textView)
+        
+        // 如果有delegate，尝试加载状态图片
+        val delegate = context.inlineImageLoaderDelegate
+        if (delegate != null) {
+            val fontSizePx = TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_SP,
+                context.theme.fontSize,
+                context.context.resources.displayMetrics
+            )
+            
+            delegate.loadMentionStatusImage(node) { bitmap ->
+                // completion 回调已经在主线程
+                if (bitmap != null) {
+                    // 加载成功，显示状态图片
+                    // 检查是否已经有状态图片视图
+                    if (container.childCount > 1) {
+                        container.removeViewAt(1)
+                    }
+                    
+                    val imageView = ImageView(context.context)
+                    imageView.setImageBitmap(bitmap)
+                    imageView.scaleType = ImageView.ScaleType.FIT_CENTER
+                    imageView.adjustViewBounds = true
+                    
+                    val imageSize = (fontSizePx * 0.8f).toInt() // 状态图片稍小一些
+                    val params = LinearLayout.LayoutParams(imageSize, imageSize)
+                    params.setMargins(
+                        TypedValue.applyDimension(
+                            TypedValue.COMPLEX_UNIT_DIP, 4f,
+                            context.context.resources.displayMetrics
+                        ).toInt(),
+                        0, 0, 0
+                    )
+                    container.addView(imageView, params)
+                }
+                // 如果加载失败，不显示状态图片（保持原样）
+            }
+        }
+        
+        return container
     }
     
     /**
@@ -1146,7 +1236,7 @@ class AndroidViewRenderer {
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                 )
             }
-            is EmojiNode -> builder.append(node.emoji)
+            is EmojiNode -> builder.append(node.content)
             is MentionNode -> {
                 val start = builder.length
                 builder.append("@${node.name}")

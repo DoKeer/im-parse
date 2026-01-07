@@ -343,7 +343,8 @@ data class CodeBlockNode(
  */
 data class LinkNode(
     val url: String,
-    val children: List<ASTNode>
+    val children: List<ASTNode>,
+    val title: String? = null
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
@@ -352,6 +353,7 @@ data class LinkNode(
         val childrenArray = JSONArray()
         children.forEach { childrenArray.put(it.toJSON()) }
         json.put("children", childrenArray)
+        title?.let { json.put("title", it) }
         return json
     }
     
@@ -363,7 +365,10 @@ data class LinkNode(
             for (i in 0 until childrenArray.length()) {
                 children.add(ASTNodeWrapper.fromJSON(childrenArray.getJSONObject(i)))
             }
-            return LinkNode(url, children)
+            val title = if (json.has("title") && !json.isNull("title")) {
+                json.getString("title")
+            } else null
+            return LinkNode(url, children, title)
         }
     }
 }
@@ -424,9 +429,9 @@ data class ListNode(
     companion object {
         fun fromJSON(json: JSONObject): ListNode {
             val listTypeStr = json.getString("listType")
-            val listType = when (listTypeStr) {
-                "Bullet" -> ListType.Bullet
-                "Ordered" -> ListType.Ordered
+            val listType = when (listTypeStr.lowercase()) {
+                "bullet" -> ListType.Bullet
+                "ordered" -> ListType.Ordered
                 else -> ListType.Bullet
             }
             val itemsArray = json.getJSONArray("items")
@@ -704,24 +709,20 @@ data class InlineHtmlNode(
  * Emoji 节点
  */
 data class EmojiNode(
-    val emoji: String,
-    val shortcode: String? = null
+    val content: String
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
         json.put("type", "Emoji")
-        json.put("emoji", emoji)
-        shortcode?.let { json.put("shortcode", it) }
+        json.put("content", content)
         return json
     }
     
     companion object {
         fun fromJSON(json: JSONObject): EmojiNode {
-            val emoji = json.getString("emoji")
-            val shortcode = if (json.has("shortcode") && !json.isNull("shortcode")) {
-                json.getString("shortcode")
-            } else null
-            return EmojiNode(emoji, shortcode)
+            // Rust 格式: {"type": "emoji", "content": "..."}
+            val content = json.getString("content")
+            return EmojiNode(content)
         }
     }
 }

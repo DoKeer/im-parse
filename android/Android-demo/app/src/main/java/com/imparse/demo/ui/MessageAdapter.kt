@@ -25,7 +25,8 @@ class MessageAdapter(
     private val context: Context
 ) : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>(),
     com.imparse.renderers.AndroidRenderContext.FormulaSizeCacheDelegate,
-    com.imparse.renderers.AndroidRenderContext.ToolbarActionDelegate {
+    com.imparse.renderers.AndroidRenderContext.ToolbarActionDelegate,
+    com.imparse.renderers.AndroidRenderContext.InlineImageLoaderDelegate {
     
     /**
      * 更新消息列表
@@ -64,6 +65,7 @@ class MessageAdapter(
                     callback(true)
                 }
             },
+            inlineImageLoaderDelegate = this,
             formulaSizeCacheDelegate = this,
             toolbarActionDelegate = this,
         )
@@ -181,6 +183,108 @@ class MessageAdapter(
     override fun showFullscreen(content: String, type: String, image: Bitmap?) {
         // TODO: 实现全屏显示功能
         Toast.makeText(context, "全屏显示功能待实现", Toast.LENGTH_SHORT).show()
+    }
+    
+    // MARK: - InlineImageLoaderDelegate 实现
+    
+    override fun loadEmojiImage(content: String, size: Float, completion: (Bitmap?) -> Unit) {
+        // Emoji content 格式应该是类似 "[加油]" 这样的
+        // 对应的文件名是 "[加油].png"
+        val imageName = "$content.png"
+        
+        // 在后台线程加载图片，避免阻塞主线程
+        Thread {
+            var bitmap: Bitmap? = null
+            
+            try {
+                // 首先尝试从 assets 目录加载
+                val inputStream = context.assets.open("Emojis/$imageName")
+                bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                inputStream.close()
+            } catch (e: Exception) {
+                // 如果 assets 中没有，尝试从 drawable 加载
+                try {
+                    val resourceId = context.resources.getIdentifier(
+                        imageName.replace("[", "").replace("]", "").replace(".png", ""),
+                        "drawable",
+                        context.packageName
+                    )
+                    if (resourceId != 0) {
+                        bitmap = android.graphics.BitmapFactory.decodeResource(
+                            context.resources,
+                            resourceId
+                        )
+                    }
+                } catch (e2: Exception) {
+                    android.util.Log.d("MessageAdapter", "Failed to load emoji image: $imageName", e2)
+                }
+            }
+            
+            // 如果加载成功，可能需要缩放图片到指定大小
+            if (bitmap != null && size > 0) {
+                val scaledBitmap = android.graphics.Bitmap.createScaledBitmap(
+                    bitmap,
+                    size.toInt(),
+                    size.toInt(),
+                    true
+                )
+                if (scaledBitmap != bitmap) {
+                    bitmap.recycle()
+                }
+                bitmap = scaledBitmap
+            }
+            
+            // 回到主线程调用 completion
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                completion(bitmap)
+            }
+        }.start()
+    }
+    
+    override fun loadMentionStatusImage(mentionNode: com.imparse.models.MentionNode, completion: (Bitmap?) -> Unit) {
+        // 根据 mention 节点的 id 或 name 判断已读/未读状态
+        // 这里示例：如果 id 是 "all"，显示已读图片；否则显示未读图片
+        val imageName: String
+        if (mentionNode.id == "all") {
+            imageName = "mention_read.png" // 已读图片
+        } else {
+            imageName = "mention_unread.png" // 未读图片
+        }
+        
+        // 在后台线程加载图片
+        Thread {
+            var bitmap: Bitmap? = null
+            
+            try {
+                // 尝试从 assets 目录加载
+                val inputStream = context.assets.open(imageName)
+                bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                inputStream.close()
+            } catch (e: Exception) {
+                // 如果 assets 中没有，尝试从 drawable 加载
+                try {
+                    val resourceId = context.resources.getIdentifier(
+                        imageName.replace(".png", ""),
+                        "drawable",
+                        context.packageName
+                    )
+                    if (resourceId != 0) {
+                        bitmap = android.graphics.BitmapFactory.decodeResource(
+                            context.resources,
+                            resourceId
+                        )
+                    }
+                } catch (e2: Exception) {
+                    android.util.Log.d("MessageAdapter", "Failed to load mention status image: $imageName", e2)
+                }
+            }
+            
+            // 回到主线程调用 completion
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                // 如果找不到，返回 null（不显示状态图片）
+                completion(bitmap)
+            }
+        }.start()
     }
 }
 
