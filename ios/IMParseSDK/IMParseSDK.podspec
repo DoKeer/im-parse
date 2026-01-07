@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'IMParseSDK'
-  s.version          = '1.0.1'
+  s.version          = '1.1.0'
   s.summary          = 'iOS SDK for parsing and rendering Markdown and Delta format messages'
   s.description      = <<-DESC
 IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS SDK。

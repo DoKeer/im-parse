@@ -68,7 +68,7 @@ internal class EmojiTextAttachment: NSTextAttachment {
         self.bounds = CGRect(origin: .zero, size: attachmentSize)
         
         // 如果有代理，尝试同步获取图片（在调用线程执行，但使用信号量等待异步结果）
-        if let inlineImageLoaderDelegate = context.inlineImageLoaderDelegate {
+        if let inlineImageLoader = context.inlineImageLoader {
             // 计算字体尺寸：font.capHeight + max(font.descender, font.ascender) * 2
             let fontSize = self.calculateFontSize()
             
@@ -77,7 +77,7 @@ internal class EmojiTextAttachment: NSTextAttachment {
             var loadedImage: UIImage?
             
             // 在调用线程执行代理方法，传递目标尺寸
-            inlineImageLoaderDelegate.loadEmojiImage(content: emojiNode.content, size: fontSize) { image in
+            inlineImageLoader.loadEmojiImage(content: emojiNode.content, size: fontSize) { image in
                 loadedImage = image
                 semaphore.signal()
             }
@@ -152,7 +152,7 @@ internal class EmojiTextAttachment: NSTextAttachment {
     
     /// 异步加载图片（在后台线程）
     private func loadImageAsync() {
-        guard !isLoading, let inlineImageLoaderDelegate = context.inlineImageLoaderDelegate else {
+        guard !isLoading, let inlineImageLoader = context.inlineImageLoader else {
             return
         }
         
@@ -168,7 +168,7 @@ internal class EmojiTextAttachment: NSTextAttachment {
             // 计算字体尺寸
             let fontSize = self.calculateFontSize()
             
-            inlineImageLoaderDelegate.loadEmojiImage(content: self.emojiNode.content, size: fontSize) { image in
+            inlineImageLoader.loadEmojiImage(content: self.emojiNode.content, size: fontSize) { image in
                 loadedImage = image
                 semaphore.signal()
             }
@@ -221,11 +221,11 @@ internal class MentionStatusImageAttachment: NSTextAttachment {
         self.bounds = CGRect(origin: .zero, size: attachmentSize)
         
         // 如果有代理，尝试同步获取图片
-        if let inlineImageLoaderDelegate = context.inlineImageLoaderDelegate {
+        if let inlineImageLoader = context.inlineImageLoader {
             let semaphore = DispatchSemaphore(value: 0)
             var loadedImage: UIImage?
             
-            inlineImageLoaderDelegate.loadMentionStatusImage(mentionNode: mentionNode) { image in
+            inlineImageLoader.loadMentionStatusImage(mentionNode: mentionNode) { image in
                 loadedImage = image
                 semaphore.signal()
             }
@@ -260,7 +260,7 @@ internal class MentionStatusImageAttachment: NSTextAttachment {
     
     /// 异步加载图片
     private func loadImageAsync() {
-        guard !isLoading, let inlineImageLoaderDelegate = context.inlineImageLoaderDelegate else {
+        guard !isLoading, let inlineImageLoader = context.inlineImageLoader else {
             return
         }
         
@@ -272,7 +272,7 @@ internal class MentionStatusImageAttachment: NSTextAttachment {
             let semaphore = DispatchSemaphore(value: 0)
             var loadedImage: UIImage?
             
-            inlineImageLoaderDelegate.loadMentionStatusImage(mentionNode: self.mentionNode) { image in
+            inlineImageLoader.loadMentionStatusImage(mentionNode: self.mentionNode) { image in
                 loadedImage = image
                 semaphore.signal()
             }

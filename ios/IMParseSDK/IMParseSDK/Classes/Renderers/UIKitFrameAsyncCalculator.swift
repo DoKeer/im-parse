@@ -109,7 +109,7 @@ public class UIKitFrameAsyncCalculator {
             spacing: context.theme.paragraphSpacing
         )
         
-        let totalWidth = effectiveWidth
+        let totalWidth = innerLayout.frame.width
         let totalHeight = innerLayout.frame.height + context.theme.contentPadding * 2
         
         return NodeLayout(
@@ -131,8 +131,8 @@ public class UIKitFrameAsyncCalculator {
         var currentY: CGFloat = 0
         var childLayouts: [NodeLayout] = []
         let effectiveWidth = min(width, context.theme.maxContentWidth)
-        var finalWidth = effectiveWidth
-        
+        var finalWidth:CGFloat = 0
+
         for child in children {
             let childLayout = calculateNodeLayout(child, context: context, origin: CGPoint(x: 0, y: currentY), width: effectiveWidth)
             childLayouts.append(childLayout)
@@ -410,7 +410,7 @@ public class UIKitFrameAsyncCalculator {
     
     /// 追加 Emoji 节点
     private static func appendEmojiNode(_ node: EmojiNode, to attrString: NSMutableAttributedString, context: UIKitRenderContext) {
-        if context.inlineImageLoaderDelegate != nil {
+        if context.inlineImageLoader != nil {
             let emojiAttachment = EmojiTextAttachment(emojiNode: node, context: context)
             attrString.append(NSAttributedString(attachment: emojiAttachment))
         } else {
@@ -466,7 +466,7 @@ public class UIKitFrameAsyncCalculator {
     
     /// 同步加载 Mention 状态图片（带超时）
     private static func loadMentionStatusImageSync(_ node: MentionNode, context: UIKitRenderContext) -> UIImage? {
-        guard let delegate = context.inlineImageLoaderDelegate else { return nil }
+        guard let delegate = context.inlineImageLoader else { return nil }
         
         let semaphore = DispatchSemaphore(value: 0)
         var statusImage: UIImage?

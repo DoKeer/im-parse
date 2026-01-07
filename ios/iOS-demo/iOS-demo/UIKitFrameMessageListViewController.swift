@@ -71,7 +71,7 @@ class UIKitFrameMessageListViewController: UIViewController {
             },
             imageLoaderDelegate: self,
             formulaSizeCacheDelegate: self,
-            inlineImageLoaderDelegate: self,
+            inlineImageLoader: self,
             toolbarActionDelegate: self
         )
     }
@@ -465,9 +465,9 @@ class MessageTableViewCell: UITableViewCell {
     }
 }
 
-// MARK: - UIKitInlineImageLoaderDelegate
+// MARK: - UIKitInlineImageLoader
 
-extension UIKitFrameMessageListViewController: UIKitInlineImageLoaderDelegate {
+extension UIKitFrameMessageListViewController: UIKitInlineImageLoader {
     func loadEmojiImage(content: String, size: CGFloat, completion: @escaping (UIImage?) -> Void) {
         // Emoji content 格式应该是类似 "[加油]" 这样的
         // 对应的文件名是 "[加油].png"

@@ -43,7 +43,7 @@ public protocol UIKitFormulaSizeCacheDelegate: AnyObject {
 }
 
 /// 行内图片加载代理协议（用于 Emoji 和 Mention 状态图片）
-public protocol UIKitInlineImageLoaderDelegate: AnyObject {
+public protocol UIKitInlineImageLoader: AnyObject {
     /// 加载 Emoji 图片
     /// - Parameters:
     ///   - content: Emoji 内容（如 "[加油]"）
@@ -123,7 +123,7 @@ public struct UIKitRenderContext {
     public weak var formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate!
     
     // 行内图片加载代理（可选，用于 Emoji 和 Mention 状态图片）
-    public weak var inlineImageLoaderDelegate: UIKitInlineImageLoaderDelegate?
+    public var inlineImageLoader: UIKitInlineImageLoader?
     
     // 工具栏操作代理（可选，用于数学公式、Mermaid、表格的工具栏按钮）
     public weak var toolbarActionDelegate: UIKitToolbarActionDelegate?
@@ -151,7 +151,7 @@ public struct UIKitRenderContext {
                 currentTextColor: UIColor? = nil,
                 imageLoaderDelegate: UIKitImageLoaderDelegate? = nil,
                 formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil,
-                inlineImageLoaderDelegate: UIKitInlineImageLoaderDelegate? = nil,
+                inlineImageLoader: UIKitInlineImageLoader? = nil,
                 toolbarActionDelegate: UIKitToolbarActionDelegate? = nil,
                 textLocalizationDelegate: UIKitTextLocalizationDelegate? = nil,
                 onNodeLayoutChanged: ((any Codable) -> Void)? = nil,
@@ -168,7 +168,7 @@ public struct UIKitRenderContext {
         self.currentFont = currentFont
         self.currentTextColor = currentTextColor
         self.imageLoaderDelegate = imageLoaderDelegate
-        self.inlineImageLoaderDelegate = inlineImageLoaderDelegate
+        self.inlineImageLoader = inlineImageLoader
         self.toolbarActionDelegate = toolbarActionDelegate
         self.textLocalizationDelegate = textLocalizationDelegate
         self.onNodeLayoutChanged = onNodeLayoutChanged

@@ -1385,7 +1385,7 @@ public class UIKitFrameRender {
     static func renderEmoji(_ node: EmojiNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
         let containerView = createEmptyView(size: frame.size)
         
-        if let inlineImageLoaderDelegate = context.inlineImageLoaderDelegate {
+        if let inlineImageLoader = context.inlineImageLoader {
             let imageView = UIImageView()
             imageView.contentMode = .scaleAspectFit
             imageView.frame = containerView.bounds
@@ -1406,7 +1406,7 @@ public class UIKitFrameRender {
             let maxDescenderAscender = max(descender, ascender)
             let fontSize = font.capHeight + maxDescenderAscender * 2
             
-            inlineImageLoaderDelegate.loadEmojiImage(content: node.content, size: fontSize) { image in
+            inlineImageLoader.loadEmojiImage(content: node.content, size: fontSize) { image in
                 DispatchQueue.main.async {
                     if let image = image {
                         imageView.image = image
