@@ -240,18 +240,23 @@ impl MarkdownParser {
     /// - 累积文本和样式
     /// - 识别数学公式（使用优化的 Span-based 处理）
     /// - 构造 TextRun 节点
+    /// - 处理链接节点（收集链接内的内容）
     fn build_inline_nodes(&self, events: &[Event]) -> Vec<ASTNode> {
         let mut nodes = Vec::new();
         let mut text_buffer = Vec::new();
         let mut current_styles = Vec::new();
+        let mut i = 0;
         
-        for event in events {
+        while i < events.len() {
+            let event = &events[i];
+            
             match event {
                 Event::Text(text) => {
                     text_buffer.push(TextFragment {
                         content: text.to_string(),
                         styles: current_styles.clone(),
                     });
+                    i += 1;
                 }
                 
                 Event::Code(code) => {
@@ -262,6 +267,7 @@ impl MarkdownParser {
                         code.to_string(),
                         vec![TextStyle::Code],
                     )));
+                    i += 1;
                 }
                 
                 Event::SoftBreak => {
@@ -270,12 +276,14 @@ impl MarkdownParser {
                         content: "\n".to_string(),
                         styles: current_styles.clone(),
                     });
+                    i += 1;
                 }
                 
                 Event::HardBreak => {
                     // 硬换行需要先flush文本，然后添加换行节点
                     self.flush_text_buffer(&mut text_buffer, &mut nodes);
                     nodes.push(ASTNode::LineBreak(LineBreakNode { hard: true }));
+                    i += 1;
                 }
                 
                 Event::Html(html) => {
@@ -283,54 +291,109 @@ impl MarkdownParser {
                     nodes.push(ASTNode::InlineHtml(HtmlNode {
                         content: html.to_string(),
                     }));
+                    i += 1;
                 }
                 
                 Event::Start(Tag::Strong) => {
                     current_styles.push(TextStyle::Bold);
+                    i += 1;
                 }
                 
                 Event::End(TagEnd::Strong) => {
                     if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, TextStyle::Bold)) {
                         current_styles.remove(pos);
                     }
+                    i += 1;
                 }
                 
                 Event::Start(Tag::Emphasis) => {
                     current_styles.push(TextStyle::Italic);
+                    i += 1;
                 }
                 
                 Event::End(TagEnd::Emphasis) => {
                     if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, TextStyle::Italic)) {
                         current_styles.remove(pos);
                     }
+                    i += 1;
                 }
                 
                 Event::Start(Tag::Link { dest_url, title, .. }) => {
                     // Flush文本，准备构造链接节点
                     self.flush_text_buffer(&mut text_buffer, &mut nodes);
-                    // 标记进入链接上下文（在实际实现中需要更复杂的处理）
-                    current_styles.push(TextStyle::Underline); // 链接默认下划线
+                    
+                    // 收集链接内的所有事件（直到遇到 End(TagEnd::Link)）
+                    let url = dest_url.to_string();
+                    let link_title = if title.is_empty() { None } else { Some(title.to_string()) };
+                    
+                    let mut link_events = Vec::new();
+                    let mut link_depth = 1;
+                    i += 1; // 跳过 Start(Tag::Link)
+                    
+                    while i < events.len() && link_depth > 0 {
+                        let ev = &events[i];
+                        match ev {
+                            Event::Start(Tag::Link { .. }) => {
+                                // 检测到嵌套链接 - Markdown 规范禁止，但我们记录警告并处理
+                                // 在实际渲染时，嵌套链接应该被展平或拒绝
+                                link_depth += 1;
+                                link_events.push(ev.clone());
+                                i += 1;
+                            }
+                            Event::End(TagEnd::Link) => {
+                                link_depth -= 1;
+                                if link_depth > 0 {
+                                    link_events.push(ev.clone());
+                                }
+                                i += 1;
+                            }
+                            _ => {
+                                link_events.push(ev.clone());
+                                i += 1;
+                            }
+                        }
+                    }
+                    
+                    // 递归处理链接内的事件，构建链接的子节点
+                    let mut link_children = self.build_inline_nodes(&link_events);
+                    
+                    // 语义验证：移除嵌套的 Link 节点（Markdown 规范禁止）
+                    // 注意：这会在 round-trip 时丢失信息，但保证了 AST 的语义正确性
+                    link_children = self.validate_and_clean_link_children(link_children);
+                    
+                    // 检测链接类型
+                    let link_kind = self.detect_link_kind(&link_children, &url);
+                    
+                    // 创建链接节点
+                    nodes.push(ASTNode::Link(LinkNode {
+                        url,
+                        children: link_children,
+                        title: link_title,
+                        kind: link_kind,
+                    }));
                 }
                 
                 Event::End(TagEnd::Link) => {
-                    // 移除链接样式
-                    if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, TextStyle::Underline)) {
-                        current_styles.remove(pos);
-                    }
+                    // 这不应该出现在这里（应该在 Start(Tag::Link) 中处理）
+                    // 但为了安全，我们跳过它
+                    i += 1;
                 }
                 
                 Event::Start(Tag::Strikethrough) => {
                     current_styles.push(TextStyle::Strikethrough);
+                    i += 1;
                 }
                 
                 Event::End(TagEnd::Strikethrough) => {
                     if let Some(pos) = current_styles.iter().rposition(|s| matches!(s, TextStyle::Strikethrough)) {
                         current_styles.remove(pos);
                     }
+                    i += 1;
                 }
                 
                 _ => {
                     // 其他事件在行内上下文中忽略
+                    i += 1;
                 }
             }
         }
@@ -780,6 +843,73 @@ impl MarkdownParser {
             HeadingLevel::H5 => 5,
             HeadingLevel::H6 => 6,
         }
+    }
+    
+    /// 验证并清理链接的子节点
+    /// 
+    /// 语义约束：
+    /// - 移除嵌套的 Link 节点（Markdown 规范禁止）
+    /// - 保留其他合法的行内节点（Text, InlineMath, Image 等）
+    /// 
+    /// 注意：移除嵌套链接会在 round-trip 时丢失信息，
+    /// 但保证了 AST 的语义正确性和渲染一致性。
+    fn validate_and_clean_link_children(&self, children: Vec<ASTNode>) -> Vec<ASTNode> {
+        let mut cleaned = Vec::new();
+        
+        for child in children {
+            match child {
+                ASTNode::Link(nested_link) => {
+                    // 嵌套链接：展平为文本内容
+                    // 这符合 Markdown 规范：链接内不能包含链接
+                    // 但为了不丢失信息，我们将嵌套链接的文本内容保留
+                    #[cfg(debug_assertions)]
+                    eprintln!("Warning: Nested link detected and flattened. Outer URL: {}, Inner URL: {}", 
+                             nested_link.url, nested_link.url);
+                    
+                    // 将嵌套链接的 children 展平到当前链接中
+                    // 注意：这会丢失嵌套链接的 URL，但保留了文本内容
+                    cleaned.extend(nested_link.children);
+                }
+                _ => {
+                    // 其他节点（Text, InlineMath, Image 等）都是合法的
+                    cleaned.push(child);
+                }
+            }
+        }
+        
+        cleaned
+    }
+    
+    /// 检测链接类型
+    /// 
+    /// 根据链接的内容和 URL 推断链接类型：
+    /// - Autolink: children 为空或只包含与 URL 相同的文本
+    /// - Reference: 需要通过其他方式检测（pulldown_cmark 可能不直接提供）
+    /// - Explicit: 默认类型
+    fn detect_link_kind(&self, children: &[ASTNode], url: &str) -> LinkKind {
+        // 检查是否是 autolink（自动链接）
+        // Autolink 的特征：children 为空或只包含与 URL 相同的纯文本
+        if children.is_empty() {
+            // 空 children 可能是 autolink 或 reference link
+            // 由于 pulldown_cmark 可能已经解析了 autolink，我们保守地假设是 Explicit
+            // 真正的 autolink 检测需要在 Event 流层面进行
+            return LinkKind::Explicit;
+        }
+        
+        // 如果只有一个 Text 节点，且内容与 URL 相同，可能是 autolink
+        if children.len() == 1 {
+            if let ASTNode::Text(text_run) = &children[0] {
+                if text_run.styles.is_empty() && text_run.content == url {
+                    // 这很可能是 autolink: <https://example.com>
+                    return LinkKind::Autolink;
+                }
+            }
+        }
+        
+        // 默认是显式链接
+        // 注意：reference link 的检测需要在解析阶段进行，
+        // 因为 pulldown_cmark 可能已经将其解析为普通链接
+        LinkKind::Explicit
     }
     
     /// 处理累积的文本缓冲区（V2 - 使用扁平化 TextRun）

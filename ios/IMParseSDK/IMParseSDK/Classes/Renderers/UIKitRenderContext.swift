@@ -105,9 +105,7 @@ public struct UIKitRenderContext {
     public var stringBuilder: UIKitAttributedStringBuilder = UIKitAttributedStringBuilder()
     public var theme: UIKitTheme
     public var width: CGFloat
-    public var onLinkTap: ((URL) -> Void)?
     public var onImageTap: ((ImageNode) -> Void)?
-    public var onMentionTap: ((MentionNode) -> Void)?
     public var onCodeBlockTap: ((CodeBlockNode) -> Void)?
     public var onMathTap: ((MathNode) -> Void)?
     public var onMermaidTap: ((MermaidNode) -> Void)?
@@ -131,6 +129,11 @@ public struct UIKitRenderContext {
     // 文案自定义代理（可选，用于自定义表格标题、工具栏按钮文案等）
     public weak var textLocalizationDelegate: UIKitTextLocalizationDelegate?
     
+    // UITextView 代理（可选，用于处理链接和 mention 点击）
+    // 如果设置了此代理，将使用此代理处理 UITextView 的交互事件
+    // 否则不设置 delegate，不处理交互
+    public weak var textViewDelegate: UITextViewDelegate?
+    
     // 布局高度变化回调（用于通知 cell 高度变化）
     // 回调参数：新的 NodeLayout（包含更新后的节点布局信息）
     public var onNodeLayoutChanged: ((any Codable) -> Void)?
@@ -141,9 +144,7 @@ public struct UIKitRenderContext {
     
     public init(theme: UIKitTheme,
                 width: CGFloat,
-                onLinkTap: ((URL) -> Void)? = nil,
                 onImageTap: ((ImageNode) -> Void)? = nil,
-                onMentionTap: ((MentionNode) -> Void)? = nil,
                 onCodeBlockTap: ((CodeBlockNode) -> Void)? = nil,
                 onMathTap: ((MathNode) -> Void)? = nil,
                 onMermaidTap: ((MermaidNode) -> Void)? = nil,
@@ -154,14 +155,13 @@ public struct UIKitRenderContext {
                 inlineImageLoader: UIKitInlineImageLoader? = nil,
                 toolbarActionDelegate: UIKitToolbarActionDelegate? = nil,
                 textLocalizationDelegate: UIKitTextLocalizationDelegate? = nil,
+                textViewDelegate: UITextViewDelegate? = nil,
                 onNodeLayoutChanged: ((any Codable) -> Void)? = nil,
                 onRenderTaskCreated: ((Task<Void, Never>) -> Void)? = nil) {
         self.theme = theme
         self.width = width
         self.formulaSizeCacheDelegate = formulaSizeCacheDelegate
-        self.onLinkTap = onLinkTap
         self.onImageTap = onImageTap
-        self.onMentionTap = onMentionTap
         self.onCodeBlockTap = onCodeBlockTap
         self.onMathTap = onMathTap
         self.onMermaidTap = onMermaidTap
@@ -171,6 +171,7 @@ public struct UIKitRenderContext {
         self.inlineImageLoader = inlineImageLoader
         self.toolbarActionDelegate = toolbarActionDelegate
         self.textLocalizationDelegate = textLocalizationDelegate
+        self.textViewDelegate = textViewDelegate
         self.onNodeLayoutChanged = onNodeLayoutChanged
         self.onRenderTaskCreated = onRenderTaskCreated
     }

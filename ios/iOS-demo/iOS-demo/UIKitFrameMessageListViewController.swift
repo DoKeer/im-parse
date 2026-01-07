@@ -14,6 +14,13 @@ class UIKitFrameMessageListViewController: UIViewController {
     private var messages: [Message] = []
     private var tableView: UITableView!
     private var layouting:Bool = false
+    private let linkHandler = LinkHandler { url in
+        print("Link 被点击: \(url)")
+
+    } onMentionTap: { mentionNode in
+        print("Mention 被点击: @\(mentionNode.name)")
+    }
+
     // 使用 Kingfisher 的图片缓存来缓存数学公式和 Mermaid 图表的图片
     // 不再需要高度反馈系统，直接使用预计算的高度
     
@@ -44,18 +51,10 @@ class UIKitFrameMessageListViewController: UIViewController {
         sharedRenderContext = UIKitRenderContext(
             theme: theme,
             width: 0, // 宽度会在使用时更新
-            onLinkTap: { url in
-                // URL 打开浏览器
-                UIApplication.shared.open(url)
-            },
             onImageTap: { [weak self] imageNode in
                 // 图片弹出图片预览页面
                 guard let self = self else { return }
                 MessageTableViewCell.showImagePreview(imageNode: imageNode, from: self)
-            },
-            onMentionTap: { mentionNode in
-                // Mention 打印 log
-                print("Mention 被点击: @\(mentionNode.name)")
             },
             onCodeBlockTap: { codeBlockNode in
                 // 代码块点击：打印 log
@@ -72,7 +71,8 @@ class UIKitFrameMessageListViewController: UIViewController {
             imageLoaderDelegate: self,
             formulaSizeCacheDelegate: self,
             inlineImageLoader: self,
-            toolbarActionDelegate: self
+            toolbarActionDelegate: self,
+            textViewDelegate:linkHandler
         )
     }
     
@@ -352,24 +352,11 @@ class MessageTableViewCell: UITableViewCell {
         let longPressGesture = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
         containerView.addGestureRecognizer(longPressGesture)
         
-        // 使用全局共享的渲染上下文（动态部分已在调用处更新）
-        // 创建带有 Task 注册回调的上下文
-        var renderContext = context
-//        renderContext.onRenderTaskCreated = { [weak self] task in
-//            guard let self = self else { return }
-//            self.renderingTasks.insert(task)
-//            
-//            // Task 完成后自动从集合中移除
-//            Task { @MainActor [weak self] in
-//                _ = await task.result
-//                self?.renderingTasks.remove(task)
-//            }
-//        }
-        
+
         // 优先使用预计算的布局
         if let layout = message.layout {
             
-            let astView = layout.render(context: renderContext)
+            let astView = layout.render(context: context)
             // 使用 frame 布局，不使用 Auto Layout
             astView.frame = CGRect(origin: .zero, size: layout.frame.size)
             
@@ -489,6 +476,7 @@ extension UIKitFrameMessageListViewController: UIKitInlineImageLoader {
                 let loadedImage = UIImage(named: imageName, in: emojiBundle, compatibleWith: nil) {
             image = loadedImage
         }
+        
         return image
     }
     

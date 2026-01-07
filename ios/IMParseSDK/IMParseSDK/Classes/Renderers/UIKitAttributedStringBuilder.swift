@@ -61,7 +61,7 @@ public class UIKitAttributedStringBuilder {
                 result.addAttribute(.link, value: url, range: NSRange(location: 0, length: result.length))
             }
             // 添加链接下划线和颜色
-            result.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: 0, length: result.length))
+            result.addAttribute(.underlineStyle, value: NSUnderlineStyle(), range: NSRange(location: 0, length: result.length))
             result.addAttribute(.foregroundColor, value: context.theme.linkColor, range: NSRange(location: 0, length: result.length))
             
             return result
@@ -73,10 +73,16 @@ public class UIKitAttributedStringBuilder {
         // Mention
         case .mention(let mentionNode):
             let font = context.currentFont ?? context.theme.font
+            // 将 mention 包装成自定义 URL，避免在点击时访问 TextKit 组件
+            // URL 格式：mention://{id}#{name}，name 需要 URL 编码
+            let encodedName = mentionNode.name.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed) ?? mentionNode.name
+            let mentionURL = URL(string: "mention://\(mentionNode.id)#\(encodedName)")!
+            
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: context.theme.mentionTextColor,
-                .mentionNodeInfo: MentionNodeInfo(id: mentionNode.id, name: mentionNode.name)
+                .link: mentionURL,
+                .underlineStyle: NSUnderlineStyle()
             ]
             return NSAttributedString(string: "@\(mentionNode.name)", attributes: attributes)
             

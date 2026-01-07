@@ -250,6 +250,19 @@ impl ASTBuilder {
             url,
             children,
             title: None,
+            kind: LinkKind::Explicit, // 默认显式链接
+        }));
+    }
+    
+    /// 添加链接（带完整信息）
+    pub fn add_link_with_kind(&mut self, url: String, children: Vec<ASTNode>, title: Option<String>, kind: LinkKind) {
+        self.flush_text_buffer();
+        
+        self.current_paragraph_children.push(ASTNode::Link(LinkNode {
+            url,
+            children,
+            title,
+            kind,
         }));
     }
     

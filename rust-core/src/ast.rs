@@ -290,16 +290,51 @@ pub struct HtmlNode {
 
 // ========== 行内节点 ==========
 
+/// 链接类型（语义区分）
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum LinkKind {
+    /// 显式链接：[text](url) 或 [text](url "title")
+    Explicit,
+    /// 自动链接：<https://example.com> 或 <user@example.com>
+    Autolink,
+    /// 引用链接：[text][id] 或 [text][]
+    Reference,
+}
+
 /// 链接节点
+/// 
+/// 语义说明：
+/// - Link 是对文本范围的修饰，而非容器
+/// - children 应只包含合法的行内内容（Text, InlineMath, Image 等）
+/// - 禁止嵌套 Link（Markdown 规范）
+/// - 交互语义：整个 children 范围都是可点击的
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LinkNode {
     /// 链接 URL
     pub url: String,
     /// 链接文本（行内内容）
+    /// 
+    /// 语义约束：
+    /// - 不应包含嵌套的 Link 节点
+    /// - 可以包含 Image、InlineMath、Text 等
+    /// - 整个 children 范围共享链接的交互语义
     pub children: Vec<ASTNode>,
-    /// 链接标题（可选）
+    /// 链接标题（可选，用于 tooltip）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// 链接类型（语义区分）
+    /// 
+    /// 用于 round-trip 和语义分析：
+    /// - Explicit: [text](url) - 显式链接
+    /// - Autolink: <url> - 自动识别链接
+    /// - Reference: [text][id] - 引用链接
+    #[serde(default = "default_link_kind")]
+    pub kind: LinkKind,
+}
+
+fn default_link_kind() -> LinkKind {
+    LinkKind::Explicit
 }
 
 /// 图片节点

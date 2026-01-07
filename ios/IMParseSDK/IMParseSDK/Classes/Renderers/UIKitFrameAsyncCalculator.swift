@@ -389,12 +389,18 @@ public class UIKitFrameAsyncCalculator {
     /// 追加 Mention 节点
     private static func appendMentionNode(_ node: MentionNode, to attrString: NSMutableAttributedString, context: UIKitRenderContext) {
         let font = context.currentFont ?? context.theme.font
+        // 将 mention 包装成自定义 URL，避免在点击时访问 TextKit 组件
+        // URL 格式：mention://{id}#{name}，name 需要 URL 编码
+        let encodedName = node.name.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed) ?? node.name
+        let mentionURL = URL(string: "mention://\(node.id)#\(encodedName)")!
+        
         let mentionString = NSAttributedString(
             string: "@\(node.name)",
             attributes: [
                 .font: font,
                 .foregroundColor: context.theme.mentionTextColor,
-                .mentionNodeInfo: MentionNodeInfo(id: node.id, name: node.name)
+                .link: mentionURL,
+                .underlineStyle: NSUnderlineStyle()
             ]
         )
         attrString.append(mentionString)

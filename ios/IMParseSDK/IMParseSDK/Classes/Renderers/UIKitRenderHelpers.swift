@@ -202,16 +202,33 @@ internal class MathTextAttachment: NSTextAttachment {
 
 // MARK: - UITextView 事件处理
 
-/// 用于处理 UITextView 链接点击的代理
-internal class LinkHandler: NSObject, UITextViewDelegate {
+/// 用于处理 UITextView 链接和 mention 点击的代理
+/// 上层可以使用此类来处理链接和 mention 点击，或者实现自己的 UITextViewDelegate
+public class LinkHandler: NSObject, UITextViewDelegate {
     let onLinkTap: ((URL) -> Void)?
+    let onMentionTap: ((MentionNode) -> Void)?
     
-    init(onLinkTap: ((URL) -> Void)?) {
+    public init(onLinkTap: ((URL) -> Void)?, onMentionTap: ((MentionNode) -> Void)? = nil) {
         self.onLinkTap = onLinkTap
+        self.onMentionTap = onMentionTap
         super.init()
     }
     
-    func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
+    public func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
+        // 检查是否是 mention URL（自定义 scheme）
+        if URL.scheme == "mention" {
+            // 解析 mention URL：mention://{id}#{name}
+            let id = URL.host ?? ""
+            let name = URL.fragment?.removingPercentEncoding ?? ""
+            
+            if !id.isEmpty && !name.isEmpty {
+                let mentionNode = MentionNode(id: id, name: name)
+                onMentionTap?(mentionNode)
+                return false // 我们自己处理了，系统不用再处理
+            }
+        }
+        
+        // 处理普通链接
         if let onLinkTap = onLinkTap {
             onLinkTap(URL)
             return false // 我们自己处理了，系统不用再处理
@@ -220,68 +237,9 @@ internal class LinkHandler: NSObject, UITextViewDelegate {
     }
 }
 
-/// 用于处理 UITextView 中 mention 点击的处理器
-internal class MentionTapHandler: NSObject {
-    weak var textView: UITextView?
-    let attributedString: NSAttributedString
-    let context: UIKitRenderContext
-    let onMentionTap: (MentionNode) -> Void
-    
-    init(textView: UITextView, attributedString: NSAttributedString, context: UIKitRenderContext, onMentionTap: @escaping (MentionNode) -> Void) {
-        self.textView = textView
-        self.attributedString = attributedString
-        self.context = context
-        self.onMentionTap = onMentionTap
-        super.init()
-        
-        // 添加点击手势
-        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
-        textView.addGestureRecognizer(tapGesture)
-    }
-    
-    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
-        guard let textView = textView else { return }
-        
-        let location = gesture.location(in: textView)
-
-        DispatchQueue.main.async {
-            self.handleTapLocation(location)
-        }
-    }
-    
-    private func handleTapLocation(_ location: CGPoint) {
-        guard let textView = textView else { return }
-
-        let textContainer = textView.textContainer
-        let layoutManager = textView.layoutManager
-        
-        // 计算点击位置对应的字符索引
-        let textContainerOffset = CGPoint(
-            x: textView.textContainerInset.left,
-            y: textView.textContainerInset.top
-        )
-        let locationInTextContainer = CGPoint(
-            x: location.x - textContainerOffset.x,
-            y: location.y - textContainerOffset.y
-        )
-
-        let characterIndex = layoutManager.characterIndex(
-            for: locationInTextContainer,
-            in: textContainer,
-            fractionOfDistanceBetweenInsertionPoints: nil
-        )
-        
-        if characterIndex < attributedString.length {
-            // 首先尝试从 attribute 中获取 mention 节点信息
-            if let mentionInfo = attributedString.attribute(.mentionNodeInfo, at: characterIndex, effectiveRange: nil) as? MentionNodeInfo {
-                // 从 attribute 中获取真正的 id 和 name
-                let mentionNode = MentionNode(id: mentionInfo.id, name: mentionInfo.name)
-                onMentionTap(mentionNode)
-                return
-            }
-        }
-    }
-}
+// 注意：MentionTapHandler 已移除
+// 现在 mention 通过自定义 URL（mention://）处理，使用 LinkHandler 统一处理
+// 这样可以避免访问 TextKit 组件，从而避免触发布局导致文本被裁剪
 
 // MARK: - NodeLayout 工具方法
 

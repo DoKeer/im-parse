@@ -60,36 +60,26 @@ private class NonSelectableTextView: UITextView {
     }
     
     private func setupNonSelectable() {
-        isSelectable = false
+        // 注意：isSelectable 必须为 true，否则链接无法点击
+        // 但我们可以通过重写 canPerformAction 来禁用文本选择菜单
+        isSelectable = true
+        isEditable = false
         allowsEditingTextAttributes = false
-        
-        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
-        tapGesture.numberOfTapsRequired = 1
-        addGestureRecognizer(tapGesture)
+        // 注意：不再添加 tap gesture
+        // 现在链接和 mention 都通过 UITextViewDelegate 的 shouldInteractWith 方法处理
+        // 这样可以避免访问 TextKit 组件（textContainer、layoutManager、textStorage）
+        // 从而避免触发布局导致文本被裁剪
     }
     
-    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
-        let location = gesture.location(in: self)
-        
-        let adjustedLocation = CGPoint(
-            x: location.x - textContainerInset.left,
-            y: location.y - textContainerInset.top
-        )
-        
-        let characterIndex = layoutManager.characterIndex(
-            for: adjustedLocation,
-            in: textContainer,
-            fractionOfDistanceBetweenInsertionPoints: nil
-        )
-        
-        guard characterIndex < textStorage.length else { return }
-        
-        var linkRange = NSRange()
-        if let url = textStorage.attribute(.link, at: characterIndex, effectiveRange: &linkRange) as? URL {
-            if let delegate = self.delegate as? LinkHandler {
-                _ = delegate.textView(self, shouldInteractWith: url, in: linkRange, interaction: .invokeDefaultAction)
-            }
+    // 重写 canPerformAction 来禁用文本选择菜单，但保持链接可点击
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        // 禁用所有文本选择相关的操作（复制、全选等）
+        if action == #selector(copy(_:)) ||
+           action == #selector(selectAll(_:)) ||
+           action == #selector(select(_:)) {
+            return false
         }
+        return super.canPerformAction(action, withSender: sender)
     }
 }
 
@@ -257,13 +247,14 @@ public class UIKitFrameRender {
         let fullRange = NSRange(location: 0, length: attributedString.length)
         
         attributedString.enumerateAttributes(in: fullRange, options: []) { attributes, range, stop in
-            if attributes[.link] != nil {
-                hasLink = true
-            }
-            
-            // 优先检查 mentionNodeInfo attribute（更可靠）
-            if attributes[.mentionNodeInfo] is MentionNodeInfo {
-                hasMention = true
+            if let url = attributes[.link] as? URL {
+                // 检测 mention URL（自定义 scheme）
+                if url.scheme == "mention" {
+                    hasMention = true
+                } else {
+                    // 普通链接
+                    hasLink = true
+                }
             } 
             
             if let attachment = attributes[.attachment] as? EmojiTextAttachment {
@@ -311,17 +302,14 @@ public class UIKitFrameRender {
         
 //        centerTextViewVertically(textView, attributedString: attributedString, frame: frame.size)
         
-        if features.hasLink {
+        // 设置链接和 mention 处理器（mention 通过自定义 URL 处理）
+        if features.hasLink || features.hasMention {
             setupLinkHandler(for: textView, context: context)
         }
         
-        if features.hasMention, let onMentionTap = context.onMentionTap {
-            setupMentionHandler(for: textView, attributedString: attributedString, context: context, onMentionTap: onMentionTap)
-        }
-        
-        // 关键：立即强制 layout 一次
-        textView.layoutManager.ensureLayout(for: textView.textContainer)
-        textView.layoutIfNeeded()
+        // 注意：不要在这里立即调用 ensureLayout
+        // TextKit 会在需要时自动进行布局，强制布局可能导致内部状态不一致
+        // 从而裁剪掉 attachment 所在行末尾的部分字符
         
         return textView
     }
@@ -344,27 +332,13 @@ public class UIKitFrameRender {
         return label
     }
     
-    /// 设置链接处理器
+    /// 设置 UITextView 代理（由上层提供，如果实现了就处理，没实现不处理）
     private static func setupLinkHandler(for textView: UITextView, context: UIKitRenderContext) {
-        let linkHandler = LinkHandler(onLinkTap: context.onLinkTap)
-        textView.delegate = linkHandler
-        objc_setAssociatedObject(textView, &AssociatedKeys.linkHandler, linkHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-    }
-    
-    /// 设置 Mention 处理器
-    private static func setupMentionHandler(
-        for textView: UITextView,
-        attributedString: NSAttributedString,
-        context: UIKitRenderContext,
-        onMentionTap: @escaping (MentionNode) -> Void
-    ) {
-        let mentionHandler = MentionTapHandler(
-            textView: textView,
-            attributedString: attributedString,
-            context: context,
-            onMentionTap: onMentionTap
-        )
-        objc_setAssociatedObject(textView, &AssociatedKeys.mentionHandler, mentionHandler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        // 如果上层提供了 textViewDelegate，就设置给 textView
+        // 否则不设置，不处理交互事件
+        if let delegate = context.textViewDelegate {
+            textView.delegate = delegate
+        }
     }
     
     // MARK: - Code Block Rendering
@@ -1445,11 +1419,7 @@ public class UIKitFrameRender {
         )
         
         containerView.addSubview(label)
-        
-        if let onMentionTap = context.onMentionTap {
-            containerView.addTapAction { onMentionTap(node) }
-        }
-        
+  
         return containerView
     }
     
