@@ -49,13 +49,13 @@ public protocol UIKitInlineImageLoader: AnyObject {
     ///   - content: Emoji 内容（如 "[加油]"）
     ///   - size: 目标尺寸（宽度和高度相同，为字体尺寸）
     ///   - completion: 加载完成回调，参数为加载的图片。如果获取失败，传入 nil。上层调用者负责将图片裁剪/压缩到指定尺寸
-    func loadEmojiImage(content: String, size: CGFloat, completion: @escaping (UIImage?) -> Void)
+    func loadEmojiImage(content: String) -> UIImage?
     
     /// 加载 Mention 状态图片（已读/未读）
     /// - Parameters:
     ///   - mentionNode: Mention 节点
     ///   - completion: 加载完成回调，参数为加载的图片。如果获取失败或不需要显示状态，传入 nil
-    func loadMentionStatusImage(mentionNode: MentionNode, completion: @escaping (UIImage?) -> Void)
+    func loadMentionStatusImage(mentionNode: MentionNode) -> UIImage?
 }
 
 /// 工具栏操作代理协议（用于数学公式、Mermaid、表格的工具栏按钮）

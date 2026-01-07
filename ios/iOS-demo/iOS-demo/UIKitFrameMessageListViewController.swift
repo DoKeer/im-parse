@@ -468,39 +468,31 @@ class MessageTableViewCell: UITableViewCell {
 // MARK: - UIKitInlineImageLoader
 
 extension UIKitFrameMessageListViewController: UIKitInlineImageLoader {
-    func loadEmojiImage(content: String, size: CGFloat, completion: @escaping (UIImage?) -> Void) {
+    func loadEmojiImage(content: String) -> UIImage? {
         // Emoji content 格式应该是类似 "[加油]" 这样的
         // 对应的文件名是 "[加油].png"
         let imageName = "\(content).png"
+        var image: UIImage?
         
-        // 在后台线程加载图片，避免阻塞主线程
-        DispatchQueue.global(qos: .userInitiated).async {
-            var image: UIImage?
-            
-            // 首先尝试从 main bundle 加载
-            if let loadedImage = UIImage(named: imageName, in: Bundle.main, compatibleWith: nil) {
-                image = loadedImage
-            }
-            // 如果 main bundle 中没有，尝试从 Emojis 文件夹加载
-            else if let emojiPath = Bundle.main.path(forResource: imageName, ofType: nil, inDirectory: "Emojis"),
-                    let loadedImage = UIImage(contentsOfFile: emojiPath) {
-                image = loadedImage
-            }
-            // 如果还是找不到，尝试从 Emojis bundle 加载
-            else if let emojiBundlePath = Bundle.main.path(forResource: "Emojis", ofType: nil),
-                    let emojiBundle = Bundle(path: emojiBundlePath),
-                    let loadedImage = UIImage(named: imageName, in: emojiBundle, compatibleWith: nil) {
-                image = loadedImage
-            }
-            
-            // 回到主线程调用 completion
-            DispatchQueue.main.async {
-                completion(image)
-            }
+        // 首先尝试从 main bundle 加载
+        if let loadedImage = UIImage(named: imageName, in: Bundle.main, compatibleWith: nil) {
+            image = loadedImage
         }
+        // 如果 main bundle 中没有，尝试从 Emojis 文件夹加载
+        else if let emojiPath = Bundle.main.path(forResource: imageName, ofType: nil, inDirectory: "Emojis"),
+                let loadedImage = UIImage(contentsOfFile: emojiPath) {
+            image = loadedImage
+        }
+        // 如果还是找不到，尝试从 Emojis bundle 加载
+        else if let emojiBundlePath = Bundle.main.path(forResource: "Emojis", ofType: nil),
+                let emojiBundle = Bundle(path: emojiBundlePath),
+                let loadedImage = UIImage(named: imageName, in: emojiBundle, compatibleWith: nil) {
+            image = loadedImage
+        }
+        return image
     }
     
-    func loadMentionStatusImage(mentionNode: MentionNode, completion: @escaping (UIImage?) -> Void) {
+    func loadMentionStatusImage(mentionNode: MentionNode)  -> UIImage? {
         // 根据 mention 节点的 id 或 name 判断已读/未读状态
         // 这里示例：如果 id 是 "all"，显示已读图片；否则显示未读图片
         let imageName: String
@@ -510,20 +502,8 @@ extension UIKitFrameMessageListViewController: UIKitInlineImageLoader {
             imageName = "mention_unread.png" // 未读图片
         }
         
-        // 在后台线程加载图片
-        DispatchQueue.global(qos: .userInitiated).async {
-            var image: UIImage?
-            
-            // 尝试从 main bundle 加载
-            if let loadedImage = UIImage(named: imageName, in: Bundle.main, compatibleWith: nil) {
-                image = loadedImage
-            }
-            // 如果找不到，返回 nil（不显示状态图片）
-            
-            DispatchQueue.main.async {
-                completion(image)
-            }
-        }
+        // 尝试从 main bundle 加载
+        return UIImage(named: imageName, in: Bundle.main, compatibleWith: nil)
     }
 }
 

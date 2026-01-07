@@ -400,21 +400,24 @@ public class UIKitFrameAsyncCalculator {
         attrString.append(mentionString)
         
         // 尝试加载状态图片
-        if let statusImage = loadMentionStatusImageSync(node, context: context) {
+        if let delegate = context.inlineImageLoader , let statusImage = delegate.loadMentionStatusImage(mentionNode: node) {
             attrString.append(NSAttributedString(string: " "))
             let statusAttachment = MentionStatusImageAttachment(mentionNode: node, context: context)
             statusAttachment.image = statusImage
-            statusAttachment.cachedImage = statusImage
             attrString.append(NSAttributedString(attachment: statusAttachment))
         }
+
     }
     
     /// 追加 Emoji 节点
     private static func appendEmojiNode(_ node: EmojiNode, to attrString: NSMutableAttributedString, context: UIKitRenderContext) {
-        if context.inlineImageLoader != nil {
+        
+        if let delegate = context.inlineImageLoader , let emojiImage = delegate.loadEmojiImage(content: node.content) {
             let emojiAttachment = EmojiTextAttachment(emojiNode: node, context: context)
+            emojiAttachment.image = emojiImage
             attrString.append(NSAttributedString(attachment: emojiAttachment))
-        } else {
+        }
+        else {
             let font = context.currentFont ?? context.theme.font
             let color = context.currentTextColor ?? context.theme.textColor
             let emojiString = NSAttributedString(
@@ -464,24 +467,7 @@ public class UIKitFrameAsyncCalculator {
             attrString.append(mathString)
         }
     }
-    
-    /// 同步加载 Mention 状态图片（带超时）
-    private static func loadMentionStatusImageSync(_ node: MentionNode, context: UIKitRenderContext) -> UIImage? {
-        guard let delegate = context.inlineImageLoader else { return nil }
-        
-        let semaphore = DispatchSemaphore(value: 0)
-        var statusImage: UIImage?
-        
-        delegate.loadMentionStatusImage(mentionNode: node) { image in
-            statusImage = image
-            semaphore.signal()
-        }
-        
-        let timeout = DispatchTime.now() + .milliseconds(10)
-        _ = semaphore.wait(timeout: timeout)
-        
-        return statusImage
-    }
+ 
     
     // MARK: - Code Block Layout
     

@@ -309,7 +309,7 @@ public class UIKitFrameRender {
         textView.backgroundColor = .clear
         textView.frame = CGRect(origin: .zero, size: frame.size)
         
-        centerTextViewVertically(textView, attributedString: attributedString, frame: frame.size)
+//        centerTextViewVertically(textView, attributedString: attributedString, frame: frame.size)
         
         if features.hasLink {
             setupLinkHandler(for: textView, context: context)
@@ -318,6 +318,10 @@ public class UIKitFrameRender {
         if features.hasMention, let onMentionTap = context.onMentionTap {
             setupMentionHandler(for: textView, attributedString: attributedString, context: context, onMentionTap: onMentionTap)
         }
+        
+        // 关键：立即强制 layout 一次
+        textView.layoutManager.ensureLayout(for: textView.textContainer)
+        textView.layoutIfNeeded()
         
         return textView
     }
@@ -1396,23 +1400,13 @@ public class UIKitFrameRender {
             label.textAlignment = .center
             label.isHidden = true
             containerView.addSubview(label)
-            
-            let font = context.currentFont ?? context.theme.font
-            let descender = abs(font.descender)
-            let ascender = font.ascender
-            let maxDescenderAscender = max(descender, ascender)
-            let fontSize = font.capHeight + maxDescenderAscender * 2
-            
-            inlineImageLoader.loadEmojiImage(content: node.content, size: fontSize) { image in
-                DispatchQueue.main.async {
-                    if let image = image {
-                        imageView.image = image
-                        label.isHidden = true
-                    } else {
-                        imageView.isHidden = true
-                        label.isHidden = false
-                    }
-                }
+                        
+            if let image = inlineImageLoader.loadEmojiImage(content: node.content) {
+                imageView.image = image
+                label.isHidden = true
+            } else {
+                imageView.isHidden = true
+                label.isHidden = false
             }
             
             return containerView
