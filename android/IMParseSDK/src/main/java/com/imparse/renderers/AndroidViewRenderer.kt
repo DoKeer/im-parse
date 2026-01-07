@@ -1094,24 +1094,7 @@ class AndroidViewRenderer {
         textView.text = "@${node.name}"
         textView.textSize = context.theme.fontSize
         textView.setTextColor(context.theme.mentionTextColor)
-        textView.setPadding(
-            TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 4f,
-                context.context.resources.displayMetrics
-            ).toInt(),
-            TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 2f,
-                context.context.resources.displayMetrics
-            ).toInt(),
-            TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 4f,
-                context.context.resources.displayMetrics
-            ).toInt(),
-            TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 2f,
-                context.context.resources.displayMetrics
-            ).toInt()
-        )
+        // 不设置背景色，只设置字体颜色
         textView.setOnClickListener {
             context.onMentionTap?.invoke(node)
         }
@@ -1242,12 +1225,6 @@ class AndroidViewRenderer {
                 builder.append("@${node.name}")
                 builder.setSpan(
                     ForegroundColorSpan(context.theme.mentionTextColor),
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-                builder.setSpan(
-                    BackgroundColorSpan(context.theme.mentionBackground),
                     start,
                     builder.length,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
