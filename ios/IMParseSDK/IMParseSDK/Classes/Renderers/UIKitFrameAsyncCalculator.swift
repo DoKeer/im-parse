@@ -393,7 +393,8 @@ public class UIKitFrameAsyncCalculator {
             string: "@\(node.name)",
             attributes: [
                 .font: font,
-                .foregroundColor: context.theme.mentionTextColor
+                .foregroundColor: context.theme.mentionTextColor,
+                .mentionNodeInfo: MentionNodeInfo(id: node.id, name: node.name)
             ]
         )
         attrString.append(mentionString)

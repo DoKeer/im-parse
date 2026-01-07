@@ -76,7 +76,7 @@ public class UIKitAttributedStringBuilder {
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: context.theme.mentionTextColor,
-                .backgroundColor: context.theme.mentionBackground
+                .mentionNodeInfo: MentionNodeInfo(id: mentionNode.id, name: mentionNode.name)
             ]
             return NSAttributedString(string: "@\(mentionNode.name)", attributes: attributes)
             

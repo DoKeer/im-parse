@@ -788,12 +788,6 @@ class CustomTableLayout(
                     builder.length,
                     android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                 )
-                builder.setSpan(
-                    android.text.style.BackgroundColorSpan(context.theme.mentionBackground),
-                    start,
-                    builder.length,
-                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
             }
             
             // V2: Blockquote (递归处理子节点)

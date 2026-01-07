@@ -22,6 +22,7 @@ internal struct AssociatedKeys {
 /// 值类型: InlineMathRenderInfo
 internal extension NSAttributedString.Key {
     static let inlineMathRenderInfo = NSAttributedString.Key("com.imparse.inlineMathRenderInfo")
+    static let mentionNodeInfo = NSAttributedString.Key("com.imparse.mentionNodeInfo")
 }
 
 /// 行内数学公式渲染信息
@@ -29,6 +30,12 @@ internal struct InlineMathRenderInfo {
     let mathNode: MathNode
     let textColor: UIColor
     let fontSize: CGFloat
+}
+
+/// Mention 节点信息（用于在 NSAttributedString 中存储 mention 的 id 和 name）
+internal struct MentionNodeInfo {
+    let id: String
+    let name: String
 }
 
 // MARK: - Emoji 文本附件
@@ -457,7 +464,15 @@ internal class MentionTapHandler: NSObject {
         )
         
         if characterIndex < attributedString.length {
-            // 检查字符是否是 mention 文本（通过检查颜色和文本内容）
+            // 首先尝试从 attribute 中获取 mention 节点信息
+            if let mentionInfo = attributedString.attribute(.mentionNodeInfo, at: characterIndex, effectiveRange: nil) as? MentionNodeInfo {
+                // 从 attribute 中获取真正的 id 和 name
+                let mentionNode = MentionNode(id: mentionInfo.id, name: mentionInfo.name)
+                onMentionTap(mentionNode)
+                return
+            }
+            
+            // 兼容旧代码：如果没有 attribute，通过颜色和文本内容检测（降级方案）
             if let color = attributedString.attribute(.foregroundColor, at: characterIndex, effectiveRange: nil) as? UIColor,
                color == context.theme.mentionTextColor {
                 // 获取 mention 文本的范围
@@ -468,7 +483,7 @@ internal class MentionTapHandler: NSObject {
                     if mentionText.hasPrefix("@") {
                         // 提取 mention 名称（去掉 @ 符号）
                         let mentionName = String(mentionText.dropFirst())
-                        // 创建 MentionNode（这里需要从上下文中获取 id，暂时使用 name 作为 id）
+                        // 降级方案：使用 name 作为 id（不推荐，但为了兼容性保留）
                         let mentionNode = MentionNode(id: mentionName, name: mentionName)
                         onMentionTap(mentionNode)
                     }

@@ -261,13 +261,10 @@ public class UIKitFrameRender {
                 hasLink = true
             }
             
-            if let color = attributes[.foregroundColor] as? UIColor,
-               color == context.theme.mentionTextColor {
-                let text = attributedString.attributedSubstring(from: range).string
-                if text.hasPrefix("@") {
-                    hasMention = true
-                }
-            }
+            // 优先检查 mentionNodeInfo attribute（更可靠）
+            if attributes[.mentionNodeInfo] is MentionNodeInfo {
+                hasMention = true
+            } 
             
             if let attachment = attributes[.attachment] as? EmojiTextAttachment {
                 hasEmoji = true
