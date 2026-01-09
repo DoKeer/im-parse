@@ -129,10 +129,8 @@ public struct UIKitRenderContext {
     // 文案自定义代理（可选，用于自定义表格标题、工具栏按钮文案等）
     public weak var textLocalizationDelegate: UIKitTextLocalizationDelegate?
     
-    // UITextView 代理（可选，用于处理链接和 mention 点击）
-    // 如果设置了此代理，将使用此代理处理 UITextView 的交互事件
-    // 否则不设置 delegate，不处理交互
-    public weak var textViewDelegate: UITextViewDelegate?
+    
+    public weak var linkHandler: LinkHandler?
     
     // 布局高度变化回调（用于通知 cell 高度变化）
     // 回调参数：新的 NodeLayout（包含更新后的节点布局信息）
@@ -155,7 +153,7 @@ public struct UIKitRenderContext {
                 inlineImageLoader: UIKitInlineImageLoader? = nil,
                 toolbarActionDelegate: UIKitToolbarActionDelegate? = nil,
                 textLocalizationDelegate: UIKitTextLocalizationDelegate? = nil,
-                textViewDelegate: UITextViewDelegate? = nil,
+                linkHandler: LinkHandler? = nil,
                 onNodeLayoutChanged: ((any Codable) -> Void)? = nil,
                 onRenderTaskCreated: ((Task<Void, Never>) -> Void)? = nil) {
         self.theme = theme
@@ -171,7 +169,7 @@ public struct UIKitRenderContext {
         self.inlineImageLoader = inlineImageLoader
         self.toolbarActionDelegate = toolbarActionDelegate
         self.textLocalizationDelegate = textLocalizationDelegate
-        self.textViewDelegate = textViewDelegate
+        self.linkHandler = linkHandler
         self.onNodeLayoutChanged = onNodeLayoutChanged
         self.onRenderTaskCreated = onRenderTaskCreated
     }

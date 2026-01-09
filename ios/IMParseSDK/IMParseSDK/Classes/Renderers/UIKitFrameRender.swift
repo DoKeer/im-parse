@@ -51,60 +51,6 @@ private struct AttributedStringFeatures {
     }
 }
 
-// MARK: - NonSelectableTextView
-
-/// 不可选择文本的 UITextView，用于禁用文本选择但保留链接点击功能
-private class NonSelectableTextView: UITextView {
-    override init(frame: CGRect, textContainer: NSTextContainer?) {
-        super.init(frame: frame, textContainer: textContainer)
-        setupNonSelectable()
-    }
-    
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        setupNonSelectable()
-    }
-    
-    private func setupNonSelectable() {
-        // 注意：isSelectable 必须为 true，否则链接无法点击
-        // 但我们可以通过重写 canPerformAction 来禁用文本选择菜单
-        isSelectable = true
-        isEditable = false
-        allowsEditingTextAttributes = false
-        // 注意：不再添加 tap gesture
-        // 现在链接和 mention 都通过 UITextViewDelegate 的 shouldInteractWith 方法处理
-        // 这样可以避免访问 TextKit 组件（textContainer、layoutManager、textStorage）
-        // 从而避免触发布局导致文本被裁剪
-    }
-    
-    // 重写 canPerformAction 来禁用文本选择菜单，但保持链接可点击
-    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        // 禁用所有文本选择相关的操作（复制、全选等）
-        if action == #selector(copy(_:)) ||
-           action == #selector(selectAll(_:)) ||
-           action == #selector(select(_:)) {
-            return false
-        }
-        return super.canPerformAction(action, withSender: sender)
-    }
-    
-    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        // 禁用 UILongPressGestureRecognizer 触发 selection
-        if gestureRecognizer is UILongPressGestureRecognizer {
-            return false
-        }
-        return super.gestureRecognizerShouldBegin(gestureRecognizer)
-    }
-
-    override func caretRect(for position: UITextPosition) -> CGRect {
-        .zero
-    }
-
-    override func selectionRects(for range: UITextRange) -> [UITextSelectionRect] {
-        []
-    }
-}
-
 // MARK: - UIKitFrameRender
 
 /// Frame 布局渲染器
@@ -376,33 +322,28 @@ public class UIKitFrameRender {
         frame: CGRect,
         features: AttributedStringFeatures,
         context: UIKitRenderContext
-    ) -> UITextView {
-        let textView = NonSelectableTextView()
-        textView.attributedText = attributedString
-        textView.isEditable = false
-        textView.isScrollEnabled = false
-        textView.isUserInteractionEnabled = true
-        textView.textContainerInset = .zero
-        textView.textContainer.lineFragmentPadding = 0
-        textView.backgroundColor = .clear
-        textView.frame = CGRect(origin: .zero, size: frame.size)
+    ) -> UIView {
+        // 使用 RichLabel 替代 NonSelectableTextView
+        let richLabel = RichLabel()
+        richLabel.frame = CGRect(origin: .zero, size: frame.size)
         
-        // 重要：禁用自动链接检测，避免系统直接处理自定义 URL scheme
-        // 这样系统会调用 shouldInteractWith 方法，而不是直接尝试打开 URL
-        textView.dataDetectorTypes = []
+        // 从 textViewDelegate 中提取回调（如果是 LinkHandler）
+        var onLinkTap: ((URL) -> Void)?
+        var onMentionTap: ((MentionNode) -> Void)?
         
-//        centerTextViewVertically(textView, attributedString: attributedString, frame: frame.size)
-        
-        // 设置链接和 mention 处理器（mention 通过自定义 URL 处理）
-        if features.hasLink || features.hasMention {
-            setupLinkHandler(for: textView, context: context)
+        if let linkHandler = context.linkHandler {
+            onLinkTap = linkHandler.onLinkTap
+            onMentionTap = linkHandler.onMentionTap
         }
         
-        // 注意：不要在这里立即调用 ensureLayout
-        // TextKit 会在需要时自动进行布局，强制布局可能导致内部状态不一致
-        // 从而裁剪掉 attachment 所在行末尾的部分字符
+        // 设置富文本内容
+        richLabel.setAttributedText(
+            attributedString,
+            onLinkTap: onLinkTap,
+            onMentionTap: onMentionTap
+        )
         
-        return textView
+        return richLabel
     }
     
     /// 创建简单标签
@@ -422,16 +363,7 @@ public class UIKitFrameRender {
         
         return label
     }
-    
-    /// 设置 UITextView 代理（由上层提供，如果实现了就处理，没实现不处理）
-    private static func setupLinkHandler(for textView: UITextView, context: UIKitRenderContext) {
-        // 如果上层提供了 textViewDelegate，就设置给 textView
-        // 否则不设置，不处理交互事件
-        if let delegate = context.textViewDelegate {
-            textView.delegate = delegate
-        }
-    }
-    
+
     // MARK: - Code Block Rendering
     
     /// 渲染代码块
@@ -966,24 +898,28 @@ public class UIKitFrameRender {
             
             let textView: UIView
             
-            if features.hasLink {
-                let textView_ = NonSelectableTextView()
-                textView_.attributedText = attributedString
-                textView_.isEditable = false
-                textView_.isScrollEnabled = false
-                textView_.textContainerInset = .zero
-                textView_.textContainer.lineFragmentPadding = 0
-                textView_.backgroundColor = .clear
-                textView_.frame = cellFrame
+            if features.hasLink || features.hasMention {
+                // 使用 RichLabel 替代 NonSelectableTextView
+                let richLabel = RichLabel()
+                richLabel.frame = cellFrame
                 
-                // 重要：禁用自动链接检测，避免系统直接处理自定义 URL scheme
-                // 这样系统会调用 shouldInteractWith 方法，而不是直接尝试打开 URL
-                textView_.dataDetectorTypes = []
+                // 从 textViewDelegate 中提取回调（如果是 LinkHandler）
+                var onLinkTap: ((URL) -> Void)?
+                var onMentionTap: ((MentionNode) -> Void)?
                 
-                centerTextViewVertically(textView_, attributedString: attributedString, frame: cellFrame.size)
-                setupLinkHandler(for: textView_, context: context)
+                if let linkHandler = context.linkHandler {
+                    onLinkTap = linkHandler.onLinkTap
+                    onMentionTap = linkHandler.onMentionTap
+                }
                 
-                textView = textView_
+                // 设置富文本内容
+                richLabel.setAttributedText(
+                    attributedString,
+                    onLinkTap: onLinkTap,
+                    onMentionTap: onMentionTap
+                )
+                
+                textView = richLabel
             } else {
                 let label = UILabel()
                 label.attributedText = attributedString

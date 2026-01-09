@@ -72,7 +72,7 @@ class UIKitFrameMessageListViewController: UIViewController {
             formulaSizeCacheDelegate: self,
             inlineImageLoader: self,
             toolbarActionDelegate: self,
-            textViewDelegate:linkHandler
+            linkHandler:linkHandler
         )
     }
     

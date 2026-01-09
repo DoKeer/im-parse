@@ -317,51 +317,18 @@ internal class ImageTextAttachment: NSTextAttachment {
 
 /// 用于处理 UITextView 链接和 mention 点击的代理
 /// 上层可以使用此类来处理链接和 mention 点击，或者实现自己的 UITextViewDelegate
-public class LinkHandler: NSObject, UITextViewDelegate {
+public class LinkHandler {
     let onLinkTap: ((URL) -> Void)?
     let onMentionTap: ((MentionNode) -> Void)?
     
     public init(onLinkTap: ((URL) -> Void)?, onMentionTap: ((MentionNode) -> Void)? = nil) {
         self.onLinkTap = onLinkTap
         self.onMentionTap = onMentionTap
-        super.init()
-    }
-    
-    public func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
-        // 对于预览和长按菜单交互，不处理
-        if interaction == .presentActions || interaction == .preview {
-            return true
-        }
-        
-        // 检查是否是 mention URL（自定义 scheme）
-        if URL.scheme == "mention" {
-            // 解析 mention URL：mention://{id}#{name}
-            let id = URL.host ?? ""
-            let name = URL.fragment?.removingPercentEncoding ?? ""
-            
-            if !id.isEmpty && !name.isEmpty {
-                let mentionNode = MentionNode(id: id, name: name)
-                onMentionTap?(mentionNode)
-                return false // 我们自己处理了，系统不用再处理
-            }
-        }
-        
-        // 处理普通链接
-        if let onLinkTap = onLinkTap {
-            onLinkTap(URL)
-            return false // 我们自己处理了，系统不用再处理
-        }
-        return true // 使用系统默认行为（打开 Safari）
-    }
-    
-    @available(iOS 17.0, *)
-    public func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {
-        return defaultAction
     }
 }
 
 // 注意：MentionTapHandler 已移除
-// 现在 mention 通过自定义 URL（mention://）处理，使用 LinkHandler 统一处理
+// 现在 mention 通过自定义 URL（sk360Teams://）处理，使用 LinkHandler 统一处理
 // 这样可以避免访问 TextKit 组件，从而避免触发布局导致文本被裁剪
 
 // MARK: - NodeLayout 工具方法

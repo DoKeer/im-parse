@@ -31,7 +31,9 @@ public class UIKitAttributedStringBuilder {
             paragraphStyle.lineSpacing = context.theme.lineHeight
             result.addAttribute(.paragraphStyle, value: paragraphStyle, range: NSRange(location: 0, length: result.length))
         }
-        
+
+        ensureTrailingCharacterIfNeeded(result, font: context.theme.font)
+
         return result
     }
     
@@ -42,11 +44,11 @@ public class UIKitAttributedStringBuilder {
     /// - Returns: 构建好的 NSAttributedString
     func buildAttributedString(from node: ASTNodeWrapper, context: UIKitRenderContext) -> NSAttributedString {
         switch node {
-        // V2: TextRun 带扁平化样式
+            // V2: TextRun 带扁平化样式
         case .text(let textRun):
             return buildAttributedString(from: textRun, context: context)
             
-        // 链接
+            // 链接
         case .link(let linkNode):
             let result = NSMutableAttributedString()
             
@@ -65,8 +67,8 @@ public class UIKitAttributedStringBuilder {
             result.addAttribute(.foregroundColor, value: context.theme.linkColor, range: NSRange(location: 0, length: result.length))
             
             return result
-
-        // Mention
+            
+            // Mention
         case .mention(let mentionNode):
             let font = context.currentFont ?? context.theme.font
             // 将 mention 包装成自定义 URL，避免在点击时访问 TextKit 组件
@@ -81,16 +83,16 @@ public class UIKitAttributedStringBuilder {
                 .underlineStyle: NSUnderlineStyle.single
             ]
             return NSAttributedString(string: "@\(mentionNode.name)", attributes: attributes)
-                        
-        // 行内数学公式
+            
+            // 行内数学公式
         case .inlineMath(let mathNode):
             return buildMathAttributedString(mathNode: mathNode, isBlock: false, context: context)
             
-        // 行内图片
+            // 行内图片
         case .image(let imageNode):
             return buildImageAttributedString(imageNode: imageNode, context: context)
             
-        // Emoji
+            // Emoji
         case .emoji(let emojiNode):
             let font = context.currentFont ?? context.theme.font
             let attributes: [NSAttributedString.Key: Any] = [
@@ -99,7 +101,7 @@ public class UIKitAttributedStringBuilder {
             ]
             return NSAttributedString(string: emojiNode.content, attributes: attributes)
             
-        // 行内HTML
+            // 行内HTML
         case .inlineHtml(let htmlNode):
             // 简单处理：渲染为纯文本
             let font = context.currentFont ?? context.theme.font
@@ -109,7 +111,7 @@ public class UIKitAttributedStringBuilder {
                 attributes: [.font: font, .foregroundColor: color]
             )
             
-        // 换行
+            // 换行
         case .lineBreak(let br):
             let font = context.currentFont ?? context.theme.font
             return NSAttributedString(string: br.hard ? "\n" : " ", attributes: [.font: font])
@@ -197,19 +199,19 @@ public class UIKitAttributedStringBuilder {
             // 使用指定字体族
             if isBold && isItalic {
                 baseFont = UIFont(name: "\(family)-BoldItalic", size: finalFontSize) ??
-                           UIFont(name: family, size: finalFontSize) ??
-                           UIFont.systemFont(ofSize: finalFontSize, weight: .bold)
+                UIFont(name: family, size: finalFontSize) ??
+                UIFont.systemFont(ofSize: finalFontSize, weight: .bold)
             } else if isBold {
                 baseFont = UIFont(name: "\(family)-Bold", size: finalFontSize) ??
-                           UIFont(name: family, size: finalFontSize) ??
-                           UIFont.boldSystemFont(ofSize: finalFontSize)
+                UIFont(name: family, size: finalFontSize) ??
+                UIFont.boldSystemFont(ofSize: finalFontSize)
             } else if isItalic {
                 baseFont = UIFont(name: "\(family)-Italic", size: finalFontSize) ??
-                           UIFont(name: family, size: finalFontSize) ??
-                           UIFont.italicSystemFont(ofSize: finalFontSize)
+                UIFont(name: family, size: finalFontSize) ??
+                UIFont.italicSystemFont(ofSize: finalFontSize)
             } else {
                 baseFont = UIFont(name: family, size: finalFontSize) ??
-                           UIFont.systemFont(ofSize: finalFontSize)
+                UIFont.systemFont(ofSize: finalFontSize)
             }
         } else {
             // 使用系统字体
@@ -386,4 +388,28 @@ public class UIKitAttributedStringBuilder {
         
         return nil
     }
+    
+    /// TextKit bug/feature:
+    /// UILabel 在行尾是 NSTextAttachment 时，
+    /// 如果没有可度量字符，行 fragment 会异常。
+    /// 必须追加一个具有 advanceWidth 的字符（空格最稳定）。
+    private func ensureTrailingCharacterIfNeeded(
+        _ attributed: NSMutableAttributedString,
+        font: UIFont
+    ) {
+        guard attributed.length > 0 else { return }
+
+        let lastIndex = attributed.length - 1
+        guard attributed.attribute(.attachment, at: lastIndex, effectiveRange: nil) != nil else {
+            return
+        }
+
+        attributed.append(
+            NSAttributedString(
+                string: " ", // ⚠️ 不要用 \u{200B}
+                attributes: [.font: font]
+            )
+        )
+    }
+
 }
