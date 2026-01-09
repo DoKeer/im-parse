@@ -48,13 +48,30 @@ public class NodeLayout {
 /// 节点分类辅助（V2）
 private enum NodeClassification {
     case blockLevel  // 块级节点（图片、块级数学公式、Mermaid）
-    case inline      // 行内节点（mention、emoji、行内数学公式）
+    case inline      // 行内节点（mention、emoji、行内数学公式、行内图片）
     case text        // 普通文本节点
     
-    static func classify(_ node: ASTNodeWrapper) -> NodeClassification {
+    /// 分类节点
+    /// - Parameters:
+    ///   - node: 要分类的节点
+    ///   - parentNode: 父节点类型，用于判断图片是块级还是行内
+    static func classify(_ node: ASTNodeWrapper, parentNode: ASTNodeWrapper? = nil) -> NodeClassification {
         switch node {
+        // V2: 图片节点 - 根据父节点判断是块级还是行内
+        case .image:
+            // 如果父节点是段落或标题，图片应该是行内的
+            if let parent = parentNode {
+                switch parent {
+                case .paragraph, .heading:
+                    return .inline
+                default:
+                    return .blockLevel
+                }
+            }
+            // 默认情况下，图片是块级的
+            return .blockLevel
         // V2: 块级节点
-        case .image, .mermaidBlock:
+        case .mermaidBlock:
             return .blockLevel
         case .mathBlock:
             return .blockLevel
@@ -229,7 +246,8 @@ public class UIKitFrameAsyncCalculator {
         origin: CGPoint,
         width: CGFloat
     ) -> NodeLayout {
-        let classifications = children.map { NodeClassification.classify($0) }
+        // 传入父节点类型，用于判断图片是块级还是行内
+        let classifications = children.map { NodeClassification.classify($0, parentNode: nodeWrapper) }
         let hasBlockLevel = classifications.contains(.blockLevel)
         let hasInline = classifications.contains(.inline)
         
@@ -267,7 +285,8 @@ public class UIKitFrameAsyncCalculator {
         nodeWrapper: ASTNodeWrapper?,
         context: UIKitRenderContext,
         origin: CGPoint,
-        width: CGFloat
+        width: CGFloat,
+        getParentNode: ((ASTNodeWrapper) -> ASTNodeWrapper?)? = nil
     ) -> NodeLayout {
         var currentY: CGFloat = 0
         var childLayouts: [NodeLayout] = []
@@ -290,7 +309,9 @@ public class UIKitFrameAsyncCalculator {
         }
         
         for child in children {
-            let classification = NodeClassification.classify(child)
+            // 优先使用 getParentNode 获取父节点，如果没有则使用 nodeWrapper
+            let parentNode = getParentNode?(child) ?? nodeWrapper
+            let classification = NodeClassification.classify(child, parentNode: parentNode)
             
             if classification == .blockLevel {
                 flushTextNodes()
@@ -311,15 +332,17 @@ public class UIKitFrameAsyncCalculator {
         )
     }
     
-    /// 行内节点布局（包含 mention、emoji、行内数学公式）
+    /// 行内节点布局（包含 mention、emoji、行内数学公式、行内图片）
     private static func calculateInlineLayout(
         children: [ASTNodeWrapper],
         nodeWrapper: ASTNodeWrapper?,
         context: UIKitRenderContext,
         origin: CGPoint,
-        width: CGFloat
+        width: CGFloat,
+        getParentNode: ((ASTNodeWrapper) -> ASTNodeWrapper?)? = nil
     ) -> NodeLayout {
-        let groups = groupInlineNodes(children)
+        // 传入父节点类型，用于判断图片是块级还是行内
+        let groups = groupInlineNodes(children, parentNode: nodeWrapper, getParentNode: getParentNode)
         let mutableAttrString = NSMutableAttributedString()
         
         for group in groups {
@@ -331,7 +354,7 @@ public class UIKitFrameAsyncCalculator {
             }
         }
         
-        let size = calculateTextSize(mutableAttrString, width: width)
+        let size = calculateAttributedStringSize(mutableAttrString, width: width)
         let actualWidth = min(ceil(size.width), width)
         
         return NodeLayout(
@@ -342,7 +365,11 @@ public class UIKitFrameAsyncCalculator {
     }
     
     /// 将节点分组（连续的文本节点合并）
-    private static func groupInlineNodes(_ children: [ASTNodeWrapper]) -> [InlineNodeGroup] {
+    private static func groupInlineNodes(
+        _ children: [ASTNodeWrapper],
+        parentNode: ASTNodeWrapper? = nil,
+        getParentNode: ((ASTNodeWrapper) -> ASTNodeWrapper?)? = nil
+    ) -> [InlineNodeGroup] {
         var groups: [InlineNodeGroup] = []
         var currentTextNodes: [ASTNodeWrapper] = []
         
@@ -354,7 +381,9 @@ public class UIKitFrameAsyncCalculator {
         }
         
         for child in children {
-            let classification = NodeClassification.classify(child)
+            // 优先使用 getParentNode 获取父节点，如果没有则使用 parentNode
+            let actualParentNode = getParentNode?(child) ?? parentNode
+            let classification = NodeClassification.classify(child, parentNode: actualParentNode)
             
             switch classification {
             case .inline:
@@ -381,6 +410,8 @@ public class UIKitFrameAsyncCalculator {
             appendEmojiNode(emojiNode, to: attrString, context: context)
         case .inlineMath(let mathNode):  // V2: 使用 inlineMath
             appendInlineMathNode(mathNode, to: attrString, context: context)
+        case .image(let imageNode):  // V2: 支持行内图片
+            appendInlineImageNode(imageNode, to: attrString, context: context)
         default:
             break
         }
@@ -436,42 +467,17 @@ public class UIKitFrameAsyncCalculator {
     
     /// 追加行内数学公式节点
     private static func appendInlineMathNode(_ node: MathNode, to attrString: NSMutableAttributedString, context: UIKitRenderContext) {
-        let font = context.currentFont ?? context.theme.font
-        let textColor = context.currentTextColor ?? context.theme.textColor
-        let fontSize = 12.0 // 行内公式用12号字
-        let cacheKey = generateMathCacheKey(
-            mathContent: node.content,
-            textColor: textColor,
-            fontSize: fontSize
-        )
-        
-        if let cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(for: cacheKey.0) {
-            let mathAttachment = MathTextAttachment(mathNode: node, image: cachedImage, font: font, context: context)
-            attrString.append(NSAttributedString(attachment: mathAttachment))
-        } else {
-            // 缓存未命中，使用原文，并添加标记以便在渲染时处理
-            let color = context.currentTextColor ?? context.theme.textColor
-            let mathString = NSMutableAttributedString(
-                string: node.content,
-                attributes: [.font: font, .foregroundColor: color]
-            )
-            
-            // 添加自定义属性，标记需要渲染的行内公式
-            if context.formulaSizeCacheDelegate != nil {
-                let renderInfo = InlineMathRenderInfo(
-                    mathNode: node,
-                    textColor: textColor,
-                    fontSize: fontSize
-                )
-                mathString.addAttribute(
-                    .inlineMathRenderInfo,
-                    value: renderInfo,
-                    range: NSRange(location: 0, length: mathString.length)
-                )
-            }
-            
-            attrString.append(mathString)
-        }
+        // 使用 UIKitAttributedStringBuilder 来构建行内数学公式的 AttributedString
+        // 这样可以复用统一的逻辑，避免代码重复
+        let mathAttrString = context.stringBuilder.buildAttributedString(from: [.inlineMath(node)], context: context)
+        attrString.append(mathAttrString)
+    }
+    
+    /// 追加行内图片节点
+    private static func appendInlineImageNode(_ node: ImageNode, to attrString: NSMutableAttributedString, context: UIKitRenderContext) {
+        // 使用 UIKitAttributedStringBuilder 来构建行内图片的 AttributedString
+        let imageAttrString = context.stringBuilder.buildAttributedString(from: [.image(node)], context: context)
+        attrString.append(imageAttrString)
     }
  
     
@@ -537,7 +543,7 @@ public class UIKitFrameAsyncCalculator {
                 semaphore.signal()
             }
             
-            let timeout = DispatchTime.now() + .milliseconds(10)
+            let timeout = DispatchTime.now() + .milliseconds(150)
             if semaphore.wait(timeout: timeout) == .success, let image = loadedImage {
                 let ratio = image.size.height / image.size.width
                 imageHeight = width * ratio
@@ -622,24 +628,49 @@ public class UIKitFrameAsyncCalculator {
                 spacing: 4
             )
         } else {
-            // 提取行内节点
+            // 提取行内节点，并构建父节点查找函数
             var inlineNodes: [ASTNodeWrapper] = []
+            var parentNodes: [ASTNodeWrapper?] = []  // 与 inlineNodes 对应的父节点数组
+            
             for child in item.children {
                 if case .paragraph(let pNode) = child {
-                    inlineNodes.append(contentsOf: pNode.children)
+                    let paragraphWrapper = ASTNodeWrapper.paragraph(pNode)
+                    // 段落内的节点，父节点是段落
+                    for node in pNode.children {
+                        inlineNodes.append(node)
+                        parentNodes.append(paragraphWrapper)
+                    }
                 } else {
                     inlineNodes.append(child)
+                    // 不在段落内的节点，没有父节点（块级上下文）
+                    parentNodes.append(nil)
                 }
             }
             
-            let classifications = inlineNodes.map { NodeClassification.classify($0) }
+            // 创建父节点查找函数：使用索引来匹配，因为 inlineNodes 和 parentNodes 是一一对应的
+            // 由于 ASTNodeWrapper 不遵循 Equatable，我们通过比较节点内容来查找
+            let getParentNode: (ASTNodeWrapper) -> ASTNodeWrapper? = { node in
+                // 查找节点在 inlineNodes 中的索引
+                for (index, inlineNode) in inlineNodes.enumerated() {
+                    if compareASTNodes(inlineNode, node) {
+                        return parentNodes[index]
+                    }
+                }
+                return nil
+            }
+            
+            // 根据父节点类型判断节点分类
+            let classifications = inlineNodes.enumerated().map { index, node in
+                let parent = parentNodes[index]
+                return NodeClassification.classify(node, parentNode: parent)
+            }
             let hasBlockLevel = classifications.contains(.blockLevel)
             let hasInline = classifications.contains(.inline)
             
             if hasBlockLevel {
-                return calculateMixedBlockLayout(children: inlineNodes, nodeWrapper: nil, context: context, origin: origin, width: width)
+                return calculateMixedBlockLayout(children: inlineNodes, nodeWrapper: nil, context: context, origin: origin, width: width, getParentNode: getParentNode)
             } else if hasInline {
-                return calculateInlineLayout(children: inlineNodes, nodeWrapper: nil, context: context, origin: origin, width: width)
+                return calculateInlineLayout(children: inlineNodes, nodeWrapper: nil, context: context, origin: origin, width: width, getParentNode: getParentNode)
             } else {
                 let attrString = context.stringBuilder.buildAttributedString(from: inlineNodes, context: context)
                 let size = calculateTextSize(attrString, width: width)
@@ -1156,5 +1187,33 @@ public class UIKitFrameAsyncCalculator {
         let imageY: CGFloat = 0 // 垂直方向从顶部开始
         
         return CGRect(x: imageX, y: imageY, width: displayWidth, height: displayHeight)
+    }
+    
+    // MARK: - Helper: Compare AST Nodes
+    
+    /// 比较两个 ASTNodeWrapper 是否相等（通过内容比较）
+    private static func compareASTNodes(_ node1: ASTNodeWrapper, _ node2: ASTNodeWrapper) -> Bool {
+        switch (node1, node2) {
+        case (.text(let t1), .text(let t2)):
+            return t1.content == t2.content && t1.styles == t2.styles
+        case (.image(let i1), .image(let i2)):
+            return i1.url == i2.url
+        case (.inlineMath(let m1), .inlineMath(let m2)):
+            return m1.content == m2.content
+        case (.mention(let m1), .mention(let m2)):
+            return m1.id == m2.id && m1.name == m2.name
+        case (.emoji(let e1), .emoji(let e2)):
+            return e1.content == e2.content
+        case (.link(let l1), .link(let l2)):
+            return l1.url == l2.url
+        case (.lineBreak(let b1), .lineBreak(let b2)):
+            return b1.hard == b2.hard
+        case (.inlineHtml(let h1), .inlineHtml(let h2)):
+            return h1.content == h2.content
+        default:
+            // 对于其他类型，使用简单的类型匹配
+            // 注意：这不是完全准确的比较，但在我们的使用场景中应该足够
+            return false
+        }
     }
 }

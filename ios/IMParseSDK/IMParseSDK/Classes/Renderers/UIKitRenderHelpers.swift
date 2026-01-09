@@ -232,40 +232,55 @@ internal class ImageTextAttachment: NSTextAttachment {
         let screenScale = UIScreen.main.scale
         let imageAspectRatio = image.size.width / image.size.height
         
-        // 优先使用节点指定的尺寸
+        // 1. 计算最大允许尺寸
+        let maxWidth = context.width * 0.7 // 最大可展示宽度为容器的70%
+        let maxHeight = context.width * 2.0 // 最大高度不能超过context.width的两倍
+        
+        // 2. 根据图片原始尺寸和长宽比计算目标尺寸（不超过最大尺寸）
         var targetWidth: CGFloat
         var targetHeight: CGFloat
         
-        if let width = imageNode.width, let height = imageNode.height {
-            // 使用节点指定的尺寸
-            targetWidth = CGFloat(width)
-            targetHeight = CGFloat(height)
-        } else {
-            // 根据可用宽度和图片比例计算
-            let availableWidth = context.width * 0.7 // 行内图片最大宽度为容器的70%
-            let maxHeight = font.capHeight * 3 // 最大高度为字体capHeight的3倍
-            
-            if image.size.width > availableWidth {
-                targetWidth = availableWidth
-                targetHeight = targetWidth / imageAspectRatio
-            } else {
-                targetWidth = image.size.width
-                targetHeight = image.size.height
-            }
-            
-            // 限制最大高度
+        if image.size.width > maxWidth {
+            // 如果图片宽度超过最大宽度，按宽度缩放
+            targetWidth = maxWidth
+            targetHeight = targetWidth / imageAspectRatio
+            // 如果按宽度缩放后高度超过最大高度，则按高度缩放
             if targetHeight > maxHeight {
                 targetHeight = maxHeight
                 targetWidth = targetHeight * imageAspectRatio
-                // 如果缩放后宽度超过可用宽度，需要重新按宽度缩放
-                if targetWidth > availableWidth {
-                    targetWidth = availableWidth
-                    targetHeight = targetWidth / imageAspectRatio
-                }
+            }
+        } else if image.size.height > maxHeight {
+            // 如果图片高度超过最大高度，按高度缩放
+            targetHeight = maxHeight
+            targetWidth = targetHeight * imageAspectRatio
+            // 如果按高度缩放后宽度超过最大宽度，则按宽度缩放
+            if targetWidth > maxWidth {
+                targetWidth = maxWidth
+                targetHeight = targetWidth / imageAspectRatio
+            }
+        } else {
+            // 图片尺寸在允许范围内，使用原始尺寸
+            targetWidth = image.size.width
+            targetHeight = image.size.height
+        }
+        
+        // 3. 如果imageNode指定了尺寸，需要和计算出的最大尺寸对比
+        if let nodeWidth = imageNode.width, let nodeHeight = imageNode.height {
+            let nodeWidthCGFloat = CGFloat(nodeWidth)
+            let nodeHeightCGFloat = CGFloat(nodeHeight)
+            
+            // 如果imageNode的尺寸大于计算出的最大尺寸，则压缩到最大尺寸
+            if nodeWidthCGFloat > maxWidth || nodeHeightCGFloat > maxHeight {
+                // 需要压缩，使用计算出的最大尺寸
+                // targetWidth 和 targetHeight 已经在上面计算好了
+            } else {
+                // 如果imageNode的尺寸小于或等于最大尺寸，则使用imageNode的尺寸
+                targetWidth = nodeWidthCGFloat
+                targetHeight = nodeHeightCGFloat
             }
         }
         
-        // 使用UIGraphicsImageRenderer进行缩放，保持屏幕scale
+        // 4. 使用UIGraphicsImageRenderer进行缩放，保持屏幕scale
         let scaledImage: UIImage
         if abs(targetWidth - image.size.width) > 1 || abs(targetHeight - image.size.height) > 1 {
             // 需要缩放
@@ -282,10 +297,10 @@ internal class ImageTextAttachment: NSTextAttachment {
         
         // 设置缩放后的图片
         self.image = scaledImage
-        // 计算垂直居中的 bounds（使用缩放后的尺寸）
+        // 计算bounds，图片顶部对齐font的顶部
         let displaySize = CGSize(width: targetWidth, height: targetHeight)
-        let yOffset = (font.capHeight - displaySize.height) / 2
-        self.cacheImageBounds = CGRect(origin: CGPoint(x: 0, y: yOffset), size: displaySize)
+        // font.ascender 是从基线到字体顶部的距离，图片顶部对齐字体顶部
+        self.cacheImageBounds = CGRect(origin: CGPoint(x: 0, y: font.ascender - targetHeight), size: displaySize)
     }
     
     /// 动态计算 attachment 的 bounds，确保与文本垂直居中

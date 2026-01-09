@@ -282,13 +282,25 @@ public class UIKitAttributedStringBuilder {
         
         // 尝试从缓存获取图片（通过 imageLoaderDelegate）
         if let imageLoaderDelegate = context.imageLoaderDelegate,
-           let imageURL = URL(string: imageNode.url) {
-            // 检查是否有缓存的图片
-            // 注意：UIKitImageLoaderDelegate 的 loadImage 是异步的，这里我们需要同步检查
-            // 如果 imageLoaderDelegate 支持同步获取缓存，可以在这里调用
-            // 否则，我们返回空字符串并添加标记，让渲染层异步加载
+           let imageURLString = imageNode.url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+           let imageURL = URL(string: imageURLString) {
+            // 使用信号量同步加载图片
+            let semaphore = DispatchSemaphore(value: 0)
+            var loadedImage: UIImage?
             
-            // 暂时返回空字符串，并添加标记以便在渲染时处理
+            imageLoaderDelegate.loadImage(url: imageURL, into: nil) { image, _ in
+                loadedImage = image
+                semaphore.signal()
+            }
+            
+            let timeout = DispatchTime.now() + .milliseconds(150)
+            if semaphore.wait(timeout: timeout) == .success, let image = loadedImage {
+                // 图片加载成功，创建 ImageTextAttachment
+                let imageAttachment = ImageTextAttachment(imageNode: imageNode, image: image, font: font, context: context)
+                return NSAttributedString(attachment: imageAttachment)
+            }
+            
+            // 图片加载失败或超时，返回空字符串并添加标记，让渲染层异步加载
             let mutableAttrString = NSMutableAttributedString(string: "")
             
             // 添加自定义属性，标记需要加载的行内图片
