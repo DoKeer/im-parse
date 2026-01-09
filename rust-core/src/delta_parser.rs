@@ -296,6 +296,42 @@ impl DeltaParser {
         None
     }
 
+    /// 判断一行是否"只有图片"（忽略空白字符和零宽字符）
+    /// 
+    /// 用于判断图片应该作为 block 还是 inline 显示
+    fn is_line_only_image(&self, line: &DeltaLine) -> bool {
+        let mut has_image = false;
+        let mut has_non_whitespace_content = false;
+        
+        for inline in &line.inlines {
+            match inline {
+                InlineNode::Image { .. } => {
+                    has_image = true;
+                }
+                InlineNode::Text { content, .. } => {
+                    // 检查文本是否包含非空白、非零宽字符的内容
+                    // 零宽字符包括：U+200B (零宽空格), U+200C (零宽非连接符), U+200D (零宽连接符), U+FEFF (零宽无断空格)
+                    let has_meaningful_content = content.chars().any(|c| {
+                        !c.is_whitespace() 
+                        && c != '\u{200B}'  // 零宽空格
+                        && c != '\u{200C}'  // 零宽非连接符
+                        && c != '\u{200D}'  // 零宽连接符
+                        && c != '\u{FEFF}'  // 零宽无断空格
+                    });
+                    
+                    if has_meaningful_content {
+                        has_non_whitespace_content = true;
+                    }
+                }
+                InlineNode::Mention { .. } | InlineNode::Emoji { .. } => {
+                    has_non_whitespace_content = true;
+                }
+            }
+        }
+        
+        has_image && !has_non_whitespace_content
+    }
+
     /// 第二阶段：Lines → AST（使用 ASTBuilder）
     /// 
     /// 在这一阶段处理：
@@ -340,10 +376,10 @@ impl DeltaParser {
                     }
                     InlineNode::Image { url, width, height } => {
                         // 判断图片是 block 还是 inline（使用策略枚举，便于未来扩展）
-                        // 当前规则：如果行内只有图片且无其他内容，且不在列表中，则为 block
+                        // 当前规则：如果行内只有图片且无其他非空白内容，且不在列表中，则为 block
                         // 未来可能支持：图片 + caption、图片 + 空格、图片作为段落内容的一部分
                         let image_display = {
-                            let is_only_image = line.inlines.len() == 1;
+                            let is_only_image = self.is_line_only_image(&line);
                             let is_in_list = line.block_attr.as_ref()
                                 .and_then(|attr| {
                                     if let BlockAttr::List { .. } = attr {
@@ -836,5 +872,39 @@ mod tests {
             }
         });
         assert!(has_mention, "AST should contain mention nodes");
+    }
+    
+    #[test]
+    fn test_image_with_zero_width_char() {
+        // 用例1：image后面有零宽字符，应该被识别为block image
+        let delta_json1 = "{\"ops\":[{\"insert\":{\"mention\":{\"type\":\"\",\"id\":\"MDEP003406\",\"index\":\"6\",\"denotationChar\":\"@\",\"name\":\"张小彬\"}}},{\"insert\":\" 需要在\"},{\"attributes\":{\"color\":\"#0066cc\"},\"insert\":\"AppUpdateNotice\"},{\"insert\":\"\\n更新和\"},{\"attributes\":{\"color\":\"#0066cc\"},\"insert\":\"AppReadNotice\"},{\"insert\":\"已读这两个消息事件中增加一下 t5t 类型的推送。\\n\"},{\"insert\":{\"imageContainer\":{\"height\":\"388\",\"width\":\"320\",\"url\":\"https://file.360teams.com/v4/cG9ydHJhaXQ7Q1JCNkJWTk9IUUcyR1U0VjsxNjcyMDU7Z3JvdXAxL00wMy81RS9GOC9DeXNBSjJsT08yT0FKOEtlQUFLTkpZVXpURVUzMTQucG5n/base64.png\",\"fullScreen\":\"0\"}}},{\"insert\":\"​\\n\"}]}";
+        
+        let parser = DeltaParser::new();
+        let result1 = parser.parse(delta_json1);
+        
+        assert!(result1.is_ok(), "Parse failed: {:?}", result1.err());
+        let ast1 = result1.unwrap();
+        
+        // 检查image是否作为block节点（不在paragraph中）
+        let image_is_block = ast1.children.iter().any(|node| matches!(node, ASTNode::Image(_)));
+        assert!(image_is_block, "Image should be a block node (not inside paragraph)");
+        
+        // 用例2：image后面直接是换行符，应该被识别为block image
+        let delta_json2 = "{\"ops\":[{\"insert\":\"富文本拖入图片\\n\"},{\"insert\":{\"imageContainer\":{\"url\":\"https://file.360teams.com/v4/cG9ydHJhaXQ7Q1I1VTBGQ0FRR0kwNUpSTDsyNDM1MDU2O2dyb3VwMi9NMDMvNjIvNEUvQ3pVeDJHbERkUHVBR3I5M0FDVW44QWdBVnlZMjY3LnBuZw/base64.png\",\"width\":\"320\",\"height\":\"241\",\"fullScreen\":\"0\"}}},{\"insert\":\"\\n\"}]}";
+        
+        let result2 = parser.parse(delta_json2);
+        
+        assert!(result2.is_ok(), "Parse failed: {:?}", result2.err());
+        let ast2 = result2.unwrap();
+        
+        // 检查image是否作为block节点
+        let image_is_block2 = ast2.children.iter().any(|node| matches!(node, ASTNode::Image(_)));
+        assert!(image_is_block2, "Image should be a block node (not inside paragraph)");
+        
+        println!("\n=== Test Case 1 AST ===");
+        println!("{}", serde_json::to_string_pretty(&ast1).unwrap());
+        
+        println!("\n=== Test Case 2 AST ===");
+        println!("{}", serde_json::to_string_pretty(&ast2).unwrap());
     }
 }
