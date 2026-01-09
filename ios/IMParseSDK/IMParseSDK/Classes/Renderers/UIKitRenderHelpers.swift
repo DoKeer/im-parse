@@ -22,6 +22,7 @@ internal struct AssociatedKeys {
 /// 值类型: InlineMathRenderInfo
 internal extension NSAttributedString.Key {
     static let inlineMathRenderInfo = NSAttributedString.Key("com.imparse.inlineMathRenderInfo")
+    static let inlineImageRenderInfo = NSAttributedString.Key("com.imparse.inlineImageRenderInfo")
     static let mentionNodeInfo = NSAttributedString.Key("com.imparse.mentionNodeInfo")
 }
 
@@ -30,6 +31,11 @@ internal struct InlineMathRenderInfo {
     let mathNode: MathNode
     let textColor: UIColor
     let fontSize: CGFloat
+}
+
+/// 行内图片渲染信息
+internal struct InlineImageRenderInfo {
+    let imageNode: ImageNode
 }
 
 /// Mention 节点信息（用于在 NSAttributedString 中存储 mention 的 id 和 name）
@@ -200,6 +206,98 @@ internal class MathTextAttachment: NSTextAttachment {
     }
 }
 
+// MARK: - 行内图片文本附件
+
+/// 行内图片文本附件，用于在 NSAttributedString 中嵌入行内图片
+/// 注意：此附件只接受已加载的图片，不负责异步加载
+internal class ImageTextAttachment: NSTextAttachment {
+    let imageNode: ImageNode
+    private let font: UIFont // 保存字体，用于计算 attachmentBounds
+    private var cacheImageBounds: CGRect = .zero // 保存图片尺寸
+    private let context: UIKitRenderContext
+
+    /// 初始化行内图片附件
+    /// - Parameters:
+    ///   - imageNode: 图片节点
+    ///   - image: 已加载的图片
+    ///   - font: 当前字体（用于计算 bounds）
+    ///   - context: 渲染上下文
+    init(imageNode: ImageNode, image: UIImage, font: UIFont, context: UIKitRenderContext) {
+        self.imageNode = imageNode
+        self.font = font
+        self.context = context
+        super.init(data: nil, ofType: nil)
+        
+        // 计算目标显示尺寸
+        let screenScale = UIScreen.main.scale
+        let imageAspectRatio = image.size.width / image.size.height
+        
+        // 优先使用节点指定的尺寸
+        var targetWidth: CGFloat
+        var targetHeight: CGFloat
+        
+        if let width = imageNode.width, let height = imageNode.height {
+            // 使用节点指定的尺寸
+            targetWidth = CGFloat(width)
+            targetHeight = CGFloat(height)
+        } else {
+            // 根据可用宽度和图片比例计算
+            let availableWidth = context.width * 0.7 // 行内图片最大宽度为容器的70%
+            let maxHeight = font.capHeight * 3 // 最大高度为字体capHeight的3倍
+            
+            if image.size.width > availableWidth {
+                targetWidth = availableWidth
+                targetHeight = targetWidth / imageAspectRatio
+            } else {
+                targetWidth = image.size.width
+                targetHeight = image.size.height
+            }
+            
+            // 限制最大高度
+            if targetHeight > maxHeight {
+                targetHeight = maxHeight
+                targetWidth = targetHeight * imageAspectRatio
+                // 如果缩放后宽度超过可用宽度，需要重新按宽度缩放
+                if targetWidth > availableWidth {
+                    targetWidth = availableWidth
+                    targetHeight = targetWidth / imageAspectRatio
+                }
+            }
+        }
+        
+        // 使用UIGraphicsImageRenderer进行缩放，保持屏幕scale
+        let scaledImage: UIImage
+        if abs(targetWidth - image.size.width) > 1 || abs(targetHeight - image.size.height) > 1 {
+            // 需要缩放
+            let format = UIGraphicsImageRendererFormat.default()
+            format.scale = screenScale
+            let renderer = UIGraphicsImageRenderer(size: CGSize(width: targetWidth, height: targetHeight), format: format)
+            scaledImage = renderer.image { _ in
+                image.draw(in: CGRect(origin: .zero, size: CGSize(width: targetWidth, height: targetHeight)))
+            }
+        } else {
+            // 不需要缩放，直接使用原图
+            scaledImage = image
+        }
+        
+        // 设置缩放后的图片
+        self.image = scaledImage
+        // 计算垂直居中的 bounds（使用缩放后的尺寸）
+        let displaySize = CGSize(width: targetWidth, height: targetHeight)
+        let yOffset = (font.capHeight - displaySize.height) / 2
+        self.cacheImageBounds = CGRect(origin: CGPoint(x: 0, y: yOffset), size: displaySize)
+    }
+    
+    /// 动态计算 attachment 的 bounds，确保与文本垂直居中
+    override func attachmentBounds(for textContainer: NSTextContainer?, proposedLineFragment lineFrag: CGRect, glyphPosition position: CGPoint, characterIndex charIndex: Int) -> CGRect {
+        return self.cacheImageBounds
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
 // MARK: - UITextView 事件处理
 
 /// 用于处理 UITextView 链接和 mention 点击的代理
@@ -215,6 +313,11 @@ public class LinkHandler: NSObject, UITextViewDelegate {
     }
     
     public func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
+        // 对于预览和长按菜单交互，不处理
+        if interaction == .presentActions || interaction == .preview {
+            return true
+        }
+        
         // 检查是否是 mention URL（自定义 scheme）
         if URL.scheme == "mention" {
             // 解析 mention URL：mention://{id}#{name}
@@ -234,6 +337,11 @@ public class LinkHandler: NSObject, UITextViewDelegate {
             return false // 我们自己处理了，系统不用再处理
         }
         return true // 使用系统默认行为（打开 Safari）
+    }
+    
+    @available(iOS 17.0, *)
+    public func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {
+        return defaultAction
     }
 }
 

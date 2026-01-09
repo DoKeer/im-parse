@@ -27,8 +27,10 @@ private struct AttributedStringFeatures {
     let hasMention: Bool
     let hasEmoji: Bool
     let hasMathAttachment: Bool
+    let hasImageAttachment: Bool
     let emojiAttachments: [EmojiTextAttachment]
     let inlineMathRenderInfos: [(range: NSRange, info: InlineMathRenderInfo)]
+    let inlineImageRenderInfos: [(range: NSRange, info: InlineImageRenderInfo)]
     
     var needsInteraction: Bool {
         hasLink || hasMention || hasEmoji
@@ -38,10 +40,14 @@ private struct AttributedStringFeatures {
         !inlineMathRenderInfos.isEmpty
     }
     
+    var needsInlineImageRender: Bool {
+        !inlineImageRenderInfos.isEmpty
+    }
+    
     var needsTextView: Bool {
-        // 如果有 attachments（特别是 MathTextAttachment），使用 UITextView 而不是 UILabel
+        // 如果有 attachments（特别是 MathTextAttachment 或 ImageTextAttachment），使用 UITextView 而不是 UILabel
         // 因为 UITextView 对 attachments 的支持更好
-        hasMathAttachment || hasEmoji || needsInteraction
+        hasMathAttachment || hasImageAttachment || hasEmoji || needsInteraction
     }
 }
 
@@ -80,6 +86,22 @@ private class NonSelectableTextView: UITextView {
             return false
         }
         return super.canPerformAction(action, withSender: sender)
+    }
+    
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        // 禁用 UILongPressGestureRecognizer 触发 selection
+        if gestureRecognizer is UILongPressGestureRecognizer {
+            return false
+        }
+        return super.gestureRecognizerShouldBegin(gestureRecognizer)
+    }
+
+    override func caretRect(for position: UITextPosition) -> CGRect {
+        .zero
+    }
+
+    override func selectionRects(for range: UITextRange) -> [UITextSelectionRect] {
+        []
     }
 }
 
@@ -182,7 +204,16 @@ public class UIKitFrameRender {
             )
         }
         
-        // 如果有 attachments（特别是 MathTextAttachment）或需要交互，使用 UITextView
+        // 处理需要加载的行内图片
+        if features.needsInlineImageRender {
+            handleInlineImageRendering(
+                attributedString: attributedString,
+                features: features,
+                context: context
+            )
+        }
+        
+        // 如果有 attachments（特别是 MathTextAttachment 或 ImageTextAttachment）或需要交互，使用 UITextView
         // 因为 UITextView 对 attachments 的支持更好
         if features.needsTextView {
             return createInteractiveTextView(
@@ -235,14 +266,58 @@ public class UIKitFrameRender {
         }
     }
     
+    /// 处理行内图片的异步加载
+    private static func handleInlineImageRendering(
+        attributedString: NSAttributedString,
+        features: AttributedStringFeatures,
+        context: UIKitRenderContext
+    ) {
+        guard let imageLoaderDelegate = context.imageLoaderDelegate else { return }
+        
+        for (_, renderInfo) in features.inlineImageRenderInfos {
+            let imageNode = renderInfo.imageNode
+            let onNodeLayoutChanged = context.onNodeLayoutChanged
+            
+            guard let imageURL = URL(string: imageNode.url) else { continue }
+            
+            let task = Task { @MainActor in
+                // 检查是否已取消
+                try? Task.checkCancellation()
+                
+                // 异步加载图片
+                await withCheckedContinuation { continuation in
+                    imageLoaderDelegate.loadImage(url: imageURL, into: nil) { image, error in
+                        // 再次检查是否已取消（加载完成后）
+                        guard !Task.isCancelled else {
+                            continuation.resume()
+                            return
+                        }
+                        
+                        // 加载成功，触发布局更新回调
+                        if image != nil {
+                            onNodeLayoutChanged?(imageNode)
+                        }
+                        
+                        continuation.resume()
+                    }
+                }
+            }
+            
+            // 注册 Task 以便后续可以取消
+            context.onRenderTaskCreated?(task)
+        }
+    }
+    
     /// 一次遍历检测所有特性（性能优化）
     private static func detectAttributedStringFeatures(_ attributedString: NSAttributedString, context: UIKitRenderContext) -> AttributedStringFeatures {
         var hasLink = false
         var hasMention = false
         var hasEmoji = false
         var hasMathAttachment = false
+        var hasImageAttachment = false
         var emojiAttachments: [EmojiTextAttachment] = []
         var inlineMathRenderInfos: [(range: NSRange, info: InlineMathRenderInfo)] = []
+        var inlineImageRenderInfos: [(range: NSRange, info: InlineImageRenderInfo)] = []
         
         let fullRange = NSRange(location: 0, length: attributedString.length)
         
@@ -267,9 +342,19 @@ public class UIKitFrameRender {
                 hasMathAttachment = true
             }
             
+            // 检测 ImageTextAttachment
+            if attributes[.attachment] is ImageTextAttachment {
+                hasImageAttachment = true
+            }
+            
             // 检测需要渲染的行内公式
             if let renderInfo = attributes[.inlineMathRenderInfo] as? InlineMathRenderInfo {
                 inlineMathRenderInfos.append((range: range, info: renderInfo))
+            }
+            
+            // 检测需要加载的行内图片
+            if let renderInfo = attributes[.inlineImageRenderInfo] as? InlineImageRenderInfo {
+                inlineImageRenderInfos.append((range: range, info: renderInfo))
             }
         }
         
@@ -278,8 +363,10 @@ public class UIKitFrameRender {
             hasMention: hasMention,
             hasEmoji: hasEmoji,
             hasMathAttachment: hasMathAttachment,
+            hasImageAttachment: hasImageAttachment,
             emojiAttachments: emojiAttachments,
-            inlineMathRenderInfos: inlineMathRenderInfos
+            inlineMathRenderInfos: inlineMathRenderInfos,
+            inlineImageRenderInfos: inlineImageRenderInfos
         )
     }
     
@@ -299,6 +386,10 @@ public class UIKitFrameRender {
         textView.textContainer.lineFragmentPadding = 0
         textView.backgroundColor = .clear
         textView.frame = CGRect(origin: .zero, size: frame.size)
+        
+        // 重要：禁用自动链接检测，避免系统直接处理自定义 URL scheme
+        // 这样系统会调用 shouldInteractWith 方法，而不是直接尝试打开 URL
+        textView.dataDetectorTypes = []
         
 //        centerTextViewVertically(textView, attributedString: attributedString, frame: frame.size)
         
@@ -884,6 +975,10 @@ public class UIKitFrameRender {
                 textView_.textContainer.lineFragmentPadding = 0
                 textView_.backgroundColor = .clear
                 textView_.frame = cellFrame
+                
+                // 重要：禁用自动链接检测，避免系统直接处理自定义 URL scheme
+                // 这样系统会调用 shouldInteractWith 方法，而不是直接尝试打开 URL
+                textView_.dataDetectorTypes = []
                 
                 centerTextViewVertically(textView_, attributedString: attributedString, frame: cellFrame.size)
                 setupLinkHandler(for: textView_, context: context)

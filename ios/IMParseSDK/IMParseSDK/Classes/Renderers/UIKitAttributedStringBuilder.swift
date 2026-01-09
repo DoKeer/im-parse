@@ -61,15 +61,11 @@ public class UIKitAttributedStringBuilder {
                 result.addAttribute(.link, value: url, range: NSRange(location: 0, length: result.length))
             }
             // 添加链接下划线和颜色
-            result.addAttribute(.underlineStyle, value: NSUnderlineStyle(), range: NSRange(location: 0, length: result.length))
+            result.addAttribute(.underlineStyle, value: NSUnderlineStyle.single, range: NSRange(location: 0, length: result.length))
             result.addAttribute(.foregroundColor, value: context.theme.linkColor, range: NSRange(location: 0, length: result.length))
             
             return result
-            
-        // 行内数学公式
-        case .inlineMath(let mathNode):
-            return buildMathAttributedString(mathNode: mathNode, isBlock: false, context: context)
-            
+
         // Mention
         case .mention(let mentionNode):
             let font = context.currentFont ?? context.theme.font
@@ -82,9 +78,17 @@ public class UIKitAttributedStringBuilder {
                 .font: font,
                 .foregroundColor: context.theme.mentionTextColor,
                 .link: mentionURL,
-                .underlineStyle: NSUnderlineStyle()
+                .underlineStyle: NSUnderlineStyle.single
             ]
             return NSAttributedString(string: "@\(mentionNode.name)", attributes: attributes)
+                        
+        // 行内数学公式
+        case .inlineMath(let mathNode):
+            return buildMathAttributedString(mathNode: mathNode, isBlock: false, context: context)
+            
+        // 行内图片
+        case .image(let imageNode):
+            return buildImageAttributedString(imageNode: imageNode, context: context)
             
         // Emoji
         case .emoji(let emojiNode):
@@ -270,6 +274,36 @@ public class UIKitAttributedStringBuilder {
         }
         
         return mutableAttrString
+    }
+    
+    /// 构建行内图片 AttributedString
+    private func buildImageAttributedString(imageNode: ImageNode, context: UIKitRenderContext) -> NSAttributedString {
+        let font = context.currentFont ?? context.theme.font
+        
+        // 尝试从缓存获取图片（通过 imageLoaderDelegate）
+        if let imageLoaderDelegate = context.imageLoaderDelegate,
+           let imageURL = URL(string: imageNode.url) {
+            // 检查是否有缓存的图片
+            // 注意：UIKitImageLoaderDelegate 的 loadImage 是异步的，这里我们需要同步检查
+            // 如果 imageLoaderDelegate 支持同步获取缓存，可以在这里调用
+            // 否则，我们返回空字符串并添加标记，让渲染层异步加载
+            
+            // 暂时返回空字符串，并添加标记以便在渲染时处理
+            let mutableAttrString = NSMutableAttributedString(string: "")
+            
+            // 添加自定义属性，标记需要加载的行内图片
+            let renderInfo = InlineImageRenderInfo(imageNode: imageNode)
+            mutableAttrString.addAttribute(
+                .inlineImageRenderInfo,
+                value: renderInfo,
+                range: NSRange(location: 0, length: mutableAttrString.length)
+            )
+            
+            return mutableAttrString
+        }
+        
+        // 如果没有 imageLoaderDelegate，返回空字符串
+        return NSAttributedString(string: "")
     }
     
     /// 解析颜色字符串

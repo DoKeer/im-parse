@@ -36,6 +36,9 @@ extension UIView {
         let handler = TapGestureHandler(action: action)
         let tapGesture = UITapGestureRecognizer(target: handler, action: #selector(TapGestureHandler.handleTap))
         self.addGestureRecognizer(tapGesture)
+        
+        // 保持 handler 的引用，避免被释放
+        objc_setAssociatedObject(self, &AssociatedKeys.tapHandler, handler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
 }
 

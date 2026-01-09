@@ -340,7 +340,7 @@ impl MarkdownParser {
                                 link_events.push(ev.clone());
                                 i += 1;
                             }
-                            Event::End(TagEnd::Link) => {
+                Event::End(TagEnd::Link) => {
                                 link_depth -= 1;
                                 if link_depth > 0 {
                                     link_events.push(ev.clone());
