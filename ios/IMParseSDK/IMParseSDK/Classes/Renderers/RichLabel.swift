@@ -35,7 +35,6 @@ internal final class LinkSpan: RichSpan {
     func apply(to attr: NSMutableAttributedString) {
         attr.addAttributes([
             .foregroundColor: UIColor.systemBlue,
-            .underlineStyle: NSUnderlineStyle(),
             .link: url
         ], range: range)
     }
@@ -66,7 +65,6 @@ internal final class MentionSpan: RichSpan {
         
         attr.addAttributes([
             .foregroundColor: UIColor.systemBlue,
-            .underlineStyle: NSUnderlineStyle(),
             .link: mentionURL
         ], range: range)
     }
@@ -187,7 +185,6 @@ internal final class RichLabel: UIView {
         let mutableAttr = NSMutableAttributedString(attributedString: attributedString)
         
         // 应用所有 spans（按位置从后往前排序，避免 range 偏移问题）
-        // 注意：ImageSpan 现在不再 replaceCharacters，所以不需要排序
         // 但为了安全，仍然按位置从后往前处理
         let sortedSpans = spans.sorted { $0.range.location > $1.range.location }
         for span in sortedSpans {

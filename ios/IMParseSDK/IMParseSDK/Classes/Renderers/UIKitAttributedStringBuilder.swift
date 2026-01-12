@@ -62,8 +62,7 @@ public class UIKitAttributedStringBuilder {
             if let url = URL(string: linkNode.url) {
                 result.addAttribute(.link, value: url, range: NSRange(location: 0, length: result.length))
             }
-            // 添加链接下划线和颜色
-            result.addAttribute(.underlineStyle, value: NSUnderlineStyle.single, range: NSRange(location: 0, length: result.length))
+            // 添加链接颜色（无下划线）
             result.addAttribute(.foregroundColor, value: context.theme.linkColor, range: NSRange(location: 0, length: result.length))
             
             return result
@@ -79,8 +78,7 @@ public class UIKitAttributedStringBuilder {
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: context.theme.mentionTextColor,
-                .link: mentionURL,
-                .underlineStyle: NSUnderlineStyle.single
+                .link: mentionURL
             ]
             return NSAttributedString(string: "@\(mentionNode.name)", attributes: attributes)
             
@@ -167,12 +165,12 @@ public class UIKitAttributedStringBuilder {
             case .superscript:
                 // 上标：字体缩小，基线上移
                 fontSizeScale *= 0.7
-                attributes[.baselineOffset] = baseFont.pointSize * 0.4
+                attributes[.baselineOffset] = NSNumber(value: Double(baseFont.pointSize * 0.4))
                 
             case .subscript:
                 // 下标：字体缩小，基线下移
                 fontSizeScale *= 0.7
-                attributes[.baselineOffset] = -baseFont.pointSize * 0.2
+                attributes[.baselineOffset] = NSNumber(value: Double(-baseFont.pointSize * 0.2))
                 
             case .color(let colorString):
                 if let color = parseColor(colorString) {
@@ -217,11 +215,12 @@ public class UIKitAttributedStringBuilder {
             // 使用系统字体
             if isBold && isItalic {
                 baseFont = UIFont.systemFont(ofSize: finalFontSize, weight: .bold)
-                attributes[.obliqueness] = 0.2 // 添加斜体
+                attributes[.obliqueness] = NSNumber(value: 0.2) // 添加斜体
             } else if isBold {
                 baseFont = UIFont.boldSystemFont(ofSize: finalFontSize)
             } else if isItalic {
-                baseFont = UIFont.italicSystemFont(ofSize: finalFontSize)
+                baseFont = UIFont.systemFont(ofSize: finalFontSize)
+                attributes[.obliqueness] = NSNumber(value: 0.2) // 添加斜体
             } else {
                 baseFont = UIFont.systemFont(ofSize: finalFontSize)
             }

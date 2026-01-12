@@ -422,8 +422,7 @@ public class UIKitFrameAsyncCalculator {
             attributes: [
                 .font: font,
                 .foregroundColor: context.theme.mentionTextColor,
-                .link: mentionURL,
-                .underlineStyle: NSUnderlineStyle()
+                .link: mentionURL
             ]
         )
         attrString.append(mentionString)
