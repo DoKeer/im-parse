@@ -55,14 +55,39 @@ class MessageAdapter(
             imageLoader = object : com.imparse.renderers.AndroidRenderContext.ImageLoader {
                 override fun loadImage(
                     url: String,
-                    imageView: android.widget.ImageView,
-                    callback: (Boolean) -> Unit
+                    imageView: android.widget.ImageView?,
+                    callback: (Any?) -> Unit
                 ) {
-                    // 使用 Glide 加载图片
-                    Glide.with(context)
-                        .load(url)
-                        .into(imageView)
-                    callback(true)
+                    if (imageView != null) {
+                        // 块级图片：使用 Glide 加载到 ImageView
+                        Glide.with(context)
+                            .load(url)
+                            .into(imageView)
+                        callback(true)
+                    } else {
+                        // 行内图片：直接下载图片并返回 Bitmap
+                        Thread {
+                            try {
+                                val futureTarget = Glide.with(context)
+                                    .asBitmap()
+                                    .load(url)
+                                    .submit()
+                                
+                                val bitmap = futureTarget.get()
+                                
+                                // 回到主线程调用回调
+                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    callback(bitmap)
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.e("MessageAdapter", "Failed to load inline image: $url", e)
+                                // 回到主线程调用回调，返回 null 表示失败
+                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    callback(null)
+                                }
+                            }
+                        }.start()
+                    }
                 }
             },
             inlineImageLoaderDelegate = this,

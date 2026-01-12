@@ -1,5 +1,6 @@
 package com.imparse.renderers
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -104,8 +105,8 @@ object MathFormulaRenderer {
             
             val clickableSpan = if (context.onMathTap != null) {
                 object : android.text.style.ClickableSpan() {
-                        override fun onClick(widget: View) {
-                            context.onMathTap?.invoke(mathNode)
+                    override fun onClick(widget: View) {
+                        context.onMathTap.invoke(mathNode)
                     }
                 }
             } else null
@@ -118,7 +119,7 @@ object MathFormulaRenderer {
                 clickableSpan = clickableSpan,
                 originalText = mathNode.content
             ))
-                onComplete?.invoke()
+            onComplete?.invoke()
             return
         }
         
@@ -162,14 +163,13 @@ object MathFormulaRenderer {
                     // 创建点击事件
                     val clickableSpan = if (context.onMathTap != null) {
                         object : android.text.style.ClickableSpan() {
-                                    override fun onClick(widget: View) {
-                                        context.onMathTap?.invoke(mathNode)
-                                    }
-                                }
+                            override fun onClick(widget: View) {
+                                context.onMathTap.invoke(mathNode)
+                            }
+                        }
                     } else null
-                            
-                            // 保存到缓存
-                            context.formulaSizeCacheDelegate?.saveFormulaImage(image, inlineCacheKey)
+                    // 保存到缓存
+                    context.formulaSizeCacheDelegate?.saveFormulaImage(image, inlineCacheKey)
                             
                     // 返回结果，不立即替换
                     onResult?.invoke(InlineMathRenderResult(

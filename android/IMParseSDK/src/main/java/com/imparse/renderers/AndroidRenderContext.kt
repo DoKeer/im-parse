@@ -34,9 +34,18 @@ data class AndroidRenderContext(
 ) {
     /**
      * 图片加载器接口
+     * @param url 图片 URL
+     * @param imageView 可选的 ImageView，如果为 null 则直接下载图片并返回 Bitmap
+     * @param callback 回调函数：
+     *   - 当 imageView 不为 null 时，回调参数为 Boolean（加载是否成功）
+     *   - 当 imageView 为 null 时，回调参数为 Bitmap?（下载的图片，失败时为 null）
      */
     interface ImageLoader {
-        fun loadImage(url: String, imageView: android.widget.ImageView, callback: (Boolean) -> Unit)
+        fun loadImage(
+            url: String, 
+            imageView: android.widget.ImageView?, 
+            callback: (Any?) -> Unit
+        )
     }
     
     /**

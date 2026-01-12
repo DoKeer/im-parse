@@ -74,6 +74,12 @@ object MessageDataGenerator {
      */
     private fun generateMarkdownTemplates(): List<String> {
         return listOf(
+            """ 
+            ### 图片
+            行内 ![示例图片](https://iph.href.lu/879x200)
+            块级
+            ![示例图片](https://iph.href.lu/879x200)
+            并且有适当的边距和圆角。如果图片加载失败，应该显示错误信息。""".trimIndent(),
             """
             $$\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$$
 

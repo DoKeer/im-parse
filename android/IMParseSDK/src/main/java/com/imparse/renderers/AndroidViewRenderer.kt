@@ -1,6 +1,10 @@
 package com.imparse.renderers
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.Typeface
 import android.os.Build
 import android.text.*
@@ -92,7 +96,7 @@ class AndroidViewRenderer {
             )
             // 最后一个元素不需要底部间距
             if (index < ast.children.size - 1) {
-            params.bottomMargin = renderContext.theme.paragraphSpacing
+                params.bottomMargin = renderContext.theme.paragraphSpacing
             }
             container.addView(childView, params)
         }
@@ -463,7 +467,9 @@ class AndroidViewRenderer {
         }
         
         // 加载图片
-        context.imageLoader?.loadImage(node.url, imageView) { success ->
+        context.imageLoader?.loadImage(node.url, imageView) { result ->
+            // 当 imageView 不为 null 时，回调返回 Boolean
+            val success = result as? Boolean ?: false
             // 图片加载完成回调
         }
         
@@ -1179,73 +1185,51 @@ class AndroidViewRenderer {
         )
         val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
         
-        // 创建一个临时 ImageView 用于加载图片
-        val tempImageView = ImageView(context.context)
-        tempImageView.layoutParams = ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-        
-        // 使用 imageLoader 加载图片
-        context.imageLoader?.loadImage(node.url, tempImageView) { success ->
+        // 使用 imageLoader 直接下载图片（imageView 为 null）
+        context.imageLoader?.loadImage(node.url, null) { result ->
             android.os.Handler(android.os.Looper.getMainLooper()).post {
-                if (success && tempImageView.drawable != null) {
-                    // 将 Drawable 转换为 Bitmap
-                    val drawable = tempImageView.drawable
-                    val bitmap = if (drawable is android.graphics.drawable.BitmapDrawable) {
-                        drawable.bitmap
-                    } else {
-                        // 如果不是 BitmapDrawable，需要转换为 Bitmap
-                        val width = drawable.intrinsicWidth.coerceAtLeast(1)
-                        val height = drawable.intrinsicHeight.coerceAtLeast(1)
-                        val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
-                        val canvas = android.graphics.Canvas(bitmap)
-                        drawable.setBounds(0, 0, canvas.width, canvas.height)
-                        drawable.draw(canvas)
-                        bitmap
-                    }
+                // 当 imageView 为 null 时，回调返回 Bitmap?
+                val bitmap = result as? Bitmap
+                
+                if (bitmap != null) {
+                    // 创建行内图片 Span（参考 iOS 实现）
+                    val imageSpan = InlineImageSpan(
+                        context.context,
+                        bitmap,
+                        node,
+                        fontSizePx,
+                        context.contentWidth
+                    )
                     
-                    if (bitmap != null) {
-                        // 创建 ImageSpan
-                        val imageSpan = MathFormulaRenderer.createInlineImageSpan(
-                            bitmap,
-                            fontSizePx,
-                            lineHeightPx,
-                            context.context,
-                            textView = textView,
-                            contentWidth = context.contentWidth
-                        )
-                        
-                        // 替换占位符为对象替换字符
-                        val placeholderText = builder.subSequence(start, end).toString()
-                        builder.replace(start, end, "\uFFFC")
-                        
-                        // 设置 ImageSpan
+                    // 替换占位符为对象替换字符
+                    val placeholderText = builder.subSequence(start, end).toString()
+                    builder.replace(start, end, "\uFFFC")
+                    
+                    // 设置 ImageSpan
+                    builder.setSpan(
+                        imageSpan,
+                        start,
+                        start + 1, // \uFFFC 是单个字符
+                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+                    
+                    // 添加点击事件
+                    if (context.onImageTap != null) {
+                        val clickableSpan = object : ClickableSpan() {
+                            override fun onClick(widget: View) {
+                                context.onImageTap?.invoke(node)
+                            }
+                        }
                         builder.setSpan(
-                            imageSpan,
+                            clickableSpan,
                             start,
-                            start + 1, // \uFFFC 是单个字符
+                            start + 1,
                             Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                         )
-                        
-                        // 添加点击事件
-                        if (context.onImageTap != null) {
-                            val clickableSpan = object : ClickableSpan() {
-                                override fun onClick(widget: View) {
-                                    context.onImageTap?.invoke(node)
-                                }
-                            }
-                            builder.setSpan(
-                                clickableSpan,
-                                start,
-                                start + 1,
-                                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                            )
-                        }
-                        
-                        // 更新 TextView
-                        textView.text = builder
                     }
+                    
+                    // 更新 TextView
+                    textView.text = builder
                 }
             }
         }
@@ -1781,6 +1765,189 @@ class AndroidViewRenderer {
     
     // 默认context（用于某些方法需要context但没有传入的情况）
     private var defaultContext: AndroidRenderContext? = null
+
+    /**
+     * 行内图片 Span，参考 iOS 实现计算图片尺寸
+     * 图片顶部对齐字体顶部
+     */
+    private class InlineImageSpan(
+        ctx: Context,
+        private val originalBitmap: Bitmap,
+        private val imageNode: ImageNode,
+        private val fontSizePx: Float,
+        private val contentWidth: Int
+    ) : DynamicDrawableSpan(ALIGN_BASELINE) {
+        
+        private val context: Context = ctx
+        private var scaledBitmap: Bitmap? = null
+        private var cachedDrawable: InlineImageDrawable? = null
+        
+        /**
+         * 计算目标显示尺寸（参考 iOS 实现）
+         */
+        private fun calculateTargetSize(): Pair<Int, Int> {
+            val imageWidth = originalBitmap.width.toFloat()
+            val imageHeight = originalBitmap.height.toFloat()
+            val imageAspectRatio = imageWidth / imageHeight
+            
+            // 1. 计算最大允许尺寸（参考 iOS）
+            val maxWidth = contentWidth * 0.7f // 最大可展示宽度为容器的70%
+            val maxHeight = contentWidth * 2.0f // 最大高度不能超过contentWidth的两倍
+            
+            // 2. 根据图片原始尺寸和长宽比计算目标尺寸（不超过最大尺寸）
+            var targetWidth: Float
+            var targetHeight: Float
+            
+            if (imageWidth > maxWidth) {
+                // 如果图片宽度超过最大宽度，按宽度缩放
+                targetWidth = maxWidth
+                targetHeight = targetWidth / imageAspectRatio
+                // 如果按宽度缩放后高度超过最大高度，则按高度缩放
+                if (targetHeight > maxHeight) {
+                    targetHeight = maxHeight
+                    targetWidth = targetHeight * imageAspectRatio
+                }
+            } else if (imageHeight > maxHeight) {
+                // 如果图片高度超过最大高度，按高度缩放
+                targetHeight = maxHeight
+                targetWidth = targetHeight * imageAspectRatio
+                // 如果按高度缩放后宽度超过最大宽度，则按宽度缩放
+                if (targetWidth > maxWidth) {
+                    targetWidth = maxWidth
+                    targetHeight = targetWidth / imageAspectRatio
+                }
+            } else {
+                // 图片尺寸在允许范围内，使用原始尺寸
+                targetWidth = imageWidth
+                targetHeight = imageHeight
+            }
+            
+            // 3. 如果 imageNode 指定了尺寸，需要和计算出的最大尺寸对比
+            if (imageNode.width != null && imageNode.height != null) {
+                val nodeWidth = imageNode.width!!
+                val nodeHeight = imageNode.height!!
+                
+                // 如果 imageNode 的尺寸大于计算出的最大尺寸，则压缩到最大尺寸
+                if (nodeWidth > maxWidth || nodeHeight > maxHeight) {
+                    // 需要压缩，使用计算出的最大尺寸
+                    // targetWidth 和 targetHeight 已经在上面计算好了
+                } else {
+                    // 如果 imageNode 的尺寸小于或等于最大尺寸，则使用 imageNode 的尺寸
+                    targetWidth = nodeWidth
+                    targetHeight = nodeHeight
+                }
+            }
+            
+            return Pair(targetWidth.toInt(), targetHeight.toInt())
+        }
+        
+        /**
+         * 获取缩放后的 Bitmap
+         */
+        private fun getScaledBitmap(): Bitmap {
+            if (scaledBitmap != null) {
+                return scaledBitmap!!
+            }
+            
+            val (targetW, targetH) = calculateTargetSize()
+            
+            // 如果尺寸差异小于1像素，直接使用原图
+            if (kotlin.math.abs(targetW - originalBitmap.width) < 1 &&
+                kotlin.math.abs(targetH - originalBitmap.height) < 1
+            ) {
+                scaledBitmap = originalBitmap
+            } else {
+                // 需要缩放
+                scaledBitmap = Bitmap.createScaledBitmap(originalBitmap, targetW, targetH, true)
+                scaledBitmap?.density = originalBitmap.density
+            }
+            
+            return scaledBitmap!!
+        }
+        
+        override fun getDrawable(): android.graphics.drawable.Drawable {
+            val bmp = getScaledBitmap()
+            // 如果 bitmap 更新，重建 drawable；否则复用
+            if (cachedDrawable == null || cachedDrawable?.sourceBitmap !== bmp) {
+                cachedDrawable = InlineImageDrawable(bmp)
+            }
+            return cachedDrawable!!
+        }
+        
+        override fun getSize(
+            paint: Paint,
+            text: CharSequence?,
+            start: Int,
+            end: Int,
+            fm: Paint.FontMetricsInt?
+        ): Int {
+            val d = drawable
+            val rect = d.bounds
+            
+            if (fm != null) {
+                val pfm = paint.fontMetricsInt
+                val imageHeight = rect.height()
+                
+                // 图片顶部对齐字体顶部（参考 iOS：font.ascender - targetHeight）
+                // pfm.ascent 是从基线到字体顶部的距离（负数，在基线上方）
+                // 图片顶部应该对齐字体顶部，所以图片顶部位置 = pfm.ascent
+                // 图片底部位置 = pfm.ascent + imageHeight
+                fm.ascent = pfm.ascent
+                fm.descent = pfm.ascent + imageHeight
+                fm.top = fm.ascent
+                fm.bottom = fm.descent
+            }
+            
+            return rect.right
+        }
+        
+        override fun draw(
+            canvas: Canvas,
+            text: CharSequence?,
+            start: Int,
+            end: Int,
+            x: Float,
+            top: Int,
+            y: Int,
+            bottom: Int,
+            paint: Paint
+        ) {
+            val drawable = drawable
+            canvas.save()
+            
+            // 获取字体的度量信息
+            val fm = paint.fontMetricsInt
+            
+            // 图片顶部对齐字体顶部
+            // y 是基线位置，fm.ascent 是从基线到字体顶部的距离（负数）
+            // 图片顶部位置 = y + fm.ascent
+            val transY = y + fm.ascent
+            
+            canvas.translate(x, transY.toFloat())
+            drawable.draw(canvas)
+            canvas.restore()
+        }
+    }
+    
+    /**
+     * 行内图片 Drawable
+     */
+    private class InlineImageDrawable(
+        val sourceBitmap: Bitmap
+    ) : android.graphics.drawable.Drawable() {
+        
+        init {
+            setBounds(0, 0, sourceBitmap.width, sourceBitmap.height)
+        }
+        
+        override fun draw(canvas: Canvas) {
+            canvas.drawBitmap(sourceBitmap, null, bounds, null)
+        }
+        
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {}
+        override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
+    }
 
 }
 

@@ -378,7 +378,7 @@ data class LinkNode(
  */
 enum class ImageDisplay {
     Inline,  // 行内图片（作为段落流的一部分）
-    Block    // 块级图片（独立块）
+    Block;   // 块级图片（独立块）
     
     companion object {
         fun fromString(str: String?): ImageDisplay {
