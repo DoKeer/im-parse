@@ -172,13 +172,7 @@ internal class MathTextAttachment: NSTextAttachment {
         // 使用UIGraphicsImageRenderer进行缩放，保持屏幕scale
         let scaledImage: UIImage
         if abs(targetWidth - image.size.width) > 1 || abs(targetHeight - image.size.height) > 1 {
-            // 需要缩放
-            let format = UIGraphicsImageRendererFormat.default()
-            format.scale = screenScale // 使用屏幕 scale，确保在高分辨率屏幕上清晰
-            let renderer = UIGraphicsImageRenderer(size: CGSize(width: targetWidth, height: targetHeight), format: format)
-            scaledImage = renderer.image { _ in
-                image.draw(in: CGRect(origin: .zero, size: CGSize(width: targetWidth, height: targetHeight)))
-            }
+            scaledImage = image.scaled(to: CGSize(width: targetWidth, height: targetHeight), scale: screenScale)
         } else {
             // 不需要缩放，直接使用原图
             scaledImage = image
@@ -283,13 +277,7 @@ internal class ImageTextAttachment: NSTextAttachment {
         // 4. 使用UIGraphicsImageRenderer进行缩放，保持屏幕scale
         let scaledImage: UIImage
         if abs(targetWidth - image.size.width) > 1 || abs(targetHeight - image.size.height) > 1 {
-            // 需要缩放
-            let format = UIGraphicsImageRendererFormat.default()
-            format.scale = screenScale
-            let renderer = UIGraphicsImageRenderer(size: CGSize(width: targetWidth, height: targetHeight), format: format)
-            scaledImage = renderer.image { _ in
-                image.draw(in: CGRect(origin: .zero, size: CGSize(width: targetWidth, height: targetHeight)))
-            }
+            scaledImage = image.scaled(to: CGSize(width: targetWidth, height: targetHeight), scale: screenScale)
         } else {
             // 不需要缩放，直接使用原图
             scaledImage = image
@@ -401,3 +389,155 @@ public func nodesMatch(_ node1: ASTNodeWrapper, _ node2: ASTNodeWrapper) -> Bool
     }
 }
 
+
+extension UIImage {
+    // 方法1：高质量缩放（保持清晰）
+    func scaled(to size: CGSize, scale: CGFloat? = nil) -> UIImage {
+        // 1. 确保目标尺寸是整数像素
+        let targetSize = CGSize(
+            width: floor(size.width),
+            height: floor(size.height)
+        )
+        
+        // 2. 计算实际像素尺寸
+        let renderScale = scale ?? UIScreen.main.scale
+        let pixelSize = CGSize(
+            width: targetSize.width * renderScale,
+            height: targetSize.height * renderScale
+        )
+        
+        // 3. 使用整数像素尺寸创建渲染器
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = renderScale
+        format.opaque = self.imageRendererFormat.opaque  // 保持透明度设置
+        format.preferredRange = .standard  // 保持颜色范围
+        
+        let renderer = UIGraphicsImageRenderer(
+            size: targetSize,  // 使用点尺寸
+            format: format
+        )
+        
+        return renderer.image { context in
+            // 4. 设置高质量插值
+            context.cgContext.interpolationQuality = .high
+            
+            // 5. 确保绘制在像素边界上
+            let drawRect = CGRect(origin: .zero, size: targetSize)
+            
+            // 6. 使用正确的混合模式
+            self.draw(in: drawRect, blendMode: .normal, alpha: 1.0)
+        }
+    }
+    
+    // 方法2：保持宽高比的高质量缩放
+    func scaledAspectFit(to targetSize: CGSize, scale: CGFloat? = nil) -> UIImage {
+        // 计算保持宽高比的目标尺寸
+        let aspectRatio = self.size.width / self.size.height
+        var newSize = targetSize
+        
+        if targetSize.width / aspectRatio <= targetSize.height {
+            newSize.height = targetSize.width / aspectRatio
+        } else {
+            newSize.width = targetSize.height * aspectRatio
+        }
+        
+        // 对齐到像素边界
+        newSize.width = floor(newSize.width)
+        newSize.height = floor(newSize.height)
+        
+        return self.scaled(to: newSize, scale: scale)
+    }
+    
+    // 方法3：针对特定用途的优化缩放
+    enum ScaleQuality {
+        case high       // 高质量，适合照片
+        case medium     // 中等质量，适合UI元素
+        case fast       // 快速，适合临时显示
+    }
+    
+    func scaled(to size: CGSize, quality: ScaleQuality = .high) -> UIImage {
+        let targetSize = CGSize(
+            width: floor(size.width),
+            height: floor(size.height)
+        )
+        
+        let renderer: UIGraphicsImageRenderer
+        let format = UIGraphicsImageRendererFormat.default()
+        
+        switch quality {
+        case .high:
+            format.scale = UIScreen.main.scale
+            format.opaque = false
+            format.preferredRange = .extended  // 扩展颜色范围
+            
+            renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+            
+            return renderer.image { context in
+                context.cgContext.interpolationQuality = .high
+                context.cgContext.setAllowsAntialiasing(true)
+                
+                // 使用 transform 确保像素对齐
+                let transform = CGAffineTransform(scaleX: 1.0, y: 1.0)
+                context.cgContext.concatenate(transform)
+                
+                self.draw(in: CGRect(origin: .zero, size: targetSize))
+            }
+            
+        case .medium:
+            format.scale = UIScreen.main.scale
+            format.opaque = self.imageRendererFormat.opaque
+            
+            renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+            
+            return renderer.image { context in
+                context.cgContext.interpolationQuality = .medium
+                self.draw(in: CGRect(origin: .zero, size: targetSize))
+            }
+            
+        case .fast:
+            format.scale = 1.0  // 使用较低的 scale 提高性能
+            
+            renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+            
+            return renderer.image { _ in
+                self.draw(in: CGRect(origin: .zero, size: targetSize))
+            }
+        }
+    }
+}
+
+// 像素对齐工具
+struct PixelAlignment {
+    // 将点坐标对齐到像素边界
+    static func alignToPixel(_ point: CGPoint) -> CGPoint {
+        let scale = UIScreen.main.scale
+        return CGPoint(
+            x: round(point.x * scale) / scale,
+            y: round(point.y * scale) / scale
+        )
+    }
+    
+    // 将尺寸对齐到像素边界
+    static func alignToPixel(_ size: CGSize) -> CGSize {
+        let scale = UIScreen.main.scale
+        return CGSize(
+            width: ceil(size.width * scale) / scale,
+            height: ceil(size.height * scale) / scale
+        )
+    }
+    
+    // 将对齐的 CGRect
+    static func alignToPixel(_ rect: CGRect) -> CGRect {
+        return CGRect(
+            origin: alignToPixel(rect.origin),
+            size: alignToPixel(rect.size)
+        )
+    }
+    
+    // 检查是否需要像素对齐
+    static func needsAlignment(_ value: CGFloat) -> Bool {
+        let scale = UIScreen.main.scale
+        let pixelValue = value * scale
+        return abs(pixelValue - round(pixelValue)) > 0.001
+    }
+}

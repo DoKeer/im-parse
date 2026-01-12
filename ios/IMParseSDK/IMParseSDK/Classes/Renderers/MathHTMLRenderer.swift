@@ -42,8 +42,8 @@ public func generateMathCacheKey(
     let data = Data(mathContent.utf8)
     let hash = SHA256.hash(data: data)
     let hashString = hash.compactMap { String(format: "%02x", $0) }.joined()
-    // 块级公式：使用原始尺寸
-    return ("math:\(hashString):\(stringColor):\(Int(fontSize))", stringColor)
+    // 块级公式：使用原始尺寸，stringColor 和 fontSize暂时无用，先不作为key的一部分
+    return ("math:\(hashString)", stringColor)
 }
 
 /// 数学公式 HTML 渲染器
