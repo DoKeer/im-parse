@@ -121,7 +121,19 @@ class AndroidViewRenderer {
             is HeadingNode -> renderHeading(node, context)
             is CodeBlockNode -> renderCodeBlock(node, context)
             is LinkNode -> renderLink(node, context)
-            is ImageNode -> renderImage(node, context)
+            is ImageNode -> {
+                // 只处理块级图片，行内图片应该在 appendInlineNode 中处理
+                if (node.display == ImageDisplay.Block) {
+                    renderImage(node, context)
+                } else {
+                    // 行内图片不应该通过 renderNode 处理，但为了兼容性，创建一个占位符
+                    TextView(context.context).apply {
+                        text = node.alt ?: "[图片]"
+                        textSize = context.theme.fontSize
+                        setTextColor(android.graphics.Color.GRAY)
+                    }
+                }
+            }
             is ListNode -> renderList(node, context)
             is ListItemNode -> renderListItem(node, context)
             is TableNode -> renderTable(node, context)
@@ -406,8 +418,15 @@ class AndroidViewRenderer {
     
     /**
      * 渲染图片
+     * 注意：此方法只处理块级图片（display == ImageDisplay.Block）
+     * 行内图片（display == ImageDisplay.Inline）会在 appendInlineNode 中处理
      */
     private fun renderImage(node: ImageNode, context: AndroidRenderContext): View {
+        // 确保只处理块级图片
+        if (node.display != ImageDisplay.Block) {
+            android.util.Log.w("AndroidViewRenderer", "renderImage called for inline image, should use appendInlineNode instead")
+        }
+        
         val imageView = ImageView(context.context)
         imageView.scaleType = ImageView.ScaleType.CENTER_CROP
         imageView.adjustViewBounds = true
@@ -1142,6 +1161,97 @@ class AndroidViewRenderer {
     }
     
     /**
+     * 异步加载行内图片并创建 ImageSpan
+     */
+    private fun loadInlineImage(
+        node: ImageNode,
+        context: AndroidRenderContext,
+        displayMetrics: android.util.DisplayMetrics,
+        textView: TextView,
+        builder: SpannableStringBuilder,
+        start: Int,
+        end: Int
+    ) {
+        val fontSizePx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP,
+            context.theme.fontSize,
+            displayMetrics
+        )
+        val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
+        
+        // 创建一个临时 ImageView 用于加载图片
+        val tempImageView = ImageView(context.context)
+        tempImageView.layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        
+        // 使用 imageLoader 加载图片
+        context.imageLoader?.loadImage(node.url, tempImageView) { success ->
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                if (success && tempImageView.drawable != null) {
+                    // 将 Drawable 转换为 Bitmap
+                    val drawable = tempImageView.drawable
+                    val bitmap = if (drawable is android.graphics.drawable.BitmapDrawable) {
+                        drawable.bitmap
+                    } else {
+                        // 如果不是 BitmapDrawable，需要转换为 Bitmap
+                        val width = drawable.intrinsicWidth.coerceAtLeast(1)
+                        val height = drawable.intrinsicHeight.coerceAtLeast(1)
+                        val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+                        val canvas = android.graphics.Canvas(bitmap)
+                        drawable.setBounds(0, 0, canvas.width, canvas.height)
+                        drawable.draw(canvas)
+                        bitmap
+                    }
+                    
+                    if (bitmap != null) {
+                        // 创建 ImageSpan
+                        val imageSpan = MathFormulaRenderer.createInlineImageSpan(
+                            bitmap,
+                            fontSizePx,
+                            lineHeightPx,
+                            context.context,
+                            textView = textView,
+                            contentWidth = context.contentWidth
+                        )
+                        
+                        // 替换占位符为对象替换字符
+                        val placeholderText = builder.subSequence(start, end).toString()
+                        builder.replace(start, end, "\uFFFC")
+                        
+                        // 设置 ImageSpan
+                        builder.setSpan(
+                            imageSpan,
+                            start,
+                            start + 1, // \uFFFC 是单个字符
+                            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                        
+                        // 添加点击事件
+                        if (context.onImageTap != null) {
+                            val clickableSpan = object : ClickableSpan() {
+                                override fun onClick(widget: View) {
+                                    context.onImageTap?.invoke(node)
+                                }
+                            }
+                            builder.setSpan(
+                                clickableSpan,
+                                start,
+                                start + 1,
+                                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                            )
+                        }
+                        
+                        // 更新 TextView
+                        textView.text = builder
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
      * 追加行内节点到 SpannableStringBuilder
      */
     private fun appendInlineNode(
@@ -1218,6 +1328,39 @@ class AndroidViewRenderer {
                     builder.length,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                 )
+            }
+            // V2: 行内图片（display == ImageDisplay.Inline）
+            is ImageNode -> {
+                if (node.display == ImageDisplay.Inline) {
+                    val start = builder.length
+                    // 先添加占位符文本（alt 文本或空字符串）
+                    val placeholder = node.alt ?: "\uFFFC" // 使用对象替换字符作为占位符
+                    builder.append(placeholder)
+                    val end = builder.length
+                    
+                    // 尝试同步加载图片（如果 imageLoader 支持）
+                    if (context.imageLoader != null && displayMetrics != null && textView != null) {
+                        // 异步加载图片并创建 ImageSpan
+                        loadInlineImage(
+                            node,
+                            context,
+                            displayMetrics,
+                            textView,
+                            builder,
+                            start,
+                            end
+                        )
+                    } else {
+                        // 如果没有 imageLoader，显示 alt 文本或占位符
+                        if (node.alt == null) {
+                            // 如果没有 alt 文本，显示 URL 的简短形式
+                            builder.replace(start, end, "[图片]")
+                        }
+                    }
+                } else {
+                    // 块级图片不应该在这里处理，但为了兼容性，显示占位符
+                    builder.append(node.alt ?: "[图片]")
+                }
             }
             is EmojiNode -> builder.append(node.content)
             is MentionNode -> {

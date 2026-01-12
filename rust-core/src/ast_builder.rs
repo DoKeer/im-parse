@@ -172,6 +172,16 @@ impl ASTBuilder {
         self.current_paragraph_children.push(ASTNode::Text(text_run));
     }
     
+    /// 添加行内代码（自动刷新文本缓冲区并应用 Code 样式）
+    pub fn add_inline_code(&mut self, code: impl Into<String>) {
+        self.flush_text_buffer();
+        let code_text = code.into();
+        self.current_paragraph_children.push(ASTNode::Text(TextRun::with_styles(
+            code_text,
+            vec![TextStyle::Code],
+        )));
+    }
+    
     /// 添加换行
     pub fn add_line_break(&mut self, hard: bool) {
         self.flush_text_buffer();
@@ -206,6 +216,12 @@ impl ASTBuilder {
         };
         
         self.root.children.push(ASTNode::Paragraph(para));
+    }
+    
+    /// 获取当前段落的子节点（用于在段落结束时处理）
+    pub fn take_current_paragraph_children(&mut self) -> Vec<ASTNode> {
+        self.flush_text_buffer();
+        std::mem::take(&mut self.current_paragraph_children)
     }
     
     /// 添加段落（带对齐和缩进）

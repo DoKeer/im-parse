@@ -127,7 +127,17 @@ impl MarkdownParser {
     ) -> Result<(), ParseError> {
         match event {
             Event::Start(Tag::Paragraph) => {
-                let children = self.parse_inline_context(stream, TagEnd::Paragraph)?;
+                // 开始新段落
+                builder.start_paragraph();
+                // 处理段落内的所有行内事件，直到遇到 End(TagEnd::Paragraph)
+                // parse_paragraph_content 会消费 End(TagEnd::Paragraph) 并调用 handle_paragraph
+                self.parse_paragraph_content(stream, builder)?;
+            }
+            
+            Event::End(TagEnd::Paragraph) => {
+                // 这不应该出现在这里（应该在 parse_paragraph_content 中处理）
+                // 但为了安全，我们处理它
+                let children = builder.take_current_paragraph_children();
                 self.handle_paragraph(children, builder);
             }
             
@@ -219,9 +229,169 @@ impl MarkdownParser {
         Ok(())
     }
     
+    /// 解析段落内容（使用 ASTBuilder 构建）
+    /// 
+    /// 这是正确的段落处理方式：
+    /// - 使用 ASTBuilder 的段落管理机制
+    /// - 正确处理 SoftBreak / HardBreak
+    /// - 当遇到 End(TagEnd::Paragraph) 时消费事件并调用 handle_paragraph
+    fn parse_paragraph_content<'a, I: Iterator<Item = Event<'a>>>(
+        &self,
+        stream: &mut EventStream<'a, I>,
+        builder: &mut ASTBuilder,
+    ) -> Result<(), ParseError> {
+        while let Some(event) = stream.peek() {
+            match event {
+                Event::End(TagEnd::Paragraph) => {
+                    // 段落结束：消费事件，获取段落内容并处理
+                    stream.next();
+                    let children = builder.take_current_paragraph_children();
+                    self.handle_paragraph(children, builder);
+                    break;
+                }
+                
+                Event::Text(text) => {
+                    builder.add_text(text.to_string());
+                    stream.next();
+                }
+                
+                Event::Code(code) => {
+                    // 使用 ASTBuilder 的专用方法添加行内代码
+                    builder.add_inline_code(code.to_string());
+                    stream.next();
+                }
+                
+                Event::SoftBreak => {
+                    builder.add_line_break(false);
+                    stream.next();
+                }
+                
+                Event::HardBreak => {
+                    builder.add_line_break(true);
+                    stream.next();
+                }
+                
+                Event::Start(Tag::Strong) => {
+                    builder.push_style(TextStyle::Bold);
+                    stream.next();
+                }
+                
+                Event::End(TagEnd::Strong) => {
+                    builder.pop_style("bold");
+                    stream.next();
+                }
+                
+                Event::Start(Tag::Emphasis) => {
+                    builder.push_style(TextStyle::Italic);
+                    stream.next();
+                }
+                
+                Event::End(TagEnd::Emphasis) => {
+                    builder.pop_style("italic");
+                    stream.next();
+                }
+                
+                Event::Start(Tag::Strikethrough) => {
+                    builder.push_style(TextStyle::Strikethrough);
+                    stream.next();
+                }
+                
+                Event::End(TagEnd::Strikethrough) => {
+                    builder.pop_style("strikethrough");
+                    stream.next();
+                }
+                
+                Event::Start(Tag::Link { dest_url, title, .. }) => {
+                    // 处理链接：收集链接内的内容
+                    let url = dest_url.to_string();
+                    let link_title = if title.is_empty() { None } else { Some(title.to_string()) };
+                    
+                    // 收集链接内的所有事件
+                    let mut link_events = Vec::new();
+                    let mut link_depth = 1;
+                    stream.next(); // 跳过 Start(Tag::Link)
+                    
+                    while let Some(event) = stream.peek() {
+                        match event {
+                            Event::Start(Tag::Link { .. }) => {
+                                link_depth += 1;
+                                link_events.push(event.clone());
+                                stream.next();
+                            }
+                            Event::End(TagEnd::Link) => {
+                                link_depth -= 1;
+                                if link_depth > 0 {
+                                    link_events.push(event.clone());
+                                }
+                                stream.next();
+                                if link_depth == 0 {
+                                    break;
+                                }
+                            }
+                            _ => {
+                                link_events.push(event.clone());
+                                stream.next();
+                            }
+                        }
+                    }
+                    
+                    // 递归处理链接内的内容
+                    let link_children = self.build_inline_nodes(&link_events);
+                    let link_children = self.validate_and_clean_link_children(link_children);
+                    let link_kind = self.detect_link_kind(&link_children, &url);
+                    
+                    // 使用 ASTBuilder 添加链接（带完整信息）
+                    builder.add_link_with_kind(url, link_children, link_title, link_kind);
+                }
+                
+                Event::Start(Tag::Image { dest_url, title, .. }) => {
+                    // 处理图片：收集 Alt 文本
+                    let url = dest_url.to_string();
+                    let title_str = if title.is_empty() { None } else { Some(title.to_string()) };
+                    let mut alt_text = String::new();
+                    stream.next(); // 跳过 Start(Tag::Image)
+                    
+                    while let Some(event) = stream.peek() {
+                        match event {
+                            Event::End(TagEnd::Image) => {
+                                stream.next();
+                                break;
+                            }
+                            Event::Text(text) => {
+                                alt_text.push_str(&text);
+                                stream.next();
+                            }
+                            _ => {
+                                stream.next();
+                            }
+                        }
+                    }
+                    
+                    let alt = if alt_text.is_empty() { None } else { Some(alt_text) };
+                    let alt_or_title = alt.or(title_str);
+                    
+                    // 使用 ASTBuilder 添加行内图片
+                    builder.add_inline_image(url, None, None, alt_or_title);
+                }
+                
+                Event::Html(html) => {
+                    builder.add_inline_html(html.to_string());
+                    stream.next();
+                }
+                
+                _ => {
+                    // 其他事件在段落中忽略或跳过
+                    stream.next();
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
     /// 解析行内内容（直到遇到指定的结束标记）
     /// 
-    /// 适用于：段落、标题、表格单元格等
+    /// 适用于：标题、表格单元格等（不适用于段落，段落应该使用 parse_paragraph_content）
     fn parse_inline_context<'a, I: Iterator<Item = Event<'a>>>(
         &self,
         stream: &mut EventStream<'a, I>,
@@ -816,19 +986,20 @@ impl MarkdownParser {
         Ok(ASTNode::CodeBlock(CodeBlockNode { language, content }))
     }
     
-    /// 处理段落（检查块级公式）
+    /// 处理段落（检查块级公式和块级图片）
     /// 
     /// TODO: Markdown-only hack - 未来前移
     /// 
     /// 演进说明：
-    /// - 这是 Markdown 特有的处理逻辑：检查段落中是否包含块级公式，如果有则拆分段落
+    /// - 这是 Markdown 特有的处理逻辑：检查段落中是否包含块级公式或块级图片，如果有则拆分段落
     /// - 这个逻辑应该前移到 Event 流处理阶段，而不是在 AST 构造阶段
     /// - 未来语义型解析器不应该有这个 hack，应该通过更清晰的语义分析来处理
     /// 
     /// 当前实现：
-    /// - 检查段落子节点中是否有块级公式（display = true）
-    /// - 如果有，将段落拆分为多个段落，块级公式独立成节点
-    /// - 这是为了兼容 Markdown 中块级公式可以出现在段落中的语法特性
+    /// - 检查段落子节点中是否有块级公式（MathBlock）
+    /// - 检查段落是否只包含一个图片节点（单独一行的图片应该成为块级）
+    /// - 如果有，将段落拆分为多个段落，块级元素独立成节点
+    /// - 这是为了兼容 Markdown 中块级元素可以出现在段落中的语法特性
     fn handle_paragraph(&self, children: Vec<ASTNode>, builder: &mut ASTBuilder) {
         if children.is_empty() {
             return;
@@ -837,6 +1008,15 @@ impl MarkdownParser {
         // V2: 检查是否包含块级数学公式
         let has_block_math = children.iter().any(|node| {
             matches!(node, ASTNode::MathBlock(_))
+        });
+        
+        // V2: 检查是否只包含一个图片节点（单独一行的图片应该成为块级）
+        let is_single_image = children.len() == 1 && matches!(children[0], ASTNode::Image(_));
+        
+        // V2: 检查段落中是否有换行符分隔的内容，需要拆分段落
+        // 策略：查找 LineBreak 节点，按换行拆分段落，并检查单独一行的图片
+        let has_line_breaks = children.iter().any(|node| {
+            matches!(node, ASTNode::LineBreak(_))
         });
         
         if has_block_math {
@@ -861,8 +1041,52 @@ impl MarkdownParser {
             if !pending.is_empty() {
                 builder.add_paragraph_with_attrs(pending, None, 0);
             }
+        } else if has_line_breaks {
+            // 按换行符拆分段落
+            let mut current_segment = Vec::new();
+            
+            for child in children {
+                if matches!(&child, ASTNode::LineBreak(_)) {
+                    // 遇到换行：提交当前段落（如果有内容）
+                    if !current_segment.is_empty() {
+                        // 检查当前段落是否只包含一个图片
+                        if current_segment.len() == 1 && matches!(current_segment[0], ASTNode::Image(_)) {
+                            // 单独一行的图片：提升为块级
+                            if let ASTNode::Image(img) = current_segment.into_iter().next().unwrap() {
+                                builder.add_image(img.url, img.width, img.height, img.alt);
+                            }
+                            current_segment = Vec::new();
+                        } else {
+                            // 普通段落内容
+                            builder.add_paragraph_with_attrs(current_segment, None, 0);
+                            current_segment = Vec::new();
+                        }
+                    }
+                    // 跳过 LineBreak 节点（不添加到段落中）
+                } else {
+                    current_segment.push(child);
+                }
+            }
+            
+            // 提交最后一段
+            if !current_segment.is_empty() {
+                // 检查是否只包含一个图片
+                if current_segment.len() == 1 && matches!(current_segment[0], ASTNode::Image(_)) {
+                    if let ASTNode::Image(img) = current_segment.into_iter().next().unwrap() {
+                        builder.add_image(img.url, img.width, img.height, img.alt);
+                    }
+                } else {
+                    builder.add_paragraph_with_attrs(current_segment, None, 0);
+                }
+            }
+        } else if is_single_image {
+            // 单独一行的图片：提升为块级图片
+            if let ASTNode::Image(img) = children.into_iter().next().unwrap() {
+                // 使用 builder.add_image 创建块级图片
+                builder.add_image(img.url, img.width, img.height, img.alt);
+            }
         } else {
-            // 无块级公式，直接创建段落
+            // 无块级元素，直接创建段落
             builder.add_paragraph_with_attrs(children, None, 0);
         }
     }

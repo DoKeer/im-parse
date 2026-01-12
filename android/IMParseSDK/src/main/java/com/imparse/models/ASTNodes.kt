@@ -374,13 +374,32 @@ data class LinkNode(
 }
 
 /**
+ * 图片显示方式（语义层）
+ */
+enum class ImageDisplay {
+    Inline,  // 行内图片（作为段落流的一部分）
+    Block    // 块级图片（独立块）
+    
+    companion object {
+        fun fromString(str: String?): ImageDisplay {
+            return when (str?.lowercase()) {
+                "block" -> Block
+                "inline", null -> Inline  // 默认值为 Inline
+                else -> Inline
+            }
+        }
+    }
+}
+
+/**
  * 图片节点
  */
 data class ImageNode(
     val url: String,
     val width: Float? = null,
     val height: Float? = null,
-    val alt: String? = null
+    val alt: String? = null,
+    val display: ImageDisplay = ImageDisplay.Inline
 ) : ASTNode() {
     override fun toJSON(): JSONObject {
         val json = JSONObject()
@@ -389,6 +408,10 @@ data class ImageNode(
         width?.let { json.put("width", it) }
         height?.let { json.put("height", it) }
         alt?.let { json.put("alt", it) }
+        // 如果 display 不是默认值 Inline，则序列化
+        if (display != ImageDisplay.Inline) {
+            json.put("display", display.name.lowercase())
+        }
         return json
     }
     
@@ -404,7 +427,13 @@ data class ImageNode(
             val alt = if (json.has("alt") && !json.isNull("alt")) {
                 json.getString("alt")
             } else null
-            return ImageNode(url, width, height, alt)
+            // 兼容旧数据：如果 display 字段不存在，默认为 Inline
+            val display = if (json.has("display") && !json.isNull("display")) {
+                ImageDisplay.fromString(json.getString("display"))
+            } else {
+                ImageDisplay.Inline
+            }
+            return ImageNode(url, width, height, alt, display)
         }
     }
 }
