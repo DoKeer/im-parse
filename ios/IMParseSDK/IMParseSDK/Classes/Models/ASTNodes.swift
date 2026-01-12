@@ -340,17 +340,54 @@ public struct LinkNode: Codable {
     }
 }
 
+/// 图片显示方式（语义层）
+public enum ImageDisplay: String, Codable {
+    case inline = "inline"
+    case block = "block"
+}
+
 public struct ImageNode: Codable {
     public var url: String
     public var width: Float?
     public var height: Float?
     public var alt: String?
+    /// 显示方式（语义层决定，而非渲染层）
+    public var display: ImageDisplay
     
-    public init(url: String, width: Float? = nil, height: Float? = nil, alt: String? = nil) {
+    enum CodingKeys: String, CodingKey {
+        case url
+        case width
+        case height
+        case alt
+        case display
+    }
+    
+    public init(url: String, width: Float? = nil, height: Float? = nil, alt: String? = nil, display: ImageDisplay = .inline) {
         self.url = url
         self.width = width
         self.height = height
         self.alt = alt
+        self.display = display
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        url = try container.decode(String.self, forKey: .url)
+        width = try container.decodeIfPresent(Float.self, forKey: .width)
+        height = try container.decodeIfPresent(Float.self, forKey: .height)
+        alt = try container.decodeIfPresent(String.self, forKey: .alt)
+        // 兼容旧数据：如果 display 字段不存在，默认为 .inline
+        display = try container.decodeIfPresent(ImageDisplay.self, forKey: .display) ?? .inline
+    }
+    
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(url, forKey: .url)
+        try container.encodeIfPresent(width, forKey: .width)
+        try container.encodeIfPresent(height, forKey: .height)
+        try container.encodeIfPresent(alt, forKey: .alt)
+        // 如果 display 是默认值 .inline，可以选择不编码（但为了兼容性，还是编码）
+        try container.encode(display, forKey: .display)
     }
 }
 

@@ -277,6 +277,7 @@ impl ASTBuilder {
             width,
             height,
             alt,
+            display: ImageDisplay::Block, // add_image 用于块级图片
         }));
     }
     
@@ -289,7 +290,29 @@ impl ASTBuilder {
             width,
             height,
             alt,
+            display: ImageDisplay::Inline, // add_inline_image 用于行内图片
         }));
+    }
+    
+    /// 创建图片节点（辅助方法，用于在不使用 ASTBuilder 的上下文中创建节点）
+    pub fn create_image_node(url: String, width: Option<f32>, height: Option<f32>, alt: Option<String>, display: ImageDisplay) -> ASTNode {
+        ASTNode::Image(ImageNode {
+            url,
+            width,
+            height,
+            alt,
+            display,
+        })
+    }
+    
+    /// 创建行内图片节点（辅助方法）
+    pub fn create_inline_image_node(url: String, width: Option<f32>, height: Option<f32>, alt: Option<String>) -> ASTNode {
+        Self::create_image_node(url, width, height, alt, ImageDisplay::Inline)
+    }
+    
+    /// 创建块级图片节点（辅助方法）
+    pub fn create_block_image_node(url: String, width: Option<f32>, height: Option<f32>, alt: Option<String>) -> ASTNode {
+        Self::create_image_node(url, width, height, alt, ImageDisplay::Block)
     }
     
     // ========== 代码块操作 ==========

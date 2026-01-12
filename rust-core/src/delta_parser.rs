@@ -6,18 +6,6 @@ use serde_json::Value;
 
 // ========== Line Model 中间层 ==========
 
-/// 图片显示策略（预留扩展点）
-/// 
-/// 当前规则：只有图片的一行，且不在列表中，则为 block image
-/// 未来可能支持：图片 + caption、图片 + 空格、图片作为段落内容的一部分
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum ImageDisplay {
-    /// 行内图片
-    Inline,
-    /// 块级图片
-    Block,
-}
-
 /// 行内节点（在 Line Model 中表示）
 #[derive(Debug, Clone)]
 enum InlineNode {
@@ -26,11 +14,12 @@ enum InlineNode {
         content: String,
         attributes: Option<DeltaAttributes>,
     },
-    /// 图片
+    /// 图片（包含 display 语义）
     Image {
         url: String,
         width: Option<f32>,
         height: Option<f32>,
+        display: crate::ast::ImageDisplay,
     },
     /// 提及
     Mention {
@@ -89,16 +78,20 @@ impl DeltaParser {
 
     /// 解析 Delta JSON 为 AST
     /// 
-    /// 两阶段架构：
+    /// 三阶段架构：
     /// 1. Delta → Lines（纯语义转换，无 builder 逻辑）
-    /// 2. Lines → AST（使用 ASTBuilder，处理 list 合并、空行裁剪等）
+    /// 2. Lines 规范化（完成 display 语义判定等）
+    /// 3. Lines → AST（使用 ASTBuilder，处理 list 合并、空行裁剪等）
     pub fn parse(&self, input: &str) -> Result<RootNode, ParseError> {
         let delta: Delta = serde_json::from_str(input)?;
         
         // 第一阶段：Delta → Lines
-        let lines = self.delta_to_lines(&delta)?;
+        let mut lines = self.delta_to_lines(&delta)?;
         
-        // 第二阶段：Lines → AST
+        // 第二阶段：Lines 规范化（完成 display 语义判定）
+        self.normalize_lines(&mut lines);
+        
+        // 第三阶段：Lines → AST
         let ast = self.lines_to_ast(lines)?;
         
         Ok(ast)
@@ -181,10 +174,12 @@ impl DeltaParser {
                                         .and_then(|v| v.as_str())
                                         .and_then(|s| s.parse::<f32>().ok());
                                     
+                                    // 初始化为 Inline，display 语义在规范化阶段确定
                                     current_inlines.push(InlineNode::Image {
                                         url: image_url,
                                         width: image_width,
                                         height: image_height,
+                                        display: crate::ast::ImageDisplay::Inline,
                                     });
                                 }
                             } else if obj.contains_key("mention") {
@@ -332,6 +327,31 @@ impl DeltaParser {
         has_image && !has_non_whitespace_content
     }
 
+    /// 第二阶段：Lines 规范化（完成 display 语义判定）
+    /// 
+    /// 在这一阶段：
+    /// - 完成 image 的 inline / block 判定
+    /// - 所有语义决策在这里一次性完成，避免在 AST 构建时分散判断
+    fn normalize_lines(&self, lines: &mut [DeltaLine]) {
+        for line in lines {
+            // 判断是否是"只有图片"的行
+            let is_only_image = self.is_line_only_image(line);
+            
+            // 判断是否在列表中
+            let is_in_list = matches!(line.block_attr, Some(BlockAttr::List { .. }));
+            
+            // 规则：如果行内只有图片且无其他非空白内容，且不在列表中，则为 block
+            if is_only_image && !is_in_list {
+                // 将该行的所有 image 标记为 Block
+                for inline in &mut line.inlines {
+                    if let InlineNode::Image { display, .. } = inline {
+                        *display = crate::ast::ImageDisplay::Block;
+                    }
+                }
+            }
+        }
+    }
+
     /// 第二阶段：Lines → AST（使用 ASTBuilder）
     /// 
     /// 在这一阶段处理：
@@ -374,34 +394,11 @@ impl DeltaParser {
                         let styled_nodes = self.build_styled_text(content, attributes);
                         inline_ast_nodes.extend(styled_nodes);
                     }
-                    InlineNode::Image { url, width, height } => {
-                        // 判断图片是 block 还是 inline（使用策略枚举，便于未来扩展）
-                        // 当前规则：如果行内只有图片且无其他非空白内容，且不在列表中，则为 block
-                        // 未来可能支持：图片 + caption、图片 + 空格、图片作为段落内容的一部分
-                        let image_display = {
-                            let is_only_image = self.is_line_only_image(&line);
-                            let is_in_list = line.block_attr.as_ref()
-                                .and_then(|attr| {
-                                    if let BlockAttr::List { .. } = attr {
-                                        Some(true)
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .unwrap_or(false);
-                            
-                            if is_only_image && !is_in_list {
-                                ImageDisplay::Block
-                            } else {
-                                ImageDisplay::Inline
-                            }
-                        };
-                        
-                        match image_display {
-                            ImageDisplay::Block => {
-                                // 块级图片
+                    InlineNode::Image { url, width, height, display } => {
+                        match display {
+                            crate::ast::ImageDisplay::Block => {
+                                // 块级图片：先结束当前列表（如果有）
                                 has_block_image = true;
-                                // 先结束当前列表（如果有）
                                 if let Some((list_type, items)) = current_list.take() {
                                     builder.start_list(list_type);
                                     for item in items {
@@ -409,15 +406,19 @@ impl DeltaParser {
                                     }
                                     builder.end_list();
                                 }
+                                // 使用 ASTBuilder 的 add_image 方法
                                 builder.add_image(url.clone(), *width, *height, None);
                             }
-                            ImageDisplay::Inline => {
-                                // 行内图片
+                            crate::ast::ImageDisplay::Inline => {
+                                // 行内图片：构建 ImageNode 并添加到 inline_ast_nodes
+                                // 注意：这里直接构建 ASTNode，因为我们在构建 paragraph children
+                                // 最终会通过 add_paragraph_with_attrs 添加到 AST
                                 inline_ast_nodes.push(ASTNode::Image(ImageNode {
                                     url: url.clone(),
                                     width: *width,
                                     height: *height,
                                     alt: None,
+                                    display: crate::ast::ImageDisplay::Inline,
                                 }));
                             }
                         }

@@ -317,7 +317,7 @@ public class UIKitAttributedStringBuilder {
         }
         
         // 如果没有 imageLoaderDelegate，返回空字符串
-        return NSAttributedString(string: "")
+        return NSAttributedString(string: imageNode.alt ?? "")
     }
     
     /// 解析颜色字符串

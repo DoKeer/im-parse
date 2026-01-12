@@ -54,22 +54,18 @@ private enum NodeClassification {
     /// 分类节点
     /// - Parameters:
     ///   - node: 要分类的节点
-    ///   - parentNode: 父节点类型，用于判断图片是块级还是行内
-    static func classify(_ node: ASTNodeWrapper, parentNode: ASTNodeWrapper? = nil) -> NodeClassification {
+    ///   - parentNode: 父节点类型（已废弃，保留以兼容旧代码）
+    static func classify(_ node: ASTNodeWrapper) -> NodeClassification {
         switch node {
-        // V2: 图片节点 - 根据父节点判断是块级还是行内
-        case .image:
-            // 如果父节点是段落或标题，图片应该是行内的
-            if let parent = parentNode {
-                switch parent {
-                case .paragraph, .heading:
-                    return .inline
-                default:
-                    return .blockLevel
-                }
+        // V2: 图片节点 - 直接使用 display 字段判断
+        case .image(let imageNode):
+            // 根据 ImageNode 的 display 字段判断
+            switch imageNode.display {
+            case .inline:
+                return .inline
+            case .block:
+                return .blockLevel
             }
-            // 默认情况下，图片是块级的
-            return .blockLevel
         // V2: 块级节点
         case .mermaidBlock:
             return .blockLevel
@@ -179,6 +175,10 @@ public class UIKitFrameAsyncCalculator {
         case .codeBlock(let cNode):
             return calculateCodeBlockLayout(cNode, context: context, origin: origin, width: width)
         case .image(let imgNode):
+            // 注意：这里只处理块级图片（display == .block）
+            // 行内图片（display == .inline）会通过 classify 被分类为 .inline，
+            // 并在处理段落/标题时通过 appendInlineImageNode 添加到 NSAttributedString 中
+            assert(imgNode.display == .block, "calculateImageLayout should only be called for block images")
             return calculateImageLayout(imgNode, context: context, origin: origin, width: width)
         case .list(let listNode):
             return calculateListLayout(listNode, context: context, origin: origin, width: width)
@@ -247,7 +247,7 @@ public class UIKitFrameAsyncCalculator {
         width: CGFloat
     ) -> NodeLayout {
         // 传入父节点类型，用于判断图片是块级还是行内
-        let classifications = children.map { NodeClassification.classify($0, parentNode: nodeWrapper) }
+        let classifications = children.map { NodeClassification.classify($0) }
         let hasBlockLevel = classifications.contains(.blockLevel)
         let hasInline = classifications.contains(.inline)
         
@@ -285,8 +285,7 @@ public class UIKitFrameAsyncCalculator {
         nodeWrapper: ASTNodeWrapper?,
         context: UIKitRenderContext,
         origin: CGPoint,
-        width: CGFloat,
-        getParentNode: ((ASTNodeWrapper) -> ASTNodeWrapper?)? = nil
+        width: CGFloat
     ) -> NodeLayout {
         var currentY: CGFloat = 0
         var childLayouts: [NodeLayout] = []
@@ -309,9 +308,7 @@ public class UIKitFrameAsyncCalculator {
         }
         
         for child in children {
-            // 优先使用 getParentNode 获取父节点，如果没有则使用 nodeWrapper
-            let parentNode = getParentNode?(child) ?? nodeWrapper
-            let classification = NodeClassification.classify(child, parentNode: parentNode)
+            let classification = NodeClassification.classify(child)
             
             if classification == .blockLevel {
                 flushTextNodes()
@@ -338,11 +335,9 @@ public class UIKitFrameAsyncCalculator {
         nodeWrapper: ASTNodeWrapper?,
         context: UIKitRenderContext,
         origin: CGPoint,
-        width: CGFloat,
-        getParentNode: ((ASTNodeWrapper) -> ASTNodeWrapper?)? = nil
+        width: CGFloat
     ) -> NodeLayout {
-        // 传入父节点类型，用于判断图片是块级还是行内
-        let groups = groupInlineNodes(children, parentNode: nodeWrapper, getParentNode: getParentNode)
+        let groups = groupInlineNodes(children, parentNode: nodeWrapper)
         let mutableAttrString = NSMutableAttributedString()
         
         for group in groups {
@@ -367,8 +362,7 @@ public class UIKitFrameAsyncCalculator {
     /// 将节点分组（连续的文本节点合并）
     private static func groupInlineNodes(
         _ children: [ASTNodeWrapper],
-        parentNode: ASTNodeWrapper? = nil,
-        getParentNode: ((ASTNodeWrapper) -> ASTNodeWrapper?)? = nil
+        parentNode: ASTNodeWrapper? = nil
     ) -> [InlineNodeGroup] {
         var groups: [InlineNodeGroup] = []
         var currentTextNodes: [ASTNodeWrapper] = []
@@ -381,9 +375,7 @@ public class UIKitFrameAsyncCalculator {
         }
         
         for child in children {
-            // 优先使用 getParentNode 获取父节点，如果没有则使用 parentNode
-            let actualParentNode = getParentNode?(child) ?? parentNode
-            let classification = NodeClassification.classify(child, parentNode: actualParentNode)
+            let classification = NodeClassification.classify(child)
             
             switch classification {
             case .inline:
@@ -485,7 +477,6 @@ public class UIKitFrameAsyncCalculator {
     
     private static func calculateCodeBlockLayout(_ node: CodeBlockNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
         let toolbarHeight = context.theme.toolbarHeight
-        let toolbarPadding = context.theme.toolbarPadding
         // headerBarHeight 高度就用context.theme.toolbarHeight 不用加上下padding
         let headerBarHeight: CGFloat = context.toolbarActionDelegate != nil ? toolbarHeight: 0
         let padding = context.theme.codeBlockPadding
@@ -552,7 +543,13 @@ public class UIKitFrameAsyncCalculator {
             let ratio = CGFloat(h) / CGFloat(w)
             imageHeight = width * ratio
         } else {
-            imageHeight = width * 0.75
+            // 计算文本的尺寸
+            if let alt = node.alt {
+                let attrString = NSAttributedString(string: alt, attributes: [.font: context.theme.codeFont])
+                imageHeight = calculateTextSize(attrString, width: width).height
+            }else { // 兜底
+                imageHeight = context.theme.codeFont.lineHeight
+            }
         }
         
         let totalHeight = imageHeight + imageMargin * 2
@@ -647,30 +644,17 @@ public class UIKitFrameAsyncCalculator {
                 }
             }
             
-            // 创建父节点查找函数：使用索引来匹配，因为 inlineNodes 和 parentNodes 是一一对应的
-            // 由于 ASTNodeWrapper 不遵循 Equatable，我们通过比较节点内容来查找
-            let getParentNode: (ASTNodeWrapper) -> ASTNodeWrapper? = { node in
-                // 查找节点在 inlineNodes 中的索引
-                for (index, inlineNode) in inlineNodes.enumerated() {
-                    if compareASTNodes(inlineNode, node) {
-                        return parentNodes[index]
-                    }
-                }
-                return nil
-            }
-            
             // 根据父节点类型判断节点分类
             let classifications = inlineNodes.enumerated().map { index, node in
-                let parent = parentNodes[index]
-                return NodeClassification.classify(node, parentNode: parent)
+                return NodeClassification.classify(node)
             }
             let hasBlockLevel = classifications.contains(.blockLevel)
             let hasInline = classifications.contains(.inline)
             
             if hasBlockLevel {
-                return calculateMixedBlockLayout(children: inlineNodes, nodeWrapper: nil, context: context, origin: origin, width: width, getParentNode: getParentNode)
+                return calculateMixedBlockLayout(children: inlineNodes, nodeWrapper: nil, context: context, origin: origin, width: width)
             } else if hasInline {
-                return calculateInlineLayout(children: inlineNodes, nodeWrapper: nil, context: context, origin: origin, width: width, getParentNode: getParentNode)
+                return calculateInlineLayout(children: inlineNodes, nodeWrapper: nil, context: context, origin: origin, width: width)
             } else {
                 let attrString = context.stringBuilder.buildAttributedString(from: inlineNodes, context: context)
                 let size = calculateTextSize(attrString, width: width)

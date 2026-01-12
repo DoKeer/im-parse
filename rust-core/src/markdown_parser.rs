@@ -379,6 +379,45 @@ impl MarkdownParser {
                     i += 1;
                 }
                 
+                Event::Start(Tag::Image { dest_url, title, .. }) => {
+                    // Flush文本，准备构造图片节点
+                    self.flush_text_buffer(&mut text_buffer, &mut nodes);
+                    
+                    // 收集图片的 Alt 文本
+                    let url = dest_url.to_string();
+                    let title_str = if title.is_empty() { None } else { Some(title.to_string()) };
+                    let mut alt_text = String::new();
+                    i += 1; // 跳过 Start(Tag::Image)
+                    
+                    while i < events.len() {
+                        match &events[i] {
+                            Event::End(TagEnd::Image) => {
+                                i += 1;
+                                break;
+                            }
+                            Event::Text(text) => {
+                                alt_text.push_str(&text);
+                                i += 1;
+                            }
+                            _ => {
+                                i += 1;
+                            }
+                        }
+                    }
+                    
+                    let alt = if alt_text.is_empty() { None } else { Some(alt_text) };
+                    let alt_or_title = alt.or(title_str);
+                    
+                    // 使用 ASTBuilder 的辅助方法创建行内图片节点
+                    nodes.push(ASTBuilder::create_inline_image_node(url, None, None, alt_or_title));
+                }
+                
+                Event::End(TagEnd::Image) => {
+                    // 这不应该出现在这里（应该在 Start(Tag::Image) 中处理）
+                    // 但为了安全，我们跳过它
+                    i += 1;
+                }
+                
                 Event::Start(Tag::Strikethrough) => {
                     current_styles.push(TextStyle::Strikethrough);
                     i += 1;
@@ -608,12 +647,8 @@ impl MarkdownParser {
                                 }
                                 let alt = if alt_text.is_empty() { None } else { Some(alt_text) };
                                 let alt_or_title = alt.or_else(|| if title_str.is_empty() { None } else { Some(title_str) });
-                                children.push(ASTNode::Image(ImageNode {
-                                    url,
-                                    width: None,
-                                    height: None,
-                                    alt: alt_or_title,
-                                }));
+                                // 使用 ASTBuilder 的辅助方法创建行内图片节点
+                                children.push(ASTBuilder::create_inline_image_node(url, None, None, alt_or_title));
                             }
                             
                             _ => {

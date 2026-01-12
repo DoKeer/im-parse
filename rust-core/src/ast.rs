@@ -337,6 +337,22 @@ fn default_link_kind() -> LinkKind {
     LinkKind::Explicit
 }
 
+/// 图片显示方式（语义层）
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum ImageDisplay {
+    /// 行内图片（作为段落流的一部分）
+    Inline,
+    /// 块级图片（独立块）
+    Block,
+}
+
+impl Default for ImageDisplay {
+    fn default() -> Self {
+        ImageDisplay::Inline
+    }
+}
+
 /// 图片节点
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ImageNode {
@@ -351,6 +367,13 @@ pub struct ImageNode {
     /// 替代文本
     #[serde(skip_serializing_if = "Option::is_none")]
     pub alt: Option<String>,
+    /// 显示方式（语义层决定，而非渲染层）
+    #[serde(default, skip_serializing_if = "is_default_display")]
+    pub display: ImageDisplay,
+}
+
+fn is_default_display(display: &ImageDisplay) -> bool {
+    matches!(display, ImageDisplay::Inline)
 }
 
 /// @提及节点

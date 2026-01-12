@@ -75,8 +75,10 @@ class MessageDataGenerator {
     private static func generateMarkdownTemplates() -> [String] {
         return [
             #"""
-            xxx相当大[GitLab看板链接](https://gitlab.daikuan.qihoo.net/deepbank/feedback/-/boards/107)xxx相当大
-            伽玛函数：$\Gamma(z) = \int_0^\infty t^{z-1} e^{-t} \, dt = (z-1)!, \quad z \in \mathbb{C}, \Re(z) > 0$ 多层嵌套对数 $\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$
+            ### 图片
+            ![示例图片](https://iph.href.lu/879x200)
+
+            图片应该能够正确地显示，并且有适当的边距和圆角。如果图片加载失败，应该显示错误信息。
             """#,
             #"""
 

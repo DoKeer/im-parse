@@ -91,6 +91,10 @@ public class UIKitFrameRender {
         case .codeBlock(let cNode):
             return renderCodeBlock(cNode, frame: layout.frame, context: context)
         case .image(let imgNode):
+            // 注意：这里只处理块级图片（display == .block）
+            // 行内图片（display == .inline）会通过 classify 被分类为 .inline，
+            // 并在处理段落/标题时通过 appendInlineImageNode 添加到 NSAttributedString 中
+            assert(imgNode.display == .block, "renderImage should only be called for block images")
             return renderImage(imgNode, frame: layout.frame, context: context)
         case .list(let lNode):
             return renderList(lNode, layout: layout, context: context)
