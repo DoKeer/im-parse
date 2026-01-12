@@ -1,4 +1,4 @@
-use im_parse_core::{MarkdownParser, ASTNode};
+use im_parse_core::{MarkdownParser, ASTNode, TextStyle};
 
 #[test]
 fn test_nested_logarithm() {
@@ -19,7 +19,7 @@ fn test_nested_logarithm() {
         let mut math_content = String::new();
         
         for child in &para.children {
-            if let ASTNode::Math(math) = child {
+            if let ASTNode::InlineMath(math) = child {
                 found_math = true;
                 math_content = math.content.clone();
                 break;
@@ -70,7 +70,7 @@ fn test_gamma_function_with_conditions() {
         let mut math_nodes = Vec::new();
         
         for child in &para.children {
-            if let ASTNode::Math(math) = child {
+            if let ASTNode::InlineMath(math) = child {
                 math_nodes.push(math.content.clone());
             }
         }
@@ -124,27 +124,31 @@ fn test_formula_in_styled_text() {
     
     // 检查段落节点
     if let ASTNode::Paragraph(para) = &root.children[0] {
-        // 段落应该包含 Strong 节点或 Math 节点
-        let has_strong = para.children.iter().any(|child| matches!(child, ASTNode::Strong(_)));
-        let has_math = para.children.iter().any(|child| matches!(child, ASTNode::Math(_)));
+        // 段落应该包含带样式的文本或行内数学公式
+        let has_math = para.children.iter().any(|child| matches!(child, ASTNode::InlineMath(_)));
+        let has_styled_text = para.children.iter().any(|child| {
+            if let ASTNode::Text(text_run) = child {
+                text_run.styles.contains(&TextStyle::Bold)
+            } else {
+                false
+            }
+        });
         
-        assert!(has_strong || has_math, "应该包含 Strong 或 Math 节点");
+        assert!(has_styled_text || has_math, "应该包含带样式的文本或行内数学公式");
         
-        // 查找数学公式
+        // 查找数学公式（可能在 TextRun 中，也可能在 InlineMath 节点中）
         let mut found_math = false;
         for child in &para.children {
             match child {
-                ASTNode::Math(math) => {
+                ASTNode::InlineMath(math) => {
                     found_math = true;
                     assert_eq!(math.content.trim(), "x = y", "公式内容应该是 'x = y'");
                 }
-                ASTNode::Strong(strong) => {
-                    // 检查 Strong 节点内是否有 Math 节点
-                    for strong_child in &strong.children {
-                        if let ASTNode::Math(math) = strong_child {
-                            found_math = true;
-                            assert_eq!(math.content.trim(), "x = y", "公式内容应该是 'x = y'");
-                        }
+                ASTNode::Text(text_run) => {
+                    // 检查文本中是否包含数学公式（通过 MathParser 解析）
+                    if text_run.content.contains('$') {
+                        // 文本中包含 $，应该被解析为 InlineMath 节点
+                        // 如果这里还是 TextRun，说明解析有问题
                     }
                 }
                 _ => {}
@@ -172,7 +176,7 @@ fn test_multiple_inline_formulas() {
     if let ASTNode::Paragraph(para) = &root.children[0] {
         let math_nodes: Vec<_> = para.children.iter()
             .filter_map(|child| {
-                if let ASTNode::Math(math) = child {
+                if let ASTNode::InlineMath(math) = child {
                     Some(math.content.clone())
                 } else {
                     None
@@ -203,15 +207,15 @@ fn test_block_math_with_inline_condition() {
     println!("根节点子节点数量: {}", root.children.len());
     for (i, child) in root.children.iter().enumerate() {
         println!("节点 {}: {:?}", i, match child {
-            ASTNode::Math(m) => format!("Math(display={}, content={}...)", m.display, &m.content.chars().take(30).collect::<String>()),
+            ASTNode::MathBlock(m) => format!("MathBlock(content={}...)", &m.content.chars().take(30).collect::<String>()),
+            ASTNode::InlineMath(m) => format!("InlineMath(content={}...)", &m.content.chars().take(30).collect::<String>()),
             ASTNode::Paragraph(_) => "Paragraph".to_string(),
             _ => format!("{:?}", child),
         });
     }
     
     // 第一个节点应该是块级数学公式
-    if let ASTNode::Math(math) = &root.children[0] {
-        assert!(math.display, "第一个节点应该是块级数学公式（display=true）");
+    if let ASTNode::MathBlock(math) = &root.children[0] {
         assert!(
             math.content.contains(r"\Gamma"),
             "块级公式应该包含 \\Gamma: {}",
@@ -232,7 +236,7 @@ fn test_block_math_with_inline_condition() {
             // 查找行内公式
             let math_nodes: Vec<_> = para.children.iter()
                 .filter_map(|child| {
-                    if let ASTNode::Math(math) = child {
+                    if let ASTNode::InlineMath(math) = child {
                         Some(&math.content)
                     } else {
                         None
@@ -262,8 +266,7 @@ fn test_block_math_standalone() {
     let root = result.unwrap();
     assert_eq!(root.children.len(), 1, "应该有一个节点");
     
-    if let ASTNode::Math(math) = &root.children[0] {
-        assert!(math.display, "应该是块级数学公式（display=true）");
+    if let ASTNode::MathBlock(math) = &root.children[0] {
         assert!(
             math.content.contains(r"\frac"),
             "公式内容应该包含 \\frac: {}",

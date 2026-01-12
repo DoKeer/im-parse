@@ -154,7 +154,9 @@ impl ASTBuilder {
         self.text_buffer.push_str(&text);
     }
     
-    /// 刷新文本缓冲区（生成 TextRun）
+    /// 刷新文本缓冲区（生成 TextRun 或数学公式节点）
+    /// 
+    /// 如果文本中包含数学公式（$...$ 或 $$...$$），会使用 MathParser 解析
     fn flush_text_buffer(&mut self) {
         if self.text_buffer.is_empty() {
             return;
@@ -163,13 +165,39 @@ impl ASTBuilder {
         let content = std::mem::take(&mut self.text_buffer);
         let styles = self.current_styles();
         
-        let text_run = if styles.is_empty() {
-            TextRun::new(content)
+        // 检查是否包含数学公式
+        if content.contains('$') {
+            // 使用 MathParser 解析数学公式
+            use crate::text_span::{TextBuffer as SpanTextBuffer, MathParser, SpanBasedBuilder, InlineStyle};
+            
+            let mut text_buffer = SpanTextBuffer::new();
+            let span_styles: Vec<InlineStyle> = styles.iter().map(|s| {
+                match s {
+                    TextStyle::Bold => InlineStyle::Strong,
+                    TextStyle::Italic => InlineStyle::Em,
+                    TextStyle::Strikethrough => InlineStyle::Strike,
+                    TextStyle::Underline => InlineStyle::Underline,
+                    TextStyle::Color { color } => InlineStyle::Color(color.clone()),
+                    _ => InlineStyle::Strong, // fallback
+                }
+            }).collect();
+            
+            text_buffer.push(&content, &span_styles);
+            let content_spans = MathParser::parse(text_buffer.full_text());
+            
+            // 使用 SpanBasedBuilder 构造节点（处理数学公式）
+            let nodes = SpanBasedBuilder::build_nodes(&text_buffer, &content_spans);
+            self.current_paragraph_children.extend(nodes);
         } else {
-            TextRun::with_styles(content, styles)
-        };
-        
-        self.current_paragraph_children.push(ASTNode::Text(text_run));
+            // 无数学公式，直接构造 TextRun
+            let text_run = if styles.is_empty() {
+                TextRun::new(content)
+            } else {
+                TextRun::with_styles(content, styles)
+            };
+            
+            self.current_paragraph_children.push(ASTNode::Text(text_run));
+        }
     }
     
     /// 添加行内代码（自动刷新文本缓冲区并应用 Code 样式）
