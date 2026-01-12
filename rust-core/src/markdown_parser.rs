@@ -262,11 +262,14 @@ impl MarkdownParser {
                 }
                 
                 Event::SoftBreak => {
-                    builder.add_line_break(false);
+                    // 软换行：添加到文本缓冲区，而不是立即 flush
+                    // 这样多行块级公式 $$...$$ 可以被完整识别
+                    builder.add_text("\n".to_string());
                     stream.next();
                 }
                 
                 Event::HardBreak => {
+                    // 硬换行：需要先 flush 文本缓冲区，然后添加换行节点
                     builder.add_line_break(true);
                     stream.next();
                 }
@@ -1086,6 +1089,57 @@ impl MarkdownParser {
                 builder.add_image(img.url, img.width, img.height, img.alt);
             }
         } else {
+            // 检查是否所有子节点都是Text节点，且它们共同构成块级公式
+            // 这种情况发生在pulldown_cmark将长公式分割成多个Text事件时
+            let all_text_nodes = children.iter().all(|node| matches!(node, ASTNode::Text(_)));
+            if all_text_nodes && children.len() > 1 {
+                // 合并所有Text节点的内容
+                let mut combined_text = String::new();
+                for node in &children {
+                    if let ASTNode::Text(text_run) = node {
+                        combined_text.push_str(&text_run.content);
+                    }
+                }
+                
+                // 检查合并后的文本是否包含块级公式
+                if combined_text.contains("$$") {
+                    // 使用 MathParser 解析合并后的文本
+                    use crate::text_span::{TextBuffer as SpanTextBuffer, MathParser, SpanBasedBuilder, InlineStyle};
+                    
+                    let mut text_buffer = SpanTextBuffer::new();
+                    let content_spans = MathParser::parse(&combined_text);
+                    
+                    // 为合并文本创建空的样式span
+                    text_buffer.push(&combined_text, &[]);
+                    let nodes = SpanBasedBuilder::build_nodes(&text_buffer, &content_spans);
+                    
+                    // 检查是否有块级公式
+                    let has_block_math = nodes.iter().any(|node| matches!(node, ASTNode::MathBlock(_)));
+                    if has_block_math {
+                        // 有块级公式，拆分并处理（避免递归）
+                        let mut pending = Vec::new();
+                        for node in nodes {
+                            if matches!(&node, ASTNode::MathBlock(_)) {
+                                // 先提交待处理的内容
+                                if !pending.is_empty() {
+                                    builder.add_paragraph_with_attrs(pending, None, 0);
+                                    pending = Vec::new();
+                                }
+                                // 块级公式直接添加
+                                builder.emit_block(node);
+                            } else {
+                                pending.push(node);
+                            }
+                        }
+                        // 提交剩余内容
+                        if !pending.is_empty() {
+                            builder.add_paragraph_with_attrs(pending, None, 0);
+                        }
+                        return;
+                    }
+                }
+            }
+            
             // 无块级元素，直接创建段落
             builder.add_paragraph_with_attrs(children, None, 0);
         }

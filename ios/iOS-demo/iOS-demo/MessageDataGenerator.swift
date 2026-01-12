@@ -75,11 +75,25 @@ class MessageDataGenerator {
     private static func generateMarkdownTemplates() -> [String] {
         return [
             #"""
+            
+            $$
+            \sum_{n=0}^\infty \left(\sum_{k=0}^n \binom{n}{k}^2 \binom{n+k}{k}^2\right) x^n = \frac{1}{\sqrt{1-14x+x^2}} \cdot {}_3F_2\left(\begin{array}{c} \frac{1}{2},\frac{1}{2},\frac{1}{2} \\ 1,1 \end{array} ; \frac{16x}{(1-14x+x^2)^2}\right) = \prod_{p\equiv 1\pmod{4}} \frac{1}{1-4p^{-s}} \cdot \prod_{p\equiv 3\pmod{4}} \frac{1}{1-p^{-2s}}
+            $$
+            
             ### 图片
             行内 ![示例图片](https://iph.href.lu/879x200)
             块级
+            
             ![示例图片](https://iph.href.lu/879x200)
+            
+            ![块片](https://example.com/image2.jpg)
+            
             并且有适当的边距和圆角。如果图片加载失败，应该显示错误信息。
+            
+            行内图片 ![图片1](https://example.com/img1.jpg) 和行内公式 $x = y$ 混合。
+            块级图片：
+            ![图片2](https://example.com/img2.jpg)
+            块级公式：
             """#,
             #"""
 
