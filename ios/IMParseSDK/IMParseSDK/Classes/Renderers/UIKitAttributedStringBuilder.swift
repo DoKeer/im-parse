@@ -281,6 +281,8 @@ public class UIKitAttributedStringBuilder {
     /// 构建行内图片 AttributedString
     private func buildImageAttributedString(imageNode: ImageNode, context: UIKitRenderContext) -> NSAttributedString {
         let font = context.currentFont ?? context.theme.font
+        // 缓存未命中，返回原文富文本，并添加标记以便在渲染时处理
+        let color = context.currentTextColor ?? context.theme.textColor
         
         // 尝试从缓存获取图片（通过 imageLoaderDelegate）
         if let imageLoaderDelegate = context.imageLoaderDelegate,
@@ -301,9 +303,12 @@ public class UIKitAttributedStringBuilder {
                 let imageAttachment = ImageTextAttachment(imageNode: imageNode, image: image, font: font, context: context)
                 return NSAttributedString(attachment: imageAttachment)
             }
-            
+
             // 图片加载失败或超时，返回空字符串并添加标记，让渲染层异步加载
-            let mutableAttrString = NSMutableAttributedString(string: "")
+            let mutableAttrString = NSMutableAttributedString(string: imageNode.alt ?? "" ,attributes: [
+                .font: font,
+                .foregroundColor: color
+            ])
             
             // 添加自定义属性，标记需要加载的行内图片
             let renderInfo = InlineImageRenderInfo(imageNode: imageNode)
@@ -317,7 +322,10 @@ public class UIKitAttributedStringBuilder {
         }
         
         // 如果没有 imageLoaderDelegate，返回空字符串
-        return NSAttributedString(string: imageNode.alt ?? "")
+        return NSAttributedString(string: imageNode.alt ?? "" ,attributes: [
+            .font: font,
+            .foregroundColor: color
+        ])
     }
     
     /// 解析颜色字符串
