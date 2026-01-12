@@ -334,17 +334,20 @@ public class UIKitFrameRender {
         // 从 textViewDelegate 中提取回调（如果是 LinkHandler）
         var onLinkTap: ((URL) -> Void)?
         var onMentionTap: ((MentionNode) -> Void)?
-        
+        var onImageTap: ((ImageNode) -> Void)?
+
         if let linkHandler = context.linkHandler {
             onLinkTap = linkHandler.onLinkTap
             onMentionTap = linkHandler.onMentionTap
+            onImageTap = linkHandler.onImageTap
         }
         
         // 设置富文本内容
         richLabel.setAttributedText(
             attributedString,
             onLinkTap: onLinkTap,
-            onMentionTap: onMentionTap
+            onMentionTap: onMentionTap,
+            onImageTap: onImageTap
         )
         
         return richLabel
@@ -910,17 +913,20 @@ public class UIKitFrameRender {
                 // 从 textViewDelegate 中提取回调（如果是 LinkHandler）
                 var onLinkTap: ((URL) -> Void)?
                 var onMentionTap: ((MentionNode) -> Void)?
-                
+                var onImageTap: ((ImageNode) -> Void)?
+
                 if let linkHandler = context.linkHandler {
                     onLinkTap = linkHandler.onLinkTap
                     onMentionTap = linkHandler.onMentionTap
+                    onImageTap = linkHandler.onImageTap
                 }
                 
                 // 设置富文本内容
                 richLabel.setAttributedText(
                     attributedString,
                     onLinkTap: onLinkTap,
-                    onMentionTap: onMentionTap
+                    onMentionTap: onMentionTap,
+                    onImageTap: onImageTap
                 )
                 
                 textView = richLabel

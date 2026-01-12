@@ -81,11 +81,13 @@ internal final class MentionSpan: RichSpan {
 /// 图片 Span（用于行内图片）
 internal final class ImageSpan: RichSpan {
     var range: NSRange
-    let attachment: NSTextAttachment
-    
-    init(range: NSRange, attachment: NSTextAttachment) {
+    let attachment: ImageTextAttachment
+    let onTapHandler: (ImageNode) -> Void
+
+    init(range: NSRange, attachment: ImageTextAttachment, onTap: @escaping (ImageNode) -> Void) {
         self.range = range
         self.attachment = attachment
+        self.onTapHandler = onTap
     }
     
     func apply(to attr: NSMutableAttributedString) {
@@ -98,7 +100,7 @@ internal final class ImageSpan: RichSpan {
     }
     
     func onTap() {
-        // 图片点击由 attachment 本身处理，这里不需要额外处理
+        onTapHandler(attachment.imageNode)
     }
 }
 
@@ -120,7 +122,8 @@ internal final class RichLabel: UIView {
     private var spans: [RichSpan] = []
     private var onLinkTap: ((URL) -> Void)?
     private var onMentionTap: ((MentionNode) -> Void)?
-    
+    private var onImageTap: ((ImageNode) -> Void)?
+
     // MARK: - Init
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -177,7 +180,8 @@ internal final class RichLabel: UIView {
         _ attributedString: NSAttributedString,
         spans: [RichSpan] = [],
         onLinkTap: ((URL) -> Void)? = nil,
-        onMentionTap: ((MentionNode) -> Void)? = nil
+        onMentionTap: ((MentionNode) -> Void)? = nil,
+        onImageTap: ((ImageNode) -> Void)? = nil
     ) {
         // 创建可变的 attributed string
         let mutableAttr = NSMutableAttributedString(attributedString: attributedString)
@@ -200,7 +204,8 @@ internal final class RichLabel: UIView {
         self.spans = spans
         self.onLinkTap = onLinkTap
         self.onMentionTap = onMentionTap
-        
+        self.onMentionTap = onMentionTap
+
         // ✅ 修复：TextKit 布局顺序（关键！）
         // 1. 先设置 preferredMaxLayoutWidth
         label.preferredMaxLayoutWidth = bounds.width > 0 ? bounds.width : UIScreen.main.bounds.width
@@ -223,7 +228,8 @@ internal final class RichLabel: UIView {
     func setAttributedText(
         _ attributedString: NSAttributedString,
         onLinkTap: ((URL) -> Void)? = nil,
-        onMentionTap: ((MentionNode) -> Void)? = nil
+        onMentionTap: ((MentionNode) -> Void)? = nil,
+        onImageTap: ((ImageNode) -> Void)? = nil
     ) {
         var extractedSpans: [RichSpan] = []
         
@@ -250,6 +256,11 @@ internal final class RichLabel: UIView {
                     }
                     extractedSpans.append(span)
                 }
+            }else if let attachment = attributes[.attachment] as? ImageTextAttachment {
+                let span = ImageSpan(range: range, attachment: attachment) { imageNode in
+                    onImageTap?(imageNode)
+                }
+                extractedSpans.append(span)
             }
         }
         

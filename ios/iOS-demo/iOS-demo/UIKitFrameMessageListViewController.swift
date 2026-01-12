@@ -19,6 +19,8 @@ class UIKitFrameMessageListViewController: UIViewController {
 
     } onMentionTap: { mentionNode in
         print("Mention 被点击: @\(mentionNode.name)")
+    } onImageTap: { imageNode in
+        print("行内 image 被点击: @\(imageNode.alt ?? "")")
     }
 
     // 使用 Kingfisher 的图片缓存来缓存数学公式和 Mermaid 图表的图片

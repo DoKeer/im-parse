@@ -320,10 +320,12 @@ internal class ImageTextAttachment: NSTextAttachment {
 public class LinkHandler {
     let onLinkTap: ((URL) -> Void)?
     let onMentionTap: ((MentionNode) -> Void)?
-    
-    public init(onLinkTap: ((URL) -> Void)?, onMentionTap: ((MentionNode) -> Void)? = nil) {
+    let onImageTap: ((ImageNode) -> Void)?
+
+    public init(onLinkTap: ((URL) -> Void)?, onMentionTap: ((MentionNode) -> Void)? = nil, onImageTap: ((ImageNode) -> Void)? = nil) {
         self.onLinkTap = onLinkTap
         self.onMentionTap = onMentionTap
+        self.onImageTap = onImageTap
     }
 }
 
