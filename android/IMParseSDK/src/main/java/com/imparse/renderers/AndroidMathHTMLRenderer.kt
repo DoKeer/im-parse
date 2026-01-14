@@ -76,29 +76,29 @@ class AndroidMathHTMLRenderer private constructor() {
          * 生成数学公式缓存键
          * @param mathContent 数学公式内容（LaTeX 格式）
          * @param fontSize 字体大小
-         * @return 缓存键
+         * @return 缓存键（符合 DiskLruCache 的 key 规范：[a-z0-9_-]{1,64}）
          */
         fun generateMathCacheKey(
             mathContent: String,
             fontSize: Float,
         ): String {
             val contentHash = stableHash(mathContent)
-            return  "math:${contentHash}:${fontSize.toInt()}"
+            return "math_${contentHash}_${fontSize.toInt()}"
         }
         
         /**
          * 生成行内数学公式的缓存键（使用 lineHeight）
-         * 行内公式的缓存键格式：math:{contentHash}:false:{colorHex}:{fontSize}:{lineHeight}
+         * 行内公式的缓存键格式：math_{contentHash}_{fontSize}
          * @param mathContent 数学公式内容（LaTeX 格式）
          * @param fontSize 字体大小
-         * @return 缓存键
+         * @return 缓存键（符合 DiskLruCache 的 key 规范：[a-z0-9_-]{1,64}）
          */
         fun generateInlineMathCacheKey(
             mathContent: String,
             fontSize: Float,
         ): String {
             val contentHash = stableHash(mathContent)
-            return "math:${contentHash}:${fontSize.toInt()}"
+            return "math_${contentHash}_${fontSize.toInt()}"
         }
     }
     
