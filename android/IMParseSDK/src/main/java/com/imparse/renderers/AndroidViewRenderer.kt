@@ -131,12 +131,8 @@ class AndroidViewRenderer {
                 if (node.display == ImageDisplay.Block) {
                     renderImage(node, context)
                 } else {
-                    // 行内图片不应该通过 renderNode 处理，但为了兼容性，创建一个占位符
-                    TextView(context.context).apply {
-                        text = node.alt ?: "[图片]"
-                        textSize = context.theme.fontSize
-                        setTextColor(android.graphics.Color.GRAY)
-                    }
+                    // 行内图片：使用公共方法创建 TextView 并处理
+                    renderInlineImageAsTextView(node, context)
                 }
             }
             is ListNode -> renderList(node, context)
@@ -1170,6 +1166,82 @@ class AndroidViewRenderer {
     /**
      * 异步加载行内图片并创建 ImageSpan
      */
+    /**
+     * 处理行内图片的占位符添加和加载逻辑
+     * 供 appendInlineNode 和 renderInlineImageAsTextView 共用
+     */
+    private fun handleInlineImage(
+        node: ImageNode,
+        context: AndroidRenderContext,
+        displayMetrics: android.util.DisplayMetrics?,
+        textView: TextView?,
+        builder: SpannableStringBuilder
+    ) {
+        val start = builder.length
+        // 先添加占位符文本
+        val placeholder = "\uFFFC" // 使用对象替换字符作为占位符
+        builder.append(placeholder)
+        val end = builder.length
+        
+        // 尝试异步加载图片（如果 imageLoader 支持）
+        if (context.imageLoader != null && displayMetrics != null && textView != null) {
+            // 异步加载图片并创建 ImageSpan
+            loadInlineImage(
+                node,
+                context,
+                displayMetrics,
+                textView,
+                builder,
+                start,
+                end
+            )
+        } else {
+            // 如果没有 imageLoader，显示 alt 文本或占位符
+            if (node.alt == null) {
+                // 如果没有 alt 文本，显示 URL 的简短形式
+                builder.replace(start, end, "[图片]")
+            }
+            // 如果 node.alt 不为 null，保持占位符 \uFFFC
+        }
+    }
+    
+    /**
+     * 创建 TextView 并渲染行内图片
+     * 用于在 renderNode 中处理行内图片节点
+     */
+    private fun renderInlineImageAsTextView(
+        node: ImageNode,
+        context: AndroidRenderContext
+    ): TextView {
+        val textView = TextView(context.context)
+        textView.textSize = context.theme.fontSize
+        textView.setTextColor(context.theme.textColor)
+        
+        // 设置行高
+        val fontSizePx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP,
+            context.theme.fontSize,
+            textView.context.resources.displayMetrics
+        )
+        val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            textView.lineHeight = lineHeightPx
+        } else {
+            val addSpacing = (lineHeightPx - fontSizePx).toFloat().coerceAtLeast(0f)
+            textView.setLineSpacing(addSpacing, 1.0f)
+        }
+        
+        val spannable = SpannableStringBuilder()
+        val displayMetrics = textView.context.resources.displayMetrics
+        
+        // 使用公共方法处理行内图片
+        handleInlineImage(node, context, displayMetrics, textView, spannable)
+        
+        textView.text = spannable
+        textView.movementMethod = LinkMovementMethod.getInstance()
+        return textView
+    }
+    
     private fun loadInlineImage(
         node: ImageNode,
         context: AndroidRenderContext,
@@ -1330,31 +1402,8 @@ class AndroidViewRenderer {
             // V2: 行内图片（display == ImageDisplay.Inline）
             is ImageNode -> {
                 if (node.display == ImageDisplay.Inline) {
-                    val start = builder.length
-                    // 先添加占位符文本（alt 文本或空字符串）
-                    val placeholder = "\uFFFC" // 使用对象替换字符作为占位符
-                    builder.append(placeholder)
-                    val end = builder.length
-                    
-                    // 尝试同步加载图片（如果 imageLoader 支持）
-                    if (context.imageLoader != null && displayMetrics != null && textView != null) {
-                        // 异步加载图片并创建 ImageSpan
-                        loadInlineImage(
-                            node,
-                            context,
-                            displayMetrics,
-                            textView,
-                            builder,
-                            start,
-                            end
-                        )
-                    } else {
-                        // 如果没有 imageLoader，显示 alt 文本或占位符
-                        if (node.alt == null) {
-                            // 如果没有 alt 文本，显示 URL 的简短形式
-                            builder.replace(start, end, "[图片]")
-                        }
-                    }
+                    // 使用公共方法处理行内图片
+                    handleInlineImage(node, context, displayMetrics, textView, builder)
                 } else {
                     // 块级图片不应该在这里处理，但为了兼容性，显示占位符
                     builder.append(node.alt ?: "[图片]")
