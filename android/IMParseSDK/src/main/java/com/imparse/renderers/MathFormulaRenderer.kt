@@ -98,7 +98,8 @@ object MathFormulaRenderer {
                 lineHeightPx,
                 textView.context,
                 textView = textView,
-                contentWidth = context.contentWidth
+                contentWidth = context.contentWidth,
+                widthProvider = context.widthProvider
             )
             
             val clickableSpan = if (context.onMathTap != null) {
@@ -155,7 +156,8 @@ object MathFormulaRenderer {
                         lineHeightPx,
                         textView.context,
                         textView = textView,
-                        contentWidth = context.contentWidth
+                        contentWidth = context.contentWidth,
+                        widthProvider = context.widthProvider
                     )
                     
                     // 创建点击事件
@@ -453,7 +455,8 @@ object MathFormulaRenderer {
                 lineHeightPx,
                 context.context,
                 textView = textView,
-                contentWidth = context.contentWidth
+                contentWidth = context.contentWidth,
+                widthProvider = context.widthProvider
             )
             
             val clickableSpan = if (context.onMathTap != null) {
@@ -478,6 +481,7 @@ object MathFormulaRenderer {
      * @param context Context
      * @param textView TextView 引用（用于获取可用宽度）
      * @param contentWidth 内容最大宽度（如果 TextView 未布局，使用此值）
+     * @param widthProvider 动态宽度提供者（优先级高于 contentWidth）
      */
     fun createInlineImageSpan(
         image: Bitmap,
@@ -485,7 +489,8 @@ object MathFormulaRenderer {
         lineHeightPadding: Int,
         context: Context,
         textView: TextView? = null,
-        contentWidth: Int = 0
+        contentWidth: Int = 0,
+        widthProvider: (() -> Int?)? = null
     ): DynamicDrawableSpan {
         // 使用自定义的 AutoWrapImageSpan，支持根据容器宽度动态缩放
         val textViewRef = if (textView != null) {
@@ -493,7 +498,7 @@ object MathFormulaRenderer {
         } else {
             null
         }
-        return AutoWrapImageSpan(context, image, fontSizePx, lineHeightPadding, textViewRef, contentWidth)
+        return AutoWrapImageSpan(context, image, fontSizePx, lineHeightPadding, textViewRef, contentWidth, widthProvider)
     }
     
     /**
@@ -562,7 +567,8 @@ private class AutoWrapImageSpan(
     private val fontSizePx: Float,
     private val lineHeightPadding: Int,
     private val textViewRef: WeakReference<TextView>?,
-    private val contentWidth: Int
+    private val contentWidth: Int,
+    private val widthProvider: (() -> Int?)? = null
 ) : DynamicDrawableSpan(ALIGN_BASELINE) {
 
     private val context: Context = ctx
@@ -575,17 +581,25 @@ private class AutoWrapImageSpan(
 
     /**
      * 获取整行的可用宽度（减去 padding）
+     * 优先级：TextView 实际宽度 > widthProvider > contentWidth > 默认值
      */
     private fun getTotalAvailableWidth(): Float {
         val textView = textViewRef?.get()
-        return if (textView != null && textView.width > 0) {
-            (textView.width - textView.paddingLeft - textView.paddingRight).toFloat()
-        } else if (contentWidth > 0) {
-            contentWidth.toFloat()
-        } else {
-            val displayMetrics = context.resources.displayMetrics
-            displayMetrics.widthPixels * 0.5f
+        // 1. 优先使用 TextView 的实际宽度（布局完成后）
+        if (textView != null && textView.width > 0) {
+            return (textView.width - textView.paddingLeft - textView.paddingRight).toFloat()
         }
+        // 2. 使用 widthProvider 动态获取宽度
+        widthProvider?.invoke()?.let { width ->
+            if (width > 0) return width.toFloat()
+        }
+        // 3. 使用 contentWidth
+        if (contentWidth > 0) {
+            return contentWidth.toFloat()
+        }
+        // 4. 使用默认值：屏幕宽度的50%
+        val displayMetrics = context.resources.displayMetrics
+        return displayMetrics.widthPixels * 0.5f
     }
 
     /**

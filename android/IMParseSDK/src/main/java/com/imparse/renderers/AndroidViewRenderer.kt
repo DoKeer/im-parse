@@ -1212,7 +1212,8 @@ class AndroidViewRenderer {
                         bitmap,
                         node,
                         fontSizePx,
-                        context.contentWidth
+                        context.contentWidth,
+                        context.widthProvider
                     )
                     
                     // 替换占位符为对象替换字符
@@ -1788,12 +1789,31 @@ class AndroidViewRenderer {
         private val originalBitmap: Bitmap,
         private val imageNode: ImageNode,
         private val fontSizePx: Float,
-        private val contentWidth: Int
+        private val contentWidth: Int,
+        private val widthProvider: (() -> Int?)? = null
     ) : DynamicDrawableSpan(ALIGN_BASELINE) {
         
         private val context: Context = ctx
         private var scaledBitmap: Bitmap? = null
         private var cachedDrawable: InlineImageDrawable? = null
+        
+        /**
+         * 获取有效的内容宽度
+         * 优先级：widthProvider > contentWidth > 默认值（屏幕宽度的50%）
+         */
+        private fun getEffectiveContentWidth(): Int {
+            // 优先使用 widthProvider
+            widthProvider?.invoke()?.let { width ->
+                if (width > 0) return width
+            }
+            // 其次使用 contentWidth
+            if (contentWidth > 0) {
+                return contentWidth
+            }
+            // 最后使用默认值：屏幕宽度的50%
+            val displayMetrics = context.resources.displayMetrics
+            return (displayMetrics.widthPixels * 0.5f).toInt()
+        }
         
         /**
          * 计算目标显示尺寸（参考 iOS 实现）
@@ -1804,8 +1824,9 @@ class AndroidViewRenderer {
             val imageAspectRatio = imageWidth / imageHeight
             
             // 1. 计算最大允许尺寸（参考 iOS）
-            val maxWidth = contentWidth * 0.7f // 最大可展示宽度为容器的70%
-            val maxHeight = contentWidth * 2.0f // 最大高度不能超过contentWidth的两倍
+            val effectiveWidth = getEffectiveContentWidth()
+            val maxWidth = effectiveWidth * 0.7f // 最大可展示宽度为容器的70%
+            val maxHeight = effectiveWidth * 2.0f // 最大高度不能超过contentWidth的两倍
             
             // 2. 根据图片原始尺寸和长宽比计算目标尺寸（不超过最大尺寸）
             var targetWidth: Float

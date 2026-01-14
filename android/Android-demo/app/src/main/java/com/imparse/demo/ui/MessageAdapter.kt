@@ -41,7 +41,7 @@ class MessageAdapter(
         com.imparse.renderers.AndroidRenderContext(
             context = context,
             theme = com.imparse.renderers.AndroidTheme.default(),
-            contentWidth = contentWidth,
+            contentWidth = 0,
             onLinkTap = { url ->
                 val intent = android.content.Intent(
                     android.content.Intent.ACTION_VIEW,
@@ -148,10 +148,46 @@ class MessageAdapter(
             }
             
             if (rootNode != null) {
+                // 创建动态宽度提供者，优先使用实际容器宽度
+                val widthProvider: () -> Int? = {
+                    // 如果容器已经布局完成，使用实际宽度
+                    if (binding.container.width > 0) {
+                        binding.container.width - binding.container.paddingLeft - binding.container.paddingRight
+                    } else {
+                        // 如果还未布局，尝试使用 contentWidth
+                        if (contentWidth > 0) {
+                            contentWidth
+                        } else {
+                            // 最后使用屏幕宽度的估算值
+                            val displayMetrics = binding.root.context.resources.displayMetrics
+                            (displayMetrics.widthPixels * 0.8f).toInt() // 假设左右各留10%边距
+                        }
+                    }
+                }
+                
+                // 创建带动态宽度提供者的渲染上下文
+                val renderContext = sharedRenderContext.copy(
+                    widthProvider = widthProvider
+                )
+                
                 // 渲染
                 val renderer = com.imparse.renderers.AndroidViewRenderer()
-                val contentView = renderer.render(rootNode, sharedRenderContext)
+                val contentView = renderer.render(rootNode, renderContext)
                 binding.container.addView(contentView)
+                
+                // 如果容器还未布局，监听布局完成事件，更新宽度
+                if (binding.container.width == 0) {
+                    binding.container.viewTreeObserver.addOnGlobalLayoutListener(
+                        object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                            override fun onGlobalLayout() {
+                                // 布局完成后，移除监听器
+                                binding.container.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                                // 触发重新测量和绘制（如果需要）
+                                contentView.requestLayout()
+                            }
+                        }
+                    )
+                }
             } else {
                 // 解析失败，显示原始文本
                 val textView = android.widget.TextView(binding.root.context)

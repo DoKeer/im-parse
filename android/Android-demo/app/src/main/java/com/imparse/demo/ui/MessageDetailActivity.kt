@@ -68,21 +68,12 @@ class MessageDetailActivity : AppCompatActivity() {
         Log.d("StyleConfigTest", "====================================")
     }
     
-    /**
-     * 计算内容宽度：屏幕宽度 - 左右边距（32dp * 2 = 64dp）
-     */
-    private fun calculateContentWidth(): Int {
-        val screenWidth = resources.displayMetrics.widthPixels
-        val marginDp = 64
-        val marginPx = (marginDp * resources.displayMetrics.density).toInt()
-        return screenWidth - marginPx
-    }
+
     
     private fun setupRecyclerView() {
         binding.recyclerView.layoutManager = LinearLayoutManager(this)
         
-        val contentWidth = calculateContentWidth()
-        adapter = MessageAdapter(emptyList(), contentWidth, this)
+        adapter = MessageAdapter(emptyList(), 0, this)
         binding.recyclerView.adapter = adapter
     }
     

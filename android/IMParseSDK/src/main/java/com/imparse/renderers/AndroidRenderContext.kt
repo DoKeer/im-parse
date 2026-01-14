@@ -31,7 +31,30 @@ data class AndroidRenderContext(
     val inlineImageLoaderDelegate: InlineImageLoaderDelegate? = null,
     val formulaSizeCacheDelegate: FormulaSizeCacheDelegate? = null,
     val toolbarActionDelegate: ToolbarActionDelegate? = null,
+    /**
+     * 动态宽度提供者
+     * 当 contentWidth 为 0 或需要动态获取宽度时，优先使用此回调
+     * 返回 null 表示无法获取宽度，将使用默认值
+     */
+    val widthProvider: (() -> Int?)? = null,
 ) {
+    /**
+     * 获取有效的内容宽度
+     * 优先级：widthProvider > contentWidth > 默认值（屏幕宽度的50%）
+     */
+    fun getEffectiveContentWidth(): Int {
+        // 优先使用 widthProvider
+        widthProvider?.invoke()?.let { width ->
+            if (width > 0) return width
+        }
+        // 其次使用 contentWidth
+        if (contentWidth > 0) {
+            return contentWidth
+        }
+        // 最后使用默认值：屏幕宽度的50%
+        val displayMetrics = context.resources.displayMetrics
+        return (displayMetrics.widthPixels * 0.5f).toInt()
+    }
     /**
      * 图片加载器接口
      * @param url 图片 URL
