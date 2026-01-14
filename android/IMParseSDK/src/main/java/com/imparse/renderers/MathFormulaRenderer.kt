@@ -705,25 +705,25 @@ private class AutoWrapImageSpan(
         paint: Paint
     ) {
         val drawable = drawable
-        canvas.save()
+        canvas.withSave {
 
-        // 获取字体的度量信息
-        val fm = paint.fontMetricsInt
-        
-        // 计算文本的中心位置（相对于基线 y）
-        // ascent 是负数（基线以上），descent 是正数（基线以下）
-        val textCenter = y + (fm.descent + fm.ascent) / 2
-        
-        // 计算图片的高度
-        val imageHeight = drawable.bounds.height()
-        
-        // 让图片的中心与文本的中心对齐
-        // transY 是图片顶部相对于基线的偏移
-        val transY = textCenter - imageHeight / 2
+            // 获取字体的度量信息
+            val fm = paint.fontMetricsInt
 
-        canvas.translate(x, transY.toFloat())
-        drawable.draw(canvas)
-        canvas.restore()
+            // 计算文本的中心位置（相对于基线 y）
+            // ascent 是负数（基线以上），descent 是正数（基线以下）
+            val textCenter = y + (fm.descent + fm.ascent) / 2
+
+            // 计算图片的高度
+            val imageHeight = drawable.bounds.height()
+
+            // 让图片的中心与文本的中心对齐
+            // transY 是图片顶部相对于基线的偏移
+            val transY = textCenter - imageHeight / 2
+
+            translate(x, transY.toFloat())
+            drawable.draw(this)
+        }
     }
 }
 

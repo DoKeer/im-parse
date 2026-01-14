@@ -1184,8 +1184,7 @@ class AndroidViewRenderer {
             context.theme.fontSize,
             displayMetrics
         )
-        val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
-        
+
         // 使用 imageLoader 直接下载图片（imageView 为 null）
         context.imageLoader?.loadImage(node.url, null) { result ->
             android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -1217,7 +1216,6 @@ class AndroidViewRenderer {
                     )
                     
                     // 替换占位符为对象替换字符
-                    val placeholderText = builder.subSequence(start, safeEnd).toString()
                     builder.replace(start, safeEnd, "\uFFFC")
                     
                     // 设置 ImageSpan
@@ -1333,7 +1331,7 @@ class AndroidViewRenderer {
                 if (node.display == ImageDisplay.Inline) {
                     val start = builder.length
                     // 先添加占位符文本（alt 文本或空字符串）
-                    val placeholder = node.alt ?: "\uFFFC" // 使用对象替换字符作为占位符
+                    val placeholder = "\uFFFC" // 使用对象替换字符作为占位符
                     builder.append(placeholder)
                     val end = builder.length
                     
@@ -1839,8 +1837,8 @@ class AndroidViewRenderer {
             
             // 3. 如果 imageNode 指定了尺寸，需要和计算出的最大尺寸对比
             if (imageNode.width != null && imageNode.height != null) {
-                val nodeWidth = imageNode.width!!
-                val nodeHeight = imageNode.height!!
+                val nodeWidth = imageNode.width
+                val nodeHeight = imageNode.height
                 
                 // 如果 imageNode 的尺寸大于计算出的最大尺寸，则压缩到最大尺寸
                 if (nodeWidth > maxWidth || nodeHeight > maxHeight) {
