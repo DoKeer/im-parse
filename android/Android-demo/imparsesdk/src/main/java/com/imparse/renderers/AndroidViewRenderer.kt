@@ -1258,6 +1258,7 @@ class AndroidViewRenderer {
     
     /**
      * 追加行内节点到 SpannableStringBuilder
+     * 使用统一的 InlineNodeRenderer 工具类
      */
     private fun appendInlineNode(
         builder: SpannableStringBuilder,
@@ -1265,125 +1266,7 @@ class AndroidViewRenderer {
         context: AndroidRenderContext,
         mathNodes: MutableList<Pair<Int, MathNode>> = mutableListOf()
     ) {
-        when (node) {
-            is TextNode -> builder.append(node.content)
-            is StrongNode -> {
-                val start = builder.length
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
-                }
-                builder.setSpan(
-                    StyleSpan(Typeface.BOLD),
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            is EmNode -> {
-                val start = builder.length
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
-                }
-                builder.setSpan(
-                    StyleSpan(Typeface.ITALIC),
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            is UnderlineNode -> {
-                val start = builder.length
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
-                }
-                builder.setSpan(
-                    UnderlineSpan(),
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            is StrikeNode -> {
-                val start = builder.length
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
-                }
-                builder.setSpan(
-                    StrikethroughSpan(),
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            is CodeNode -> {
-                val start = builder.length
-                builder.append(node.content)
-                builder.setSpan(
-                    ForegroundColorSpan(context.theme.codeTextColor),
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-                builder.setSpan(
-                    BackgroundColorSpan(context.theme.codeBackgroundColor),
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            is LinkNode -> {
-                val start = builder.length
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
-                }
-                val clickableSpan = object : ClickableSpan() {
-                    override fun onClick(widget: View) {
-                        context.onLinkTap?.invoke(node.url)
-                    }
-                    
-                    override fun updateDrawState(ds: TextPaint) {
-                        super.updateDrawState(ds)
-                        ds.color = context.theme.linkColor
-                        ds.isUnderlineText = true
-                    }
-                }
-                builder.setSpan(
-                    clickableSpan,
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            is MathNode -> {
-                // 行内数学公式：添加占位符，稍后会被 ImageSpan 替换
-                // 使用多个空格作为占位符，确保有足够的宽度显示公式（公式通常比单个字符宽）
-                val start = builder.length
-                // 使用 3 个空格作为占位符，实际宽度会在渲染时根据公式图片宽度调整
-                builder.append("   ")
-                mathNodes.add(Pair(start, node))
-            }
-            is EmojiNode -> builder.append(node.emoji)
-            is MentionNode -> {
-                val start = builder.length
-                builder.append("@${node.name}")
-                builder.setSpan(
-                    ForegroundColorSpan(context.theme.mentionTextColor),
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-                builder.setSpan(
-                    BackgroundColorSpan(context.theme.mentionBackground),
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            else -> {
-                // 其他节点类型，尝试提取文本
-                builder.append(node.toString())
-            }
-        }
+        InlineNodeRenderer.appendInlineNode(builder, node, context, mathNodes)
     }
     
     /**

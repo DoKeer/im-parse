@@ -8,9 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
-import com.imparse.models.TableCellNode
-import com.imparse.models.TableNode
-import com.imparse.models.TableRowNode
+import com.imparse.models.*
 
 /**
  * 自定义表格布局
@@ -137,7 +135,7 @@ class CustomTableLayout(
         
         // 构建富文本内容
         val spannable = SpannableStringBuilder()
-        val mathNodes = mutableListOf<Pair<Int, com.imparse.models.MathNode>>()
+        val mathNodes = mutableListOf<Pair<Int, MathNode>>()
         
         for (child in cell.children) {
             appendInlineNode(spannable, child, renderContext, mathNodes)
@@ -181,7 +179,7 @@ class CustomTableLayout(
             for ((cellIndex, cell) in row.cells.withIndex()) {
                 // 构建富文本
                 val spannable = SpannableStringBuilder()
-                val mathNodes = mutableListOf<Pair<Int, com.imparse.models.MathNode>>()
+                val mathNodes = mutableListOf<Pair<Int, MathNode>>()
                 
                 for (child in cell.children) {
                     appendInlineNode(spannable, child, renderContext, mathNodes)
@@ -685,148 +683,21 @@ class CustomTableLayout(
         return (0 until childCount).map { getChildAt(it) }
     }
     
-    // 辅助方法：追加行内节点（从 AndroidViewRenderer 复制）
+    // 辅助方法：追加行内节点（使用统一的 InlineNodeRenderer 工具类）
     private fun appendInlineNode(
         builder: SpannableStringBuilder,
-        node: com.imparse.models.ASTNode,
+        node: ASTNode,
         context: AndroidRenderContext,
-        mathNodes: MutableList<Pair<Int, com.imparse.models.MathNode>>
+        mathNodes: MutableList<Pair<Int, MathNode>>
     ) {
-        when (node) {
-            is com.imparse.models.TextNode -> builder.append(node.content)
-            is com.imparse.models.ParagraphNode -> {
-                // 处理段落节点：递归处理其子节点，段落内的内容用空格分隔
-                for ((index, child) in node.children.withIndex()) {
-                    if (index > 0) {
-                        // 段落内的多个子节点之间用空格分隔
-                        builder.append(" ")
-                    }
-                    appendInlineNode(builder, child, context, mathNodes)
-                }
-            }
-            is com.imparse.models.StrongNode -> {
-                val start = builder.length
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
-                }
-                builder.setSpan(
-                    android.text.style.StyleSpan(android.graphics.Typeface.BOLD),
-                    start,
-                    builder.length,
-                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            is com.imparse.models.EmNode -> {
-                val start = builder.length
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
-                }
-                builder.setSpan(
-                    android.text.style.StyleSpan(android.graphics.Typeface.ITALIC),
-                    start,
-                    builder.length,
-                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            is com.imparse.models.CodeNode -> {
-                val start = builder.length
-                builder.append(node.content)
-                builder.setSpan(
-                    android.text.style.ForegroundColorSpan(context.theme.codeTextColor),
-                    start,
-                    builder.length,
-                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-                builder.setSpan(
-                    android.text.style.BackgroundColorSpan(context.theme.codeBackgroundColor),
-                    start,
-                    builder.length,
-                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            is com.imparse.models.LinkNode -> {
-                val start = builder.length
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
-                }
-                val clickableSpan = object : android.text.style.ClickableSpan() {
-                    override fun onClick(widget: View) {
-                        context.onLinkTap?.invoke(node.url)
-                    }
-                    
-                    override fun updateDrawState(ds: TextPaint) {
-                        super.updateDrawState(ds)
-                        ds.color = context.theme.linkColor
-                        ds.isUnderlineText = true
-                    }
-                }
-                builder.setSpan(
-                    clickableSpan,
-                    start,
-                    builder.length,
-                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            is com.imparse.models.MathNode -> {
-                // 行内数学公式：添加占位符，稍后统一处理
-                val start = builder.length
-                builder.append("   ") // 使用 3 个空格作为占位符
-                mathNodes.add(Pair(start, node))
-            }
-            is com.imparse.models.EmojiNode -> builder.append(node.emoji)
-            is com.imparse.models.MentionNode -> {
-                val start = builder.length
-                builder.append("@${node.name}")
-                builder.setSpan(
-                    android.text.style.ForegroundColorSpan(context.theme.mentionTextColor),
-                    start,
-                    builder.length,
-                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-                builder.setSpan(
-                    android.text.style.BackgroundColorSpan(context.theme.mentionBackground),
-                    start,
-                    builder.length,
-                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            is com.imparse.models.BlockquoteNode -> {
-                // 块引用节点：递归处理子节点
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
-                }
-            }
-            is com.imparse.models.HeadingNode -> {
-                // 标题节点：递归处理子节点
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
-                }
-            }
-            is com.imparse.models.ListItemNode -> {
-                // 列表项节点：递归处理子节点
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
-                }
-            }
-            is com.imparse.models.CardNode -> {
-                // 卡片节点：递归处理子节点
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
-                }
-            }
-            else -> {
-                // 其他没有 children 的节点类型（如 TextNode, CodeNode, MathNode 等已在上面处理）
-                // 尝试提取文本内容
-                builder.append(node.toString())
-            }
-        }
+        InlineNodeRenderer.appendInlineNode(builder, node, context, mathNodes)
     }
     
     // 辅助方法：渲染行内数学公式（使用统一的渲染方法）
     private fun renderInlineMathNodes(
         textView: TextView,
         spannable: SpannableStringBuilder,
-        mathNodes: List<Pair<Int, com.imparse.models.MathNode>>,
+        mathNodes: List<Pair<Int, MathNode>>,
         context: AndroidRenderContext
     ) {
         if (mathNodes.isEmpty()) return

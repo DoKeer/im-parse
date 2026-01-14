@@ -84,8 +84,11 @@ object MessageDataGenerator {
             3. 如有疑问，可联系13212341234,祝您用餐愉快！
             """.trimIndent(),
             """ 
+            ### 行内多公式
+            伽玛函数：$\Gamma(z) = \int_0^\infty t^{z-1} e^{-t} \, dt = (z-1)!, \quad z \in \mathbb{C}, \Re(z) > 0$ 多层嵌套对数 $\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$  这是行内公式：${'$'}E = mc^2$ ，这是另一个行内公式：$\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$。行内公式应该与文本在同一行显示。
+
             ### 图片
-              行内 ![示例图片](https://iph.href.lu/879x200) 行内2 ![示例图片](https://iph.href.lu/879x200) 行内3 ![示例图片](https://iph.href.lu/879x200)
+            行内 ![示例图片](https://iph.href.lu/879x200) 行内2 ![示例图片](https://iph.href.lu/879x200) 行内3 ![示例图片](https://iph.href.lu/879x200)
             块级
             
             ![示例图片](https://iph.href.lu/879x200)
