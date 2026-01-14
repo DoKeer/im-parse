@@ -1,6 +1,7 @@
 package com.imparse.renderers
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -177,9 +178,11 @@ class AndroidViewRenderer {
         val spannable = SpannableStringBuilder()
         // 用于记录行内数学公式的位置
         val mathNodes = mutableListOf<Pair<Int, MathNode>>()
+        // 用于记录行内图片的位置
+        val imageNodes = mutableListOf<Pair<Int, ImageNode>>()
         
         for (child in node.children) {
-            appendInlineNode(spannable, child, context, mathNodes)
+            appendInlineNode(spannable, child, context, mathNodes, imageNodes, textView.context.resources.displayMetrics, textView)
         }
         
         textView.text = spannable
@@ -188,6 +191,11 @@ class AndroidViewRenderer {
         // 异步渲染行内数学公式
         if (mathNodes.isNotEmpty()) {
             renderInlineMathNodes(textView, spannable, mathNodes, context)
+        }
+        
+        // 异步渲染行内图片
+        if (imageNodes.isNotEmpty()) {
+            renderInlineImageNodes(textView, spannable, imageNodes, context)
         }
         
         return textView
@@ -234,7 +242,7 @@ class AndroidViewRenderer {
         
         val spannable = SpannableStringBuilder()
         for (child in node.children) {
-            appendInlineNode(spannable, child, context)
+            appendInlineNode(spannable, child, context, mathNodes, imageNodes, textView.context.resources.displayMetrics, textView)
         }
         
         textView.text = spannable
@@ -1264,9 +1272,12 @@ class AndroidViewRenderer {
         builder: SpannableStringBuilder,
         node: ASTNode,
         context: AndroidRenderContext,
-        mathNodes: MutableList<Pair<Int, MathNode>> = mutableListOf()
+        mathNodes: MutableList<Pair<Int, MathNode>> = mutableListOf(),
+        imageNodes: MutableList<Pair<Int, ImageNode>> = mutableListOf(),
+        displayMetrics: android.util.DisplayMetrics? = null,
+        textView: TextView? = null
     ) {
-        InlineNodeRenderer.appendInlineNode(builder, node, context, mathNodes)
+        InlineNodeRenderer.appendInlineNode(builder, node, context, mathNodes, imageNodes, displayMetrics, textView)
     }
     
     /**
@@ -1302,5 +1313,272 @@ class AndroidViewRenderer {
             )
         }
     }
+    
+    /**
+     * 异步渲染行内图片（使用统一的渲染方法）
+     */
+    private fun renderInlineImageNodes(
+        textView: TextView,
+        spannable: SpannableStringBuilder,
+        imageNodes: List<Pair<Int, ImageNode>>,
+        context: AndroidRenderContext
+    ) {
+        if (imageNodes.isEmpty()) return
+        
+        val fontSizePx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP,
+            context.theme.fontSize,
+            textView.context.resources.displayMetrics
+        )
+        val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
+        
+        // 为每个图片异步加载并创建 ImageSpan
+        imageNodes.forEach { (position, imageNode) ->
+            // 使用 imageLoader 直接下载图片（imageView 为 null）
+            context.imageLoader?.loadImage(imageNode.url, null) { result ->
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    // 当 imageView 为 null 时，回调返回 Bitmap?
+                    val bitmap = result as? Bitmap
+                    
+                    if (bitmap != null) {
+                        // 检查索引是否仍然有效（异步回调时 builder 可能已被修改）
+                        val currentLength = spannable.length
+                        if (position < 0 || position >= currentLength) {
+                            // 占位符位置已无效，跳过
+                            return@post
+                        }
+                        
+                        // 创建行内图片 Span（使用垂直居中对齐，与数学公式保持一致）
+                        val imageSpan = InlineImageSpan(
+                            textView.context,
+                            bitmap,
+                            imageNode,
+                            fontSizePx,
+                            lineHeightPx,
+                            context.contentWidth
+                        )
+                        
+                        // \uFFFC 已经是占位符，不需要替换
+                        // 直接设置 ImageSpan
+                        if (position < currentLength) {
+                            // 确保位置有效
+                            spannable.setSpan(
+                                imageSpan,
+                                position,
+                                position + 1, // \uFFFC 是单个字符
+                                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                            )
+                            
+                            // 添加点击事件
+                            if (context.onImageTap != null) {
+                                val clickableSpan = object : ClickableSpan() {
+                                    override fun onClick(widget: View) {
+                                        context.onImageTap?.invoke(imageNode)
+                                    }
+                                }
+                                spannable.setSpan(
+                                    clickableSpan,
+                                    position,
+                                    position + 1,
+                                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                                )
+                            }
+                            
+                            // 更新 TextView
+                            textView.text = spannable
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 行内图片 Span，使用垂直居中对齐（与数学公式保持一致）
+ * 这样可以确保行间距正常
+ */
+private class InlineImageSpan(
+    context: Context,
+    private val originalBitmap: Bitmap,
+    private val imageNode: ImageNode,
+    private val fontSizePx: Float,
+    private val lineHeightPx: Int,
+    private val contentWidth: Int
+) : DynamicDrawableSpan(ALIGN_BASELINE) {
+    
+    private var scaledBitmap: Bitmap? = null
+    private var cachedDrawable: InlineImageDrawable? = null
+    
+    /**
+     * 计算目标显示尺寸
+     */
+    private fun calculateTargetSize(): Pair<Int, Int> {
+        val imageWidth = originalBitmap.width.toFloat()
+        val imageHeight = originalBitmap.height.toFloat()
+        val imageAspectRatio = imageWidth / imageHeight
+        
+        // 计算最大允许尺寸
+        val maxWidth = contentWidth * 0.7f // 最大可展示宽度为容器的70%
+        val maxHeight = contentWidth * 2.0f // 最大高度不能超过contentWidth的两倍
+        
+        // 根据图片原始尺寸和长宽比计算目标尺寸（不超过最大尺寸）
+        var targetWidth: Float
+        var targetHeight: Float
+        
+        if (imageWidth > maxWidth) {
+            targetWidth = maxWidth
+            targetHeight = targetWidth / imageAspectRatio
+            if (targetHeight > maxHeight) {
+                targetHeight = maxHeight
+                targetWidth = targetHeight * imageAspectRatio
+            }
+        } else if (imageHeight > maxHeight) {
+            targetHeight = maxHeight
+            targetWidth = targetHeight * imageAspectRatio
+            if (targetWidth > maxWidth) {
+                targetWidth = maxWidth
+                targetHeight = targetWidth / imageAspectRatio
+            }
+        } else {
+            targetWidth = imageWidth
+            targetHeight = imageHeight
+        }
+        
+        // 如果 imageNode 指定了尺寸，需要和计算出的最大尺寸对比
+        if (imageNode.width != null && imageNode.height != null) {
+            val nodeWidth = imageNode.width!!
+            val nodeHeight = imageNode.height!!
+            
+            if (nodeWidth > maxWidth || nodeHeight > maxHeight) {
+                // 需要压缩，使用计算出的最大尺寸
+            } else {
+                // 使用 imageNode 的尺寸
+                targetWidth = nodeWidth
+                targetHeight = nodeHeight
+            }
+        }
+        
+        return Pair(targetWidth.toInt(), targetHeight.toInt())
+    }
+    
+    /**
+     * 获取缩放后的 Bitmap
+     */
+    private fun getScaledBitmap(): Bitmap {
+        if (scaledBitmap != null) {
+            return scaledBitmap!!
+        }
+        
+        val (targetW, targetH) = calculateTargetSize()
+        
+        // 如果尺寸差异小于1像素，直接使用原图
+        if (kotlin.math.abs(targetW - originalBitmap.width) < 1 &&
+            kotlin.math.abs(targetH - originalBitmap.height) < 1
+        ) {
+            scaledBitmap = originalBitmap
+        } else {
+            // 需要缩放
+            scaledBitmap = Bitmap.createScaledBitmap(originalBitmap, targetW, targetH, true)
+            scaledBitmap?.density = originalBitmap.density
+        }
+        
+        return scaledBitmap!!
+    }
+    
+    override fun getDrawable(): android.graphics.drawable.Drawable {
+        val bmp = getScaledBitmap()
+        // 如果 bitmap 更新，重建 drawable；否则复用
+        if (cachedDrawable == null || cachedDrawable?.sourceBitmap !== bmp) {
+            cachedDrawable = InlineImageDrawable(bmp)
+        }
+        return cachedDrawable!!
+    }
+    
+    override fun getSize(
+        paint: Paint,
+        text: CharSequence?,
+        start: Int,
+        end: Int,
+        fm: Paint.FontMetricsInt?
+    ): Int {
+        val d = drawable
+        val rect = d.bounds
+        
+        if (fm != null) {
+            // 获取字体的度量信息
+            val pfm = paint.fontMetricsInt
+            
+            // 计算文本的中心位置（相对于基线）
+            // ascent 是负数，descent 是正数
+            val textCenter = (pfm.descent + pfm.ascent) / 2
+            
+            // 计算图片的高度
+            val imageHeight = rect.height()
+            
+            // 让图片的中心与文本的中心对齐（与 CenterImageSpan 保持一致）
+            val imageCenter = imageHeight / 2
+            
+            // 计算图片的上下边界（相对于基线）
+            fm.ascent = textCenter - imageCenter
+            fm.descent = textCenter + imageCenter
+            
+            fm.top = fm.ascent
+            fm.bottom = fm.descent
+        }
+        
+        return rect.right
+    }
+    
+    override fun draw(
+        canvas: Canvas,
+        text: CharSequence?,
+        start: Int,
+        end: Int,
+        x: Float,
+        top: Int,
+        y: Int,
+        bottom: Int,
+        paint: Paint
+    ) {
+        val drawable = drawable
+        canvas.save()
+        
+        // 获取字体的度量信息
+        val fm = paint.fontMetricsInt
+        
+        // 计算文本的中心位置（相对于基线 y）
+        val textCenter = y + (fm.descent + fm.ascent) / 2
+        
+        // 计算图片的高度
+        val imageHeight = drawable.bounds.height()
+        
+        // 让图片的中心与文本的中心对齐（与 CenterImageSpan 保持一致）
+        val transY = textCenter - imageHeight / 2
+        
+        canvas.translate(x, transY.toFloat())
+        drawable.draw(canvas)
+        canvas.restore()
+    }
+}
+
+/**
+ * 行内图片 Drawable
+ */
+private class InlineImageDrawable(
+    val sourceBitmap: Bitmap
+) : android.graphics.drawable.Drawable() {
+    
+    init {
+        setBounds(0, 0, sourceBitmap.width, sourceBitmap.height)
+    }
+    
+    override fun draw(canvas: Canvas) {
+        canvas.drawBitmap(sourceBitmap, null, bounds, null)
+    }
+    
+    override fun setAlpha(alpha: Int) {}
+    override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {}
+    override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
 }
 

@@ -17,6 +17,7 @@ import android.view.ViewGroup
 import android.widget.*
 import androidx.core.view.setPadding
 import com.imparse.models.*
+import androidx.core.graphics.withSave
 
 /**
  * Android View 渲染器
@@ -1901,13 +1902,15 @@ class AndroidViewRenderer {
             if (fm != null) {
                 val pfm = paint.fontMetricsInt
                 val imageHeight = rect.height()
-                
+                // 增加上下间距（呼吸感）：上下各 10% 的图片高度
+                val extraSpacing = (imageHeight * 0.1f).toInt()
+
                 // 图片顶部对齐字体顶部（参考 iOS：font.ascender - targetHeight）
                 // pfm.ascent 是从基线到字体顶部的距离（负数，在基线上方）
                 // 图片顶部应该对齐字体顶部，所以图片顶部位置 = pfm.ascent
                 // 图片底部位置 = pfm.ascent + imageHeight
-                fm.ascent = pfm.ascent
-                fm.descent = pfm.ascent + imageHeight
+                fm.ascent = pfm.ascent-extraSpacing
+                fm.descent = pfm.ascent + imageHeight+extraSpacing
                 fm.top = fm.ascent
                 fm.bottom = fm.descent
             }
@@ -1927,19 +1930,19 @@ class AndroidViewRenderer {
             paint: Paint
         ) {
             val drawable = drawable
-            canvas.save()
-            
-            // 获取字体的度量信息
-            val fm = paint.fontMetricsInt
-            
-            // 图片顶部对齐字体顶部
-            // y 是基线位置，fm.ascent 是从基线到字体顶部的距离（负数）
-            // 图片顶部位置 = y + fm.ascent
-            val transY = y + fm.ascent
-            
-            canvas.translate(x, transY.toFloat())
-            drawable.draw(canvas)
-            canvas.restore()
+            canvas.withSave {
+
+                // 获取字体的度量信息
+                val fm = paint.fontMetricsInt
+
+                // 图片顶部对齐字体顶部
+                // y 是基线位置，fm.ascent 是从基线到字体顶部的距离（负数）
+                // 图片顶部位置 = y + fm.ascent
+                val transY = y + fm.ascent
+
+                translate(x, transY.toFloat())
+                drawable.draw(this)
+            }
         }
     }
     

@@ -75,46 +75,30 @@ class AndroidMathHTMLRenderer private constructor() {
         /**
          * 生成数学公式缓存键
          * @param mathContent 数学公式内容（LaTeX 格式）
-         * @param display 是否为块级显示
-         * @param textColor 文本颜色（十六进制）
          * @param fontSize 字体大小
-         * @param targetSize 目标尺寸（可选，用于行内公式）
          * @return 缓存键
          */
         fun generateMathCacheKey(
             mathContent: String,
-            display: Boolean,
-            textColor: String,
             fontSize: Float,
-            targetSize: android.graphics.PointF? = null
         ): String {
             val contentHash = stableHash(mathContent)
-            return if (targetSize != null) {
-                // 行内公式：key包含目标尺寸
-                "math:${contentHash}:${display}:${textColor}:${fontSize.toInt()}:${targetSize.x.toInt()}x${targetSize.y.toInt()}"
-            } else {
-                // 块级公式：不包含尺寸（使用原始尺寸）
-                "math:${contentHash}:${display}:${textColor}:${fontSize.toInt()}"
-            }
+            return  "math:${contentHash}:${fontSize.toInt()}"
         }
         
         /**
          * 生成行内数学公式的缓存键（使用 lineHeight）
          * 行内公式的缓存键格式：math:{contentHash}:false:{colorHex}:{fontSize}:{lineHeight}
          * @param mathContent 数学公式内容（LaTeX 格式）
-         * @param textColor 文本颜色（十六进制，如 "#000000"）
          * @param fontSize 字体大小
-         * @param lineHeight 行高（用于调整图片尺寸）
          * @return 缓存键
          */
         fun generateInlineMathCacheKey(
             mathContent: String,
-            textColor: String,
             fontSize: Float,
-            lineHeight: Float
         ): String {
             val contentHash = stableHash(mathContent)
-            return "math:${contentHash}:false:${textColor}:${fontSize.toInt()}:${lineHeight.toInt()}"
+            return "math:${contentHash}:${fontSize.toInt()}"
         }
     }
     

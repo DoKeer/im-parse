@@ -20,12 +20,18 @@ internal object InlineNodeRenderer {
      * @param node AST 节点
      * @param context Android 渲染上下文
      * @param mathNodes 数学公式节点列表（用于后续渲染），如果为 null 则不收集数学公式
+     * @param imageNodes 图片节点列表（用于后续渲染），如果为 null 则不收集图片
+     * @param displayMetrics 显示指标（用于图片处理）
+     * @param textView TextView 实例（用于图片处理）
      */
     fun appendInlineNode(
         builder: SpannableStringBuilder,
         node: ASTNode,
         context: AndroidRenderContext,
-        mathNodes: MutableList<Pair<Int, MathNode>>? = null
+        mathNodes: MutableList<Pair<Int, MathNode>>? = null,
+        imageNodes: MutableList<Pair<Int, ImageNode>>? = null,
+        displayMetrics: android.util.DisplayMetrics? = null,
+        textView: android.widget.TextView? = null
     ) {
         when (node) {
             is TextNode -> builder.append(node.content)
@@ -37,14 +43,14 @@ internal object InlineNodeRenderer {
                         // 段落内的多个子节点之间用空格分隔
                         builder.append(" ")
                     }
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, imageNodes, displayMetrics, textView)
                 }
             }
             
             is StrongNode -> {
                 val start = builder.length
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, imageNodes, displayMetrics, textView)
                 }
                 builder.setSpan(
                     StyleSpan(Typeface.BOLD),
@@ -57,7 +63,7 @@ internal object InlineNodeRenderer {
             is EmNode -> {
                 val start = builder.length
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, imageNodes, displayMetrics, textView)
                 }
                 builder.setSpan(
                     StyleSpan(Typeface.ITALIC),
@@ -70,7 +76,7 @@ internal object InlineNodeRenderer {
             is UnderlineNode -> {
                 val start = builder.length
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, imageNodes, displayMetrics, textView)
                 }
                 builder.setSpan(
                     UnderlineSpan(),
@@ -83,7 +89,7 @@ internal object InlineNodeRenderer {
             is StrikeNode -> {
                 val start = builder.length
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, imageNodes, displayMetrics, textView)
                 }
                 builder.setSpan(
                     StrikethroughSpan(),
@@ -113,7 +119,7 @@ internal object InlineNodeRenderer {
             is LinkNode -> {
                 val start = builder.length
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, imageNodes, displayMetrics, textView)
                 }
                 val clickableSpan = object : ClickableSpan() {
                     override fun onClick(widget: View) {
@@ -142,6 +148,14 @@ internal object InlineNodeRenderer {
                 mathNodes?.add(Pair(start, node))
             }
             
+            is ImageNode -> {
+                // 行内图片：添加占位符，稍后会被 ImageSpan 替换
+                // 使用 Unicode 对象替换字符 \uFFFC 作为占位符
+                val start = builder.length
+                builder.append("\uFFFC")
+                imageNodes?.add(Pair(start, node))
+            }
+            
             is EmojiNode -> builder.append(node.emoji)
             
             is MentionNode -> {
@@ -164,28 +178,28 @@ internal object InlineNodeRenderer {
             is BlockquoteNode -> {
                 // 块引用节点：递归处理子节点
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, imageNodes, displayMetrics, textView)
                 }
             }
             
             is HeadingNode -> {
                 // 标题节点：递归处理子节点
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, imageNodes, displayMetrics, textView)
                 }
             }
             
             is ListItemNode -> {
                 // 列表项节点：递归处理子节点
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, imageNodes, displayMetrics, textView)
                 }
             }
             
             is CardNode -> {
                 // 卡片节点：递归处理子节点
                 for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes)
+                    appendInlineNode(builder, child, context, mathNodes, imageNodes, displayMetrics, textView)
                 }
             }
             

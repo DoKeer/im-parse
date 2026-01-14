@@ -84,9 +84,7 @@ object MathFormulaRenderer {
         // 生成缓存键（包含 lineHeight）
         val inlineCacheKey = AndroidMathHTMLRenderer.generateInlineMathCacheKey(
             mathNode.content,
-            colorHex,
-            fontSize,
-            lineHeightPx.toFloat()
+            fontSize
         )
         
         // 先尝试从缓存获取图片
@@ -217,10 +215,7 @@ object MathFormulaRenderer {
         val fontSize = if (mathNode.display) 16.0f else 14.0f
         val cacheKey = AndroidMathHTMLRenderer.generateMathCacheKey(
             mathNode.content,
-            mathNode.display,
-            colorHex,
             fontSize,
-            null
         )
         
         val contentPadding = context.theme.codeBlockPadding
@@ -444,9 +439,7 @@ object MathFormulaRenderer {
         // 生成缓存键（包含 lineHeight）
         val inlineCacheKey = AndroidMathHTMLRenderer.generateInlineMathCacheKey(
             mathNode.content,
-            colorHex,
-            fontSize,
-            lineHeightPx.toFloat()
+            fontSize
         )
         
         // 先尝试从缓存获取图片
@@ -481,7 +474,7 @@ object MathFormulaRenderer {
      * 创建行内数学公式的 DrawableSpan
      * @param image 原始图片
      * @param fontSizePx 字体大小（像素）
-     * @param lineHeightPx 行高（像素）
+     * @param lineHeightPadding 行高padding
      * @param context Context
      * @param textView TextView 引用（用于获取可用宽度）
      * @param contentWidth 内容最大宽度（如果 TextView 未布局，使用此值）
@@ -489,7 +482,7 @@ object MathFormulaRenderer {
     fun createInlineImageSpan(
         image: Bitmap,
         fontSizePx: Float,
-        lineHeightPx: Int,
+        lineHeightPadding: Int,
         context: Context,
         textView: TextView? = null,
         contentWidth: Int = 0
@@ -500,7 +493,7 @@ object MathFormulaRenderer {
         } else {
             null
         }
-        return AutoWrapImageSpan(context, image, fontSizePx, lineHeightPx, textViewRef, contentWidth)
+        return AutoWrapImageSpan(context, image, fontSizePx, lineHeightPadding, textViewRef, contentWidth)
     }
     
     /**
@@ -567,7 +560,7 @@ private class AutoWrapImageSpan(
     ctx: Context,
     private val originalBitmap: Bitmap,
     private val fontSizePx: Float,
-    private val lineHeightPx: Int,
+    private val lineHeightPadding: Int,
     private val textViewRef: WeakReference<TextView>?,
     private val contentWidth: Int
 ) : DynamicDrawableSpan(ALIGN_BASELINE) {
