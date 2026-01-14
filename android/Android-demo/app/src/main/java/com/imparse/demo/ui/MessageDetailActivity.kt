@@ -89,7 +89,7 @@ class MessageDetailActivity : AppCompatActivity() {
     private fun loadMessages() {
         lifecycleScope.launch(Dispatchers.IO) {
             // 生成消息
-            val generatedMessages = MessageDataGenerator.generateMessages(count = 18)
+            val generatedMessages = MessageDataGenerator.generateMessages(count = 2)
             
             // 在后台线程解析消息
             val parsedMessages = generatedMessages.map { message ->

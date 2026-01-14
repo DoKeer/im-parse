@@ -1192,6 +1192,20 @@ class AndroidViewRenderer {
                 val bitmap = result as? Bitmap
                 
                 if (bitmap != null) {
+                    // 检查索引是否仍然有效（异步回调时 builder 可能已被修改）
+                    val currentLength = builder.length
+                    if (start < 0 || start >= currentLength) {
+                        // 占位符位置已无效，跳过
+                        return@post
+                    }
+                    
+                    // 确保 end 不超过当前长度
+                    val safeEnd = minOf(end, currentLength)
+                    if (safeEnd <= start) {
+                        // 无效的范围，跳过
+                        return@post
+                    }
+                    
                     // 创建行内图片 Span（参考 iOS 实现）
                     val imageSpan = InlineImageSpan(
                         context.context,
@@ -1202,8 +1216,8 @@ class AndroidViewRenderer {
                     )
                     
                     // 替换占位符为对象替换字符
-                    val placeholderText = builder.subSequence(start, end).toString()
-                    builder.replace(start, end, "\uFFFC")
+                    val placeholderText = builder.subSequence(start, safeEnd).toString()
+                    builder.replace(start, safeEnd, "\uFFFC")
                     
                     // 设置 ImageSpan
                     builder.setSpan(

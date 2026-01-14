@@ -74,6 +74,15 @@ class MessageDataGenerator {
     /// 生成 Markdown 模板
     private static func generateMarkdownTemplates() -> [String] {
         return [
+            """
+            您好，您2025年12月福利餐补已到账，可打开Teams-工作台-智慧食堂查看餐补余额。
+
+            **温馨提示：**
+
+            1. 该福利仅限员工食堂使用，用餐时点击Teams个人头像，出示二维码即可；
+            2. 餐补仅限本月使用，逾期未用自动清零，不结转至下月；
+            3. 如有疑问，可联系13212341234,祝您用餐愉快！
+            """,
             #"""
             
             $$
@@ -81,19 +90,15 @@ class MessageDataGenerator {
             $$
             
             ### 图片
-            行内 ![示例图片](https://iph.href.lu/879x200)
+            行内 ![示例图片](https://iph.href.lu/879x200) 行内2 ![示例图片](https://iph.href.lu/879x200) 行内3 ![示例图片](https://iph.href.lu/879x200)
             块级
             
             ![示例图片](https://iph.href.lu/879x200)
-            
-            ![块片](https://example.com/image2.jpg)
-            
+                  
+            没有换行符
+            ![示例图片](https://iph.href.lu/879x200)
+            结束
             并且有适当的边距和圆角。如果图片加载失败，应该显示错误信息。
-            
-            行内图片 ![图片1](https://example.com/img1.jpg) 和行内公式 $x = y$ 混合。
-            块级图片：
-            ![图片2](https://example.com/img2.jpg)
-            块级公式：
             """#,
             #"""
 
@@ -184,16 +189,6 @@ class MessageDataGenerator {
                 }
             };
             ```
-            """,
-            """
-            
-            您好，您2025年12月福利餐补已到账，可打开Teams-工作台-智慧食堂查看餐补余额。
-
-            **温馨提示：**
-
-            1. 该福利仅限员工食堂使用，用餐时点击Teams个人头像，出示二维码即可；
-            2. 餐补仅限本月使用，逾期未用自动清零，不结转至下月；
-            3. 如有疑问，可联系13212341234,祝您用餐愉快！
             """,
             """
             >这是一条引用
