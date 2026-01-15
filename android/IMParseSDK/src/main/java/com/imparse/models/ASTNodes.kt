@@ -461,6 +461,7 @@ data class ListNode(
             val listType = when (listTypeStr.lowercase()) {
                 "bullet" -> ListType.Bullet
                 "ordered" -> ListType.Ordered
+                "task" -> ListType.Task
                 else -> ListType.Bullet
             }
             val itemsArray = json.getJSONArray("items")
@@ -475,7 +476,8 @@ data class ListNode(
 
 enum class ListType {
     Bullet,
-    Ordered
+    Ordered,
+    Task
 }
 
 /**

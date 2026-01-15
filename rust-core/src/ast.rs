@@ -221,6 +221,8 @@ pub enum ListType {
     Ordered,
     /// 无序列表
     Bullet,
+    /// 任务列表
+    Task,
 }
 
 /// 列表项节点

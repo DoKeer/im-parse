@@ -337,9 +337,10 @@ hr {{
                 let tag = match list.list_type {
                     ListType::Bullet => "ul",
                     ListType::Ordered => "ol",
+                    ListType::Task => "ul", // 任务列表使用ul标签，但会添加checkbox
                 };
                 let items: String = list.items.iter()
-                    .map(|item| self.render_list_item(item))
+                    .map(|item| self.render_list_item(item, list.list_type))
                     .collect();
                 format!("<{}>\n{}</{}>\n", tag, items, tag)
             }
@@ -442,7 +443,7 @@ hr {{
         content
     }
 
-    fn render_list_item(&self, item: &ListItemNode) -> String {
+    fn render_list_item(&self, item: &ListItemNode, _list_type: ListType) -> String {
         let content: String = item.children.iter()
             .map(|child| self.render_node(child))
             .collect();

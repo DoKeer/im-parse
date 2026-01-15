@@ -18,6 +18,7 @@ import android.widget.*
 import androidx.core.view.setPadding
 import com.imparse.models.*
 import androidx.core.graphics.withSave
+import androidx.core.graphics.drawable.DrawableCompat
 
 /**
  * Android View 渲染器
@@ -485,8 +486,8 @@ class AndroidViewRenderer {
         val container = LinearLayout(context.context)
         container.orientation = LinearLayout.VERTICAL
         
-        for (item in node.items) {
-            val itemView = renderListItem(item, context, node.listType)
+        for ((index, item) in node.items.withIndex()) {
+            val itemView = renderListItem(item, context, node.listType, index)
             val params = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -504,31 +505,75 @@ class AndroidViewRenderer {
     private fun renderListItem(
         node: ListItemNode,
         context: AndroidRenderContext,
-        listType: ListType = ListType.Bullet
+        listType: ListType = ListType.Bullet,
+        index: Int = 0
     ): View {
         val row = LinearLayout(context.context)
         row.orientation = LinearLayout.HORIZONTAL
         row.gravity = Gravity.TOP
         
         // 列表标记
-        val marker = TextView(context.context)
-        marker.textSize = context.theme.fontSize
-        marker.setTextColor(context.theme.textColor)
-        marker.setPadding(
-            0, 0,
-            TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 8f,
-                context.context.resources.displayMetrics
-            ).toInt(),
-            0
-        )
-        
         when (listType) {
-            ListType.Bullet -> marker.text = "•"
-            ListType.Ordered -> marker.text = "1." // 简化处理，实际应该显示序号
+            ListType.Bullet -> {
+                val marker = TextView(context.context)
+                marker.text = "•"
+                marker.textSize = context.theme.fontSize
+                marker.setTextColor(context.theme.textColor)
+                marker.setPadding(
+                    0, 0,
+                    TypedValue.applyDimension(
+                        TypedValue.COMPLEX_UNIT_DIP, 8f,
+                        context.context.resources.displayMetrics
+                    ).toInt(),
+                    0
+                )
+                row.addView(marker)
+            }
+            ListType.Ordered -> {
+                val marker = TextView(context.context)
+                marker.text = "${index + 1}." // 显示真正的序号
+                marker.textSize = context.theme.fontSize
+                marker.setTextColor(context.theme.textColor)
+                marker.setPadding(
+                    0, 0,
+                    TypedValue.applyDimension(
+                        TypedValue.COMPLEX_UNIT_DIP, 8f,
+                        context.context.resources.displayMetrics
+                    ).toInt(),
+                    0
+                )
+                row.addView(marker)
+            }
+            ListType.Task -> {
+                // 任务列表：显示复选框
+                // 使用自定义CheckBoxView确保正确显示选中/未选中状态
+                val checkboxView = TaskCheckBoxView(context.context, node.checked ?: false, context.theme.textColor)
+                
+                // 根据字体大小计算复选框尺寸，参考iOS实现
+                val fontSizePx = TypedValue.applyDimension(
+                    TypedValue.COMPLEX_UNIT_SP,
+                    context.theme.fontSize,
+                    context.context.resources.displayMetrics
+                )
+                // 复选框尺寸设为字体大小的1.2倍，与iOS保持一致
+                val checkboxSize = (fontSizePx * 1.2f).toInt()
+                
+                // 设置CheckBoxView的LayoutParams，使用固定尺寸（参考iOS）
+                val checkboxParams = LinearLayout.LayoutParams(checkboxSize, checkboxSize)
+                // 左对齐 + 垂直居中
+                checkboxParams.gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                checkboxParams.setMargins(
+                    0, 0,
+                    TypedValue.applyDimension(
+                        TypedValue.COMPLEX_UNIT_DIP, 8f,
+                        context.context.resources.displayMetrics
+                    ).toInt(),
+                    0
+                )
+                
+                row.addView(checkboxView, checkboxParams)
+            }
         }
-        
-        row.addView(marker)
         
         // 列表项内容
         val contentContainer = LinearLayout(context.context)
@@ -2034,5 +2079,100 @@ class AndroidViewRenderer {
         override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
     }
 
+}
+
+/**
+ * 自定义任务列表复选框View
+ * 确保正确显示选中/未选中状态，并完全左对齐
+ */
+private class TaskCheckBoxView(
+    context: Context,
+    private val isChecked: Boolean,
+    private val textColor: Int
+) : View(context) {
+    
+    private var checkboxDrawable: android.graphics.drawable.Drawable? = null
+    
+    init {
+        // 创建CheckBox以获取drawable
+        val checkbox = CheckBox(context)
+        checkbox.isChecked = isChecked
+        
+        // 获取buttonDrawable（这是StateListDrawable）
+        val buttonDrawable = checkbox.buttonDrawable
+        
+        if (buttonDrawable is android.graphics.drawable.StateListDrawable) {
+            // 对于StateListDrawable，需要根据状态获取对应的drawable
+            // 方法：创建一个临时CheckBox，设置状态，然后获取其drawable
+            val tempCheckBox = CheckBox(context)
+            tempCheckBox.isChecked = isChecked
+            // 强制布局以确保drawable状态正确
+            tempCheckBox.measure(0, 0)
+            tempCheckBox.layout(0, 0, 100, 100)
+            
+            // 获取当前状态的drawable
+            val currentDrawable = tempCheckBox.buttonDrawable
+            if (currentDrawable != null) {
+                checkboxDrawable = currentDrawable.mutate()
+                // 确保状态正确
+                val stateSet = if (isChecked) {
+                    intArrayOf(android.R.attr.state_checked)
+                } else {
+                    intArrayOf()
+                }
+                checkboxDrawable?.setState(stateSet)
+                checkboxDrawable?.jumpToCurrentState()
+            } else {
+                checkboxDrawable = buttonDrawable.mutate()
+            }
+        } else {
+            // 如果不是StateListDrawable，直接使用
+            checkboxDrawable = buttonDrawable?.mutate()
+        }
+        
+        // 应用主题颜色：选中状态使用灰色背景，未选中状态使用文本颜色
+        checkboxDrawable?.let { drawable ->
+            val checkedColor = Color.GRAY // 选中状态使用灰色
+            val uncheckedColor = textColor // 未选中状态使用文本颜色
+            
+            // 创建ColorStateList，为不同状态设置不同颜色
+            val colorStateList = android.content.res.ColorStateList(
+                arrayOf(
+                    intArrayOf(android.R.attr.state_checked), // 选中状态
+                    intArrayOf() // 未选中状态
+                ),
+                intArrayOf(
+                    checkedColor,
+                    uncheckedColor
+                )
+            )
+            DrawableCompat.setTintList(drawable, colorStateList)
+        }
+    }
+    
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val size = MeasureSpec.getSize(widthMeasureSpec)
+        setMeasuredDimension(size, size)
+    }
+    
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        
+        checkboxDrawable?.let { drawable ->
+            // 在绘制前再次确保状态正确
+            val stateSet = if (isChecked) {
+                intArrayOf(android.R.attr.state_checked)
+            } else {
+                intArrayOf()
+            }
+            drawable.setState(stateSet)
+            drawable.jumpToCurrentState()
+            
+            // 设置drawable的bounds为整个view的大小
+            drawable.setBounds(0, 0, width, height)
+            // 绘制drawable
+            drawable.draw(canvas)
+        }
+    }
 }
 

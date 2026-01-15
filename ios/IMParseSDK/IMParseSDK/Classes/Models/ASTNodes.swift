@@ -244,6 +244,7 @@ public struct ListNode: Codable {
     public enum ListType: String, Codable {
         case bullet = "bullet"
         case ordered = "ordered"
+        case task = "task"
     }
     
     public init(listType: ListType, items: [ListItemNode]) {

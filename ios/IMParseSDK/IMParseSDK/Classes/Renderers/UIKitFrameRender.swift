@@ -642,8 +642,18 @@ public class UIKitFrameRender {
                 let markerLayout = layout.children[i]
                 let contentLayout = layout.children[i + 1]
                 
-                let markerView = render(layout: markerLayout, context: context)
-                markerView.frame = markerLayout.frame
+                let markerView: UIView
+                // 如果是任务列表，使用UIButton的checkbox样式
+                if node.listType == .task {
+                    // 从对应的列表项获取checked状态
+                    let itemIndex = i / 2
+                    let isChecked = itemIndex < node.items.count ? (node.items[itemIndex].checked ?? false) : false
+                    markerView = createCheckboxView(isChecked: isChecked, frame: markerLayout.frame, context: context)
+                } else {
+                    // 普通列表标记，使用文本渲染
+                    markerView = render(layout: markerLayout, context: context)
+                    markerView.frame = markerLayout.frame
+                }
                 containerView.addSubview(markerView)
                 
                 let contentView = render(layout: contentLayout, context: context)
@@ -653,6 +663,51 @@ public class UIKitFrameRender {
         }
         
         return containerView
+    }
+    
+    /// 创建复选框视图（用于任务列表）
+    private static func createCheckboxView(isChecked: Bool, frame: CGRect, context: UIKitRenderContext) -> UIView {
+        // 使用UIButton显示checkbox图标
+        let checkbox = UIButton(type: .system)
+        checkbox.isEnabled = false // 只读显示
+        checkbox.frame = frame
+        
+        // 根据字体大小计算复选框尺寸
+        let fontSize = context.theme.fontSize
+        let checkboxSize = fontSize * 1.2 // 与文本行高匹配
+        
+        // 使用系统的checkbox图标（iOS 13+）
+        if #available(iOS 13.0, *) {
+            let imageName = isChecked ? "checkmark.square.fill" : "square"
+            if let checkboxImage = UIImage(systemName: imageName) {
+                // 调整图像大小以匹配字体
+                let resizedImage = checkboxImage.withConfiguration(
+                    UIImage.SymbolConfiguration(pointSize: checkboxSize, weight: .regular)
+                )
+                checkbox.setImage(resizedImage, for: .normal)
+                checkbox.tintColor = context.theme.textColor
+            } else {
+                // 如果系统图标不可用，使用文本符号
+                checkbox.setTitle(isChecked ? "✓" : "☐", for: .normal)
+                checkbox.titleLabel?.font = UIFont.systemFont(ofSize: checkboxSize)
+                checkbox.setTitleColor(context.theme.textColor, for: .normal)
+            }
+        } else {
+            // iOS 12及以下，使用文本符号
+            checkbox.setTitle(isChecked ? "✓" : "☐", for: .normal)
+            checkbox.titleLabel?.font = UIFont.systemFont(ofSize: checkboxSize)
+            checkbox.setTitleColor(context.theme.textColor, for: .normal)
+        }
+        
+        // 垂直居中对齐
+        checkbox.contentVerticalAlignment = .center
+        checkbox.contentHorizontalAlignment = .left
+        
+        // 移除默认的image insets，确保图标正确对齐
+        checkbox.imageEdgeInsets = .zero
+        checkbox.titleEdgeInsets = .zero
+        
+        return checkbox
     }
     
     // MARK: - Blockquote Rendering

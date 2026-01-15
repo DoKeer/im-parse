@@ -75,6 +75,19 @@ class MessageDataGenerator {
     private static func generateMarkdownTemplates() -> [String] {
         return [
             """
+            - [ ] 任务1
+            - [X] 任务2
+            - [X] 任务3
+            - [ ] 任务4
+            ***
+            [ ] 任务1
+            [X] 任务2
+            [X] 任务3
+            [ ] 任务4
+            ---
+            ==高亮==
+            """,
+            """
             您好，您2025年12月福利餐补已到账，可打开Teams-工作台-智慧食堂查看餐补余额。
 
             **温馨提示：**

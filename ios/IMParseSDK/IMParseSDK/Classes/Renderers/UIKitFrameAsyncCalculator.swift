@@ -565,6 +565,7 @@ public class UIKitFrameAsyncCalculator {
         var currentY: CGFloat = 0
         var itemLayouts: [NodeLayout] = []
         let spacing = context.theme.listItemSpacing
+        // 任务列表需要更宽的标记区域以容纳checkbox
         let markerWidth: CGFloat = 20
         let markerContentSpacing: CGFloat = 8
         
@@ -572,10 +573,29 @@ public class UIKitFrameAsyncCalculator {
             let contentWidth = width - markerWidth - markerContentSpacing
             let contentLayout = calculateListItemContent(item, context: context, origin: CGPoint(x: markerWidth + markerContentSpacing, y: currentY), width: contentWidth)
             
-            let markerText = node.listType == .bullet ? "•" : "\(index + 1)."
-            let markerAttr = NSAttributedString(string: markerText, attributes: [.font: context.theme.font, .foregroundColor: context.theme.textColor])
-            let markerSize = calculateTextSize(markerAttr, width: markerWidth)
-            let markerHeight = ceil(markerSize.height)
+            let markerText: String
+            var markerHeight: CGFloat
+            var markerAttr: NSAttributedString
+            
+            switch node.listType {
+            case .bullet:
+                markerText = "•"
+                markerAttr = NSAttributedString(string: markerText, attributes: [.font: context.theme.font, .foregroundColor: context.theme.textColor])
+                let markerSize = calculateTextSize(markerAttr, width: markerWidth)
+                markerHeight = ceil(markerSize.height)
+            case .ordered:
+                markerText = "\(index + 1)."
+                markerAttr = NSAttributedString(string: markerText, attributes: [.font: context.theme.font, .foregroundColor: context.theme.textColor])
+                let markerSize = calculateTextSize(markerAttr, width: markerWidth)
+                markerHeight = ceil(markerSize.height)
+            case .task:
+                // 任务列表：使用复选框，高度根据字体大小计算
+                let fontSize = context.theme.fontSize
+                markerHeight = fontSize * 1.2 // 与文本行高匹配
+                // 创建一个占位符文本用于布局计算
+                markerText = item.checked == true ? "✓" : "☐"
+                markerAttr = NSAttributedString(string: markerText, attributes: [.font: context.theme.font, .foregroundColor: context.theme.textColor])
+            }
             
             let markerLayout = NodeLayout(
                 frame: CGRect(x: 0, y: currentY, width: markerWidth, height: markerHeight),
