@@ -181,9 +181,9 @@ internal class MathTextAttachment: NSTextAttachment {
         // 设置缩放后的图片
         self.image = scaledImage
         // 计算垂直居中的 bounds（使用缩放后的尺寸）
-        let displaySize = CGSize(width: targetWidth, height: targetHeight)
+        let displaySize = CGSize(width: Int(ceilf(Float(targetWidth))), height: Int(ceilf(Float(targetHeight))))
         let yOffset = (font.capHeight - displaySize.height) / 2
-        self.cacheImageBounds = CGRect(origin: CGPoint(x: 0, y: yOffset), size: displaySize)
+        self.cacheImageBounds = CGRect(origin: CGPoint(x: 0, y: Int(ceilf(Float(yOffset)))), size: displaySize)
     }
     
     /// 动态计算 attachment 的 bounds，确保与文本垂直居中

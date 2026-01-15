@@ -197,9 +197,9 @@ extension UIKitFrameMessageListViewController: UITableViewDataSource {
                         var updatedMessages: [(IndexPath, Message)] = []
                         
                         for ip in indexPathsToReload {
-                            guard ip.row < self.messages.count else { continue }
-                            var messageBackup = self.messages[ip.row]
-                            messageBackup.calculateLayout(width: self.contentWidth, context: self.sharedRenderContext)
+                            guard await ip.row < self.messages.count else { continue }
+                            var messageBackup = await self.messages[ip.row]
+                            await messageBackup.calculateLayout(width: self.contentWidth, context: self.sharedRenderContext)
                             updatedMessages.append((ip, messageBackup))
                         }
                         
@@ -614,7 +614,7 @@ extension UIKitFrameMessageListViewController: UIKitFormulaSizeCacheDelegate {
         }
         
         // 等待异步结果，最多等待 0.01 秒
-        _ = semaphore.wait(timeout: .now() + .milliseconds(10))
+        _ = semaphore.wait(timeout: .now() + .milliseconds(100))
         if let diskImage = diskImage {
             if diskImage.scale != UIScreen.main.scale,let cgImage = diskImage.cgImage {
                 let res = UIImage(cgImage: cgImage, scale: UIScreen.main.scale, orientation: diskImage.imageOrientation)

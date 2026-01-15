@@ -32,8 +32,6 @@ public class UIKitAttributedStringBuilder {
             result.addAttribute(.paragraphStyle, value: paragraphStyle, range: NSRange(location: 0, length: result.length))
         }
 
-        ensureTrailingCharacterIfNeeded(result, font: context.theme.font)
-
         return result
     }
     
@@ -242,7 +240,8 @@ public class UIKitAttributedStringBuilder {
         let cacheKey = generateMathCacheKey(
             mathContent: mathNode.content,
             textColor: textColor,
-            fontSize: fontSize
+            fontSize: fontSize,
+            display: false // 行内公式
         )
         
         // 先检查缓存，如果命中则创建 MathTextAttachment
@@ -400,7 +399,7 @@ public class UIKitAttributedStringBuilder {
     /// UILabel 在行尾是 NSTextAttachment 时，
     /// 如果没有可度量字符，行 fragment 会异常。
     /// 必须追加一个具有 advanceWidth 的字符（空格最稳定）。
-    private func ensureTrailingCharacterIfNeeded(
+    static func ensureTrailingCharacterIfNeeded(
         _ attributed: NSMutableAttributedString,
         font: UIFont
     ) {
@@ -413,8 +412,8 @@ public class UIKitAttributedStringBuilder {
 
         attributed.append(
             NSAttributedString(
-                string: " ", // ⚠️ 不要用 \u{200B}
-                attributes: [.font: font]
+                string: "abc", // ⚠️ 不要用 \u{200B}
+                attributes: [.font: font,.foregroundColor:UIColor.clear]
             )
         )
     }

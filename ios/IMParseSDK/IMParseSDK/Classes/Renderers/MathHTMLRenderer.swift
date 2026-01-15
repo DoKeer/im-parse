@@ -18,32 +18,35 @@ import CryptoKit
 ///   - mathContent: 数学公式内容
 ///   - textColor: 文本颜色（十六进制）
 ///   - fontSize: 字体大小
+///   - display: 是否为块级显示（true=block, false=inline）
 /// - Returns: 缓存key
 public func generateMathCacheKey(
     mathContent: String,
     textColor: UIColor,
-    fontSize: CGFloat
+    fontSize: CGFloat,
+    display: Bool
 ) -> (String, String) {
     let components = textColor.cgColor.components ?? [0, 0, 0, 1]
     let colorHex = String(format: "#%02X%02X%02X",
                           Int(components[0] * 255),
                           Int(components[1] * 255),
                           Int(components[2] * 255))
-    // 块级公式：使用原始尺寸
-    return generateMathCacheKey(mathContent: mathContent, stringColor: colorHex, fontSize: fontSize)
+    return generateMathCacheKey(mathContent: mathContent, stringColor: colorHex, fontSize: fontSize, display: display)
 }
 
 public func generateMathCacheKey(
     mathContent: String,
     stringColor: String,
-    fontSize: CGFloat
+    fontSize: CGFloat,
+    display: Bool
 ) -> (String, String){
     // 使用 SHA256 生成稳定的哈希值（hashValue 在不同运行之间可能变化）
     let data = Data(mathContent.utf8)
     let hash = SHA256.hash(data: data)
     let hashString = hash.compactMap { String(format: "%02x", $0) }.joined()
-    // 块级公式：使用原始尺寸，stringColor 和 fontSize暂时无用，先不作为key的一部分
-    return ("math:\(hashString)", stringColor)
+    // 在 key 中包含 display 类型，区分行内公式和块级公式
+    let displayType = display ? "block" : "inline"
+    return ("math:\(displayType):\(hashString)", stringColor)
 }
 
 /// 数学公式 HTML 渲染器
@@ -91,7 +94,8 @@ public class MathHTMLRenderer {
         let cacheKey = generateMathCacheKey(
             mathContent: mathContent,
             textColor: textColor,
-            fontSize: fontSize
+            fontSize: fontSize,
+            display: display
         )
         
         let shortKey = String(cacheKey.0.prefix(50)) // 用于日志，避免过长
@@ -273,14 +277,23 @@ public class MathHTMLRenderer {
                     return
                 }
                 
-                // 构建完整的 HTML（包含 KaTeX CSS）,  全部按照块级公式处理
+                // 构建完整的 HTML（包含 KaTeX CSS）
                 let fullHTML = self.buildFullHTML(html: html, display: display, textColor: textColor, fontSize: fontSize)
                 print("📄 [MathHTMLRenderer] HTML构建完成，开始加载 - key: \(shortKey)...")
                 
-                // 设置 WebView 配置（使用较大的初始尺寸，确保内容能完全渲染）
-                // 宽度设置为 2000pt 以容纳较长的公式（不会影响最终截图尺寸）
-                // 高度根据显示模式设置：块级公式通常更高（分数、矩阵等）
-                webView.frame = CGRect(x: 0, y: 0, width: 2000, height: 2000)
+                // 设置 WebView 配置（根据显示模式优化尺寸）
+                // 行内公式：使用较小的尺寸，减少内存占用和渲染开销
+                // 块级公式：使用较大的尺寸以容纳较长的公式和复杂结构（分数、矩阵等）
+                let webViewSize: CGSize
+                if display {
+                    // 块级公式：使用较大尺寸
+                    webViewSize = CGSize(width: 2000, height: 2000)
+                } else {
+                    // 行内公式：使用较小尺寸，通常行内公式不会很长
+                    // 宽度 800pt 足够容纳大多数行内公式，高度 200pt 足够
+                    webViewSize = CGSize(width: 800, height: 200)
+                }
+                webView.frame = CGRect(x: 0, y: 0, width: webViewSize.width, height: webViewSize.height)
                 webView.isOpaque = false
                 webView.backgroundColor = .clear
                 
@@ -436,8 +449,10 @@ public class MathHTMLRenderer {
     /// 构建完整的 HTML（包含 KaTeX CSS）
     /// 优先使用本地资源，失败时自动降级到 CDN
     private func buildFullHTML(html: String, display: Bool, textColor: String, fontSize: CGFloat) -> String {
-        let displayStyle = "block"
-        let textAlign = "center"
+        // 根据 display 参数设置正确的样式
+        // 行内公式使用 inline-block，块级公式使用 block
+        let displayStyle = display ? "block" : "inline-block"
+        let textAlign = display ? "center" : "left"
         
         // 使用本地资源管理器生成带降级的 CSS 链接
         let cssLink = resourceManager.katexCSSLink()

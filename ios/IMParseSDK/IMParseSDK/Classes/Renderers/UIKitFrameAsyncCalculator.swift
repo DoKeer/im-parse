@@ -348,7 +348,8 @@ public class UIKitFrameAsyncCalculator {
                 appendSpecialNode(specialNode, to: mutableAttrString, context: context)
             }
         }
-        
+        UIKitAttributedStringBuilder.ensureTrailingCharacterIfNeeded(mutableAttrString, font: context.theme.font)
+
         let size = calculateAttributedStringSize(mutableAttrString, width: width)
         let actualWidth = min(ceil(size.width), width)
         
@@ -954,7 +955,8 @@ public class UIKitFrameAsyncCalculator {
         let cacheKey = generateMathCacheKey(
             mathContent: node.content,
             textColor: textColor,
-            fontSize: fontSize
+            fontSize: fontSize,
+            display: isBlock
         )
         
         if let cachedSize = context.formulaSizeCacheDelegate?.getCachedSize(for: cacheKey.0) {

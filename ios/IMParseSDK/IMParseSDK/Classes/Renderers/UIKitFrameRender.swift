@@ -1014,7 +1014,8 @@ public class UIKitFrameRender {
         let cacheKey = generateMathCacheKey(
             mathContent: node.content,
             textColor: textColor,
-            fontSize: fontSize
+            fontSize: fontSize,
+            display: true // 块级公式
         )
         let contentPadding = context.theme.toolbarPadding
         
