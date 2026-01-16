@@ -21,6 +21,7 @@ public struct StyleConfig: Codable {
     public var headingColors: [String]
     public var paragraphSpacing: Float
     public var listItemSpacing: Float
+    public var listMarkerSpacing: Float
     public var codeBlockPadding: Float
     public var codeBlockBorderRadius: Float
     public var codeBlockMaxWidth: Float
@@ -33,6 +34,7 @@ public struct StyleConfig: Codable {
     public var blockquoteBorderWidth: Float
     public var blockquoteBorderColor: String
     public var blockquoteTextColor: String
+    public var blockquotePadding: Float
     public var imageBorderRadius: Float
     public var imageMargin: Float
     public var mentionBackground: String
@@ -67,6 +69,7 @@ public struct StyleConfig: Codable {
                 headingColors: [String],
                 paragraphSpacing: Float,
                 listItemSpacing: Float,
+                listMarkerSpacing: Float,
                 codeBlockPadding: Float,
                 codeBlockBorderRadius: Float,
                 codeBlockMaxWidth: Float,
@@ -79,6 +82,7 @@ public struct StyleConfig: Codable {
                 blockquoteBorderWidth: Float,
                 blockquoteBorderColor: String,
                 blockquoteTextColor: String,
+                blockquotePadding: Float,
                 imageBorderRadius: Float,
                 imageMargin: Float,
                 mentionBackground: String,
@@ -112,6 +116,7 @@ public struct StyleConfig: Codable {
         self.headingColors = headingColors
         self.paragraphSpacing = paragraphSpacing
         self.listItemSpacing = listItemSpacing
+        self.listMarkerSpacing = listMarkerSpacing
         self.codeBlockPadding = codeBlockPadding
         self.codeBlockBorderRadius = codeBlockBorderRadius
         self.codeBlockMaxWidth = codeBlockMaxWidth
@@ -124,6 +129,7 @@ public struct StyleConfig: Codable {
         self.blockquoteBorderWidth = blockquoteBorderWidth
         self.blockquoteBorderColor = blockquoteBorderColor
         self.blockquoteTextColor = blockquoteTextColor
+        self.blockquotePadding = blockquotePadding
         self.imageBorderRadius = imageBorderRadius
         self.imageMargin = imageMargin
         self.mentionBackground = mentionBackground
@@ -160,6 +166,7 @@ public struct StyleConfig: Codable {
         case headingColors = "heading_colors"
         case paragraphSpacing = "paragraph_spacing"
         case listItemSpacing = "list_item_spacing"
+        case listMarkerSpacing = "list_marker_spacing"
         case codeBlockPadding = "code_block_padding"
         case codeBlockBorderRadius = "code_block_border_radius"
         case codeBlockMaxWidth = "code_block_max_width"
@@ -172,6 +179,7 @@ public struct StyleConfig: Codable {
         case blockquoteBorderWidth = "blockquote_border_width"
         case blockquoteBorderColor = "blockquote_border_color"
         case blockquoteTextColor = "blockquote_text_color"
+        case blockquotePadding = "blockquote_padding"
         case imageBorderRadius = "image_border_radius"
         case imageMargin = "image_margin"
         case mentionBackground = "mention_background"

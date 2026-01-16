@@ -18,6 +18,7 @@ data class StyleConfig(
     val linkColor: String? = null,
     val headingColors: List<String>? = null,
     val listItemSpacing: Int? = null,
+    val listMarkerSpacing: Int? = null,
     val codeBlockPadding: Int? = null,
     val codeBlockBorderRadius: Int? = null,
     val codeBlockMaxWidth: Int? = null,
@@ -30,6 +31,7 @@ data class StyleConfig(
     val blockquoteBorderWidth: Int? = null,
     val blockquoteBorderColor: String? = null,
     val blockquoteTextColor: String? = null,
+    val blockquotePadding: Int? = null,
     val imageBorderRadius: Int? = null,
     val imageMargin: Int? = null,
     val mentionBackground: String? = null,
@@ -74,6 +76,7 @@ data class StyleConfig(
             json.put("headingColors", array)
         }
         listItemSpacing?.let { json.put("listItemSpacing", it) }
+        listMarkerSpacing?.let { json.put("listMarkerSpacing", it) }
         codeBlockPadding?.let { json.put("codeBlockPadding", it) }
         codeBlockBorderRadius?.let { json.put("codeBlockBorderRadius", it) }
         codeBlockMaxWidth?.let { json.put("codeBlockMaxWidth", it) }
@@ -86,6 +89,7 @@ data class StyleConfig(
         blockquoteBorderWidth?.let { json.put("blockquoteBorderWidth", it) }
         blockquoteBorderColor?.let { json.put("blockquoteBorderColor", it) }
         blockquoteTextColor?.let { json.put("blockquoteTextColor", it) }
+        blockquotePadding?.let { json.put("blockquotePadding", it) }
         imageBorderRadius?.let { json.put("imageBorderRadius", it) }
         imageMargin?.let { json.put("imageMargin", it) }
         mentionBackground?.let { json.put("mentionBackground", it) }
@@ -225,6 +229,7 @@ data class StyleConfig(
                     linkColor = getString("linkColor", "link_color"),
                     headingColors = getStringArray("headingColors", "heading_colors"),
                     listItemSpacing = getInt("listItemSpacing", "list_item_spacing"),
+                    listMarkerSpacing = getInt("listMarkerSpacing", "list_marker_spacing"),
                     codeBlockPadding = getInt("codeBlockPadding", "code_block_padding"),
                     codeBlockBorderRadius = getInt("codeBlockBorderRadius", "code_block_border_radius"),
                     codeBlockMaxWidth = getInt("codeBlockMaxWidth", "code_block_max_width"),
@@ -237,6 +242,7 @@ data class StyleConfig(
                     blockquoteBorderWidth = getInt("blockquoteBorderWidth", "blockquote_border_width"),
                     blockquoteBorderColor = getString("blockquoteBorderColor", "blockquote_border_color"),
                     blockquoteTextColor = getString("blockquoteTextColor", "blockquote_text_color"),
+                    blockquotePadding = getInt("blockquotePadding", "blockquote_padding"),
                     imageBorderRadius = getInt("imageBorderRadius", "image_border_radius"),
                     imageMargin = getInt("imageMargin", "image_margin"),
                     mentionBackground = getString("mentionBackground", "mention_background"),

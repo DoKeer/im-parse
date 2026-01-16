@@ -107,6 +107,11 @@ data class AndroidRenderContext(
     fun getListItemSpacingPx(): Int = dpToPx(theme.listItemSpacing.toFloat())
     
     /**
+     * 获取列表标记间距（px）
+     */
+    fun getListMarkerSpacingPx(): Int = dpToPx(theme.listMarkerSpacing.toFloat())
+    
+    /**
      * 获取代码块内边距（px）
      */
     fun getCodeBlockPaddingPx(): Int = dpToPx(theme.codeBlockPadding.toFloat())
@@ -125,6 +130,11 @@ data class AndroidRenderContext(
      * 获取引用块边框宽度（px）
      */
     fun getBlockquoteBorderWidthPx(): Int = dpToPx(theme.blockquoteBorderWidth.toFloat())
+    
+    /**
+     * 获取引用块内边距（px）
+     */
+    fun getBlockquotePaddingPx(): Int = dpToPx(theme.blockquotePadding.toFloat())
     
     /**
      * 获取图片圆角（px）
@@ -264,6 +274,7 @@ data class AndroidTheme(
     ),
     val paragraphSpacing: Int = 16,
     val listItemSpacing: Int = 8,
+    val listMarkerSpacing: Int = 8,
     val codeBlockPadding: Int = 16,
     val codeBlockBorderRadius: Int = 8,
     val codeBlockMaxWidth: Int? = null,
@@ -276,6 +287,7 @@ data class AndroidTheme(
     val blockquoteBorderWidth: Int = 4,
     val blockquoteBorderColor: Int = "#dddddd".toColorInt(),
     val blockquoteTextColor: Int = "#666666".toColorInt(),
+    val blockquotePadding: Int = 16,
     val imageBorderRadius: Int = 8,
     val imageMargin: Int = 0,
     val mentionBackground: Int = "#E3F2FD".toColorInt(),
@@ -336,6 +348,7 @@ data class AndroidTheme(
                     ),
                 paragraphSpacing = toInt(config.paragraphSpacing, 16),
                 listItemSpacing = toInt(config.listItemSpacing, 8),
+                listMarkerSpacing = toInt(config.listMarkerSpacing, 8),
                 codeBlockPadding = toInt(config.codeBlockPadding, 16),
                 codeBlockBorderRadius = toInt(config.codeBlockBorderRadius, 8),
                 codeBlockMaxWidth = config.codeBlockMaxWidth,
@@ -350,6 +363,7 @@ data class AndroidTheme(
                 blockquoteBorderColor = parseColor(config.blockquoteBorderColor,
                     "#dddddd".toColorInt()),
                 blockquoteTextColor = parseColor(config.blockquoteTextColor, "#666666".toColorInt()),
+                blockquotePadding = toInt(config.blockquotePadding, 16),
                 imageBorderRadius = toInt(config.imageBorderRadius, 8),
                 imageMargin = toInt(config.imageMargin, 0),
                 mentionBackground = parseColor(config.mentionBackground, "#E3F2FD".toColorInt()),

@@ -16,7 +16,6 @@ private enum RenderConstants {
     static let placeholderTag = 9001
     static let mermaidPlaceholderTag = 9002
     static let markerWidth: CGFloat = 20
-    static let markerContentSpacing: CGFloat = 8
 }
 
 // MARK: - AttributedString Features

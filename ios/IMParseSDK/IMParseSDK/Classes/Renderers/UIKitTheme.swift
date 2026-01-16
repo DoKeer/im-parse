@@ -37,6 +37,8 @@ public struct UIKitTheme {
     public var paragraphSpacing: CGFloat
     /// 列表项间距
     public var listItemSpacing: CGFloat
+    /// 列表标记与内容之间的间距
+    public var listMarkerSpacing: CGFloat
     /// 行间距（点）
     public var lineSpacing: CGFloat
     /// 最大内容宽度
@@ -75,6 +77,8 @@ public struct UIKitTheme {
     public var blockquoteBorderColor: UIColor
     /// 引用块文本颜色
     public var blockquoteTextColor: UIColor
+    /// 引用块内边距（不包括边框宽度）
+    public var blockquotePadding: CGFloat
     
     // 图片
     /// 图片圆角
@@ -139,6 +143,7 @@ public struct UIKitTheme {
         self.headingColors = config.headingColors.map { UIColor(hex: $0) ?? .label }
         self.paragraphSpacing = CGFloat(config.paragraphSpacing)
         self.listItemSpacing = CGFloat(config.listItemSpacing)
+        self.listMarkerSpacing = CGFloat(config.listMarkerSpacing)
         self.codeBlockPadding = CGFloat(config.codeBlockPadding)
         self.codeBlockBorderRadius = CGFloat(config.codeBlockBorderRadius)
         self.codeBlockMaxWidth = CGFloat(config.codeBlockMaxWidth)
@@ -151,6 +156,7 @@ public struct UIKitTheme {
         self.blockquoteBorderWidth = CGFloat(config.blockquoteBorderWidth)
         self.blockquoteBorderColor = UIColor(hex: config.blockquoteBorderColor) ?? UIColor.gray.withAlphaComponent(0.3)
         self.blockquoteTextColor = UIColor(hex: config.blockquoteTextColor) ?? .secondaryLabel
+        self.blockquotePadding = CGFloat(config.blockquotePadding)
         self.imageBorderRadius = CGFloat(config.imageBorderRadius)
         self.imageMargin = CGFloat(config.imageMargin)
         self.mentionBackground = UIColor(hex: config.mentionBackground) ?? UIColor.systemBlue.withAlphaComponent(0.1)
@@ -196,6 +202,7 @@ public struct UIKitTheme {
             headingColors: ["#000000", "#000000", "#000000", "#000000", "#000000", "#000000"],
             paragraphSpacing: 6,
             listItemSpacing: 2,
+            listMarkerSpacing: 8,
             codeBlockPadding: 2,
             codeBlockBorderRadius: 8,
             codeBlockMaxWidth: 800,
@@ -208,6 +215,7 @@ public struct UIKitTheme {
             blockquoteBorderWidth: 4,
             blockquoteBorderColor: "#C7C7CC",
             blockquoteTextColor: "#8E8E93",
+            blockquotePadding: 16,
             imageBorderRadius: 8,
             imageMargin: 2,
             mentionBackground: "#E5F0FF",

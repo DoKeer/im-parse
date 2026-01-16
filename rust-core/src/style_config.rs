@@ -44,6 +44,10 @@ pub struct StyleConfig {
     #[serde(default = "default_list_item_spacing")]
     pub list_item_spacing: f32,
     
+    /// 列表标记与内容之间的间距（px）
+    #[serde(default = "default_list_marker_spacing")]
+    pub list_marker_spacing: f32,
+    
     /// 代码块内边距（px）
     #[serde(default = "default_code_block_padding")]
     pub code_block_padding: f32,
@@ -91,6 +95,10 @@ pub struct StyleConfig {
     /// 引用块文本颜色（十六进制）
     #[serde(default = "default_blockquote_text_color")]
     pub blockquote_text_color: String,
+    
+    /// 引用块内边距（px，不包括边框宽度）
+    #[serde(default = "default_blockquote_padding")]
+    pub blockquote_padding: f32,
     
     /// 图片圆角（px）
     #[serde(default = "default_image_border_radius")]
@@ -199,6 +207,7 @@ impl Default for StyleConfig {
             heading_colors: default_heading_colors(),
             paragraph_spacing: default_paragraph_spacing(),
             list_item_spacing: default_list_item_spacing(),
+            list_marker_spacing: default_list_marker_spacing(),
             code_block_padding: default_code_block_padding(),
             code_block_border_radius: default_code_block_border_radius(),
             code_block_max_width: default_code_block_max_width(),
@@ -211,6 +220,7 @@ impl Default for StyleConfig {
             blockquote_border_width: default_blockquote_border_width(),
             blockquote_border_color: default_blockquote_border_color(),
             blockquote_text_color: default_blockquote_text_color(),
+            blockquote_padding: default_blockquote_padding(),
             image_border_radius: default_image_border_radius(),
             image_margin: default_image_margin(),
             mention_background: default_mention_background(),
@@ -258,6 +268,7 @@ fn default_heading_colors() -> Vec<String> {
 }
 fn default_paragraph_spacing() -> f32 { 4.0 }
 fn default_list_item_spacing() -> f32 { 4.0 }
+fn default_list_marker_spacing() -> f32 { 8.0 }
 fn default_code_block_padding() -> f32 { 16.0 }
 fn default_code_block_border_radius() -> f32 { 8.0 }
 fn default_code_block_max_width() -> f32 { 1366.0 }
@@ -270,6 +281,7 @@ fn default_table_min_cell_width() -> f32 { 80.0 }
 fn default_blockquote_border_width() -> f32 { 4.0 }
 fn default_blockquote_border_color() -> String { "#dddddd".to_string() }
 fn default_blockquote_text_color() -> String { "#666666".to_string() }
+fn default_blockquote_padding() -> f32 { 16.0 }
 fn default_image_border_radius() -> f32 { 8.0 }
 fn default_image_margin() -> f32 { 0.0 }
 fn default_mention_background() -> String { "#E3F2FD".to_string() }

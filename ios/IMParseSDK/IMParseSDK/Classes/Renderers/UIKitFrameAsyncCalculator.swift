@@ -568,7 +568,7 @@ public class UIKitFrameAsyncCalculator {
         let spacing = context.theme.listItemSpacing
         // 任务列表需要更宽的标记区域以容纳checkbox
         let markerWidth: CGFloat = 20
-        let markerContentSpacing: CGFloat = 8
+        let markerContentSpacing = context.theme.listMarkerSpacing
         
         for (index, item) in node.items.enumerated() {
             let contentWidth = width - markerWidth - markerContentSpacing
@@ -642,7 +642,7 @@ public class UIKitFrameAsyncCalculator {
                 context: context,
                 origin: origin,
                 width: width,
-                spacing: 4
+                spacing: context.theme.paragraphSpacing * 0.5
             )
         } else {
             // 提取行内节点，并构建父节点查找函数
@@ -692,7 +692,8 @@ public class UIKitFrameAsyncCalculator {
     
     private static func calculateBlockquoteLayout(_ node: BlockquoteNode, context: UIKitRenderContext, origin: CGPoint, width: CGFloat) -> NodeLayout {
         let borderWidth = context.theme.blockquoteBorderWidth
-        let contentWidth = width - borderWidth - 16
+        let padding = context.theme.blockquotePadding
+        let contentWidth = width - borderWidth - padding
         
         var blockContext = context
         blockContext.currentTextColor = context.theme.blockquoteTextColor
@@ -700,7 +701,7 @@ public class UIKitFrameAsyncCalculator {
         let innerLayout = calculateVerticalStackLayout(
             children: node.children,
             context: blockContext,
-            origin: CGPoint(x: borderWidth + 16, y: 0),
+            origin: CGPoint(x: borderWidth + padding, y: 0),
             width: contentWidth,
             spacing: context.theme.paragraphSpacing
         )

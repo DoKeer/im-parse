@@ -454,7 +454,10 @@ class AndroidViewRenderer {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
-            params.bottomMargin = context.getListItemSpacingPx()
+            // 最后一个元素不需要底部间距，与 iOS 保持一致
+            if (index < node.items.size - 1) {
+                params.bottomMargin = context.getListItemSpacingPx()
+            }
             container.addView(itemView, params)
         }
         
@@ -483,7 +486,7 @@ class AndroidViewRenderer {
                 marker.setTextColor(context.theme.textColor)
                 marker.setPadding(
                     0, 0,
-                    context.dpToPx(8f),
+                    context.getListMarkerSpacingPx(),
                     0
                 )
                 row.addView(marker)
@@ -495,7 +498,7 @@ class AndroidViewRenderer {
                 marker.setTextColor(context.theme.textColor)
                 marker.setPadding(
                     0, 0,
-                    context.dpToPx(8f),
+                    context.getListMarkerSpacingPx(),
                     0
                 )
                 row.addView(marker)
@@ -516,7 +519,7 @@ class AndroidViewRenderer {
                 checkboxParams.gravity = Gravity.START or Gravity.CENTER_VERTICAL
                 checkboxParams.setMargins(
                     0, 0,
-                    context.dpToPx(8f),
+                    context.getListMarkerSpacingPx(),
                     0
                 )
                 
@@ -734,7 +737,7 @@ class AndroidViewRenderer {
         val contentContainer = LinearLayout(context.context)
         contentContainer.orientation = LinearLayout.VERTICAL
         contentContainer.setPadding(
-            context.dpToPx(8f),
+            context.getBlockquotePaddingPx(),
             0, 0, 0
         )
         
