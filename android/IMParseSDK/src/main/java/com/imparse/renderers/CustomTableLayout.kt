@@ -22,31 +22,23 @@ class CustomTableLayout(
     private val renderContext: AndroidRenderContext
 ) : ViewGroup(context) {
     
-    private val cellPadding = renderContext.theme.tableCellPadding
+    private val cellPadding = renderContext.getTableCellPaddingPx()
     private val metrics = resources.displayMetrics
     
     // 缓存尺寸计算，避免重复调用 TypedValue.applyDimension
     private val maxCellWidth = renderContext.theme.tableMaxCellWidth?.let {
-        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), metrics).toInt()
+        renderContext.dpToPx(it.toFloat())
     } ?: Int.MAX_VALUE
     
-    private val minCellWidth = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP,
-        renderContext.theme.tableMinCellWidth?.toFloat() ?: 80f,
-        metrics
-    ).toInt()
-    
-    private val borderWidth = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, 1f, metrics
-    ).toInt()
-    
-    private val fontSizePx = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_SP,
-        renderContext.theme.fontSize,
-        metrics
+    private val minCellWidth = renderContext.dpToPx(
+        renderContext.theme.tableMinCellWidth?.toFloat() ?: 80f
     )
     
-    private val lineHeightPx = (fontSizePx * renderContext.theme.lineHeight).toInt()
+    private val borderWidth = renderContext.dpToPx(1f)
+    
+    private val fontSizePx = renderContext.spToPx(renderContext.theme.fontSize)
+    
+    private val lineSpacingPx = renderContext.dpToPx(renderContext.theme.lineSpacing)
     
     // 存储每列的偏好宽度
     private val columnPrefWidths = mutableListOf<Int>()
@@ -127,13 +119,8 @@ class CustomTableLayout(
             else -> android.view.Gravity.START
         }
         
-        // 设置行高（使用缓存的值）
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-            textView.lineHeight = lineHeightPx
-        } else {
-            val addSpacing = (lineHeightPx - fontSizePx).toFloat().coerceAtLeast(0f)
-            textView.setLineSpacing(addSpacing, 1.0f)
-        }
+        // 设置行间距（使用缓存的值）
+        textView.setLineSpacing(lineSpacingPx.toFloat(), 1.0f)
         
         // 构建富文本内容
         val spannable = SpannableStringBuilder()
@@ -145,7 +132,7 @@ class CustomTableLayout(
         }
         
         textView.text = spannable
-        textView.textSize = renderContext.theme.fontSize
+        textView.textSize = renderContext.getFontSizeSp()
         textView.setTextColor(renderContext.theme.textColor)
         textView.movementMethod = android.text.method.LinkMovementMethod.getInstance()
         
@@ -160,7 +147,9 @@ class CustomTableLayout(
         // 确保 TextView 能够正确显示内容
         textView.maxLines = 0 // 0 表示不限制行数，允许自然换行
         textView.ellipsize = null // 不省略，允许完整显示
-        textView.minHeight = lineHeightPx // 设置最小高度，确保至少有一行的高度
+        // 设置最小高度：字体高度 + 行间距
+        val fontSizePx = renderContext.spToPx(renderContext.theme.fontSize)
+        textView.minHeight = (fontSizePx + lineSpacingPx).toInt()
         textView.isSingleLine = false // 允许多行显示
         
         // 异步渲染行内数学公式
@@ -205,7 +194,7 @@ class CustomTableLayout(
                     // 创建一个临时的TextView来测量
                     val tempTextView = TextView(context)
                     tempTextView.text = spannable
-                    tempTextView.textSize = renderContext.theme.fontSize
+                    tempTextView.textSize = renderContext.getFontSizeSp()
                     tempTextView.measure(
                         View.MeasureSpec.makeMeasureSpec(maxCellWidth, View.MeasureSpec.AT_MOST),
                         View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)

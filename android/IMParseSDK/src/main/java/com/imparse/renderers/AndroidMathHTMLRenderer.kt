@@ -603,7 +603,7 @@ class AndroidMathHTMLRenderer private constructor() {
                         cleanupAndComplete(task.webView, task.container, null, task.completion)
                             return@post
                         }
-  
+
                     // 缓存图片
                     imageCache[task.cacheKey] = bitmap
                         

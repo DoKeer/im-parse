@@ -55,6 +55,113 @@ data class AndroidRenderContext(
         val displayMetrics = context.resources.displayMetrics
         return (displayMetrics.widthPixels * 0.5f).toInt()
     }
+    
+    /**
+     * 将 dp 值转换为 px（像素）
+     * Theme 中的尺寸值都是 dp（密度无关像素），需要转换为 px 才能使用
+     */
+    fun dpToPx(dp: Float): Int {
+        val metrics = context.resources.displayMetrics
+        return android.util.TypedValue.applyDimension(
+            android.util.TypedValue.COMPLEX_UNIT_DIP,
+            dp,
+            metrics
+        ).toInt()
+    }
+    
+    /**
+     * 将 dp 值转换为 px（像素），返回 Float
+     */
+    fun dpToPxFloat(dp: Float): Float {
+        val metrics = context.resources.displayMetrics
+        return android.util.TypedValue.applyDimension(
+            android.util.TypedValue.COMPLEX_UNIT_DIP,
+            dp,
+            metrics
+        )
+    }
+    
+    /**
+     * 将 sp 值转换为 px（像素）
+     * 用于字体大小
+     */
+    fun spToPx(sp: Float): Float {
+        val metrics = context.resources.displayMetrics
+        return android.util.TypedValue.applyDimension(
+            android.util.TypedValue.COMPLEX_UNIT_SP,
+            sp,
+            metrics
+        )
+    }
+    
+    // MARK: - Theme 快捷方法（自动转换 dp 到 px）
+    
+    /**
+     * 获取段落间距（px）
+     */
+    fun getParagraphSpacingPx(): Int = dpToPx(theme.paragraphSpacing.toFloat())
+    
+    /**
+     * 获取列表项间距（px）
+     */
+    fun getListItemSpacingPx(): Int = dpToPx(theme.listItemSpacing.toFloat())
+    
+    /**
+     * 获取代码块内边距（px）
+     */
+    fun getCodeBlockPaddingPx(): Int = dpToPx(theme.codeBlockPadding.toFloat())
+    
+    /**
+     * 获取代码块圆角（px）
+     */
+    fun getCodeBlockBorderRadiusPx(): Float = dpToPxFloat(theme.codeBlockBorderRadius.toFloat())
+    
+    /**
+     * 获取表格单元格内边距（px）
+     */
+    fun getTableCellPaddingPx(): Int = dpToPx(theme.tableCellPadding.toFloat())
+    
+    /**
+     * 获取引用块边框宽度（px）
+     */
+    fun getBlockquoteBorderWidthPx(): Int = dpToPx(theme.blockquoteBorderWidth.toFloat())
+    
+    /**
+     * 获取图片圆角（px）
+     */
+    fun getImageBorderRadiusPx(): Float = dpToPxFloat(theme.imageBorderRadius.toFloat())
+    
+    /**
+     * 获取图片外边距（px）
+     */
+    fun getImageMarginPx(): Int = dpToPx(theme.imageMargin.toFloat())
+    
+    /**
+     * 获取卡片内边距（px）
+     */
+    fun getCardPaddingPx(): Int = dpToPx(theme.cardPadding.toFloat())
+    
+    /**
+     * 获取卡片圆角（px）
+     */
+    fun getCardBorderRadiusPx(): Float = dpToPxFloat(theme.cardBorderRadius.toFloat())
+    
+    /**
+     * 获取内容内边距（px）
+     */
+    fun getContentPaddingPx(): Int = dpToPx(theme.contentPadding.toFloat())
+    
+    /**
+     * 获取字体大小（sp，用于 TextView.textSize）
+     * TextView.textSize 默认单位是 sp，不需要转换
+     */
+    fun getFontSizeSp(): Float = theme.fontSize
+    
+    /**
+     * 获取代码字体大小（sp，用于 TextView.textSize）
+     * TextView.textSize 默认单位是 sp，不需要转换
+     */
+    fun getCodeFontSizeSp(): Float = theme.codeFontSize
     /**
      * 图片加载器接口
      * @param url 图片 URL
@@ -178,7 +285,7 @@ data class AndroidTheme(
     val cardPadding: Int = 16,
     val cardBorderRadius: Int = 8,
     val hrColor: Int = "#dddddd".toColorInt(),
-    val lineHeight: Float = 1.0f,
+    val lineSpacing: Float = 4.0f,
     val maxContentWidth: Int = 800,
     val contentPadding: Int = 2,
     val toolbarHeight: Int? = null,
@@ -252,7 +359,7 @@ data class AndroidTheme(
                 cardPadding = toInt(config.cardPadding, 16),
                 cardBorderRadius = toInt(config.cardBorderRadius, 8),
                 hrColor = parseColor(config.hrColor, "#dddddd".toColorInt()),
-                lineHeight = toFloat(config.lineHeight, 1.0f),
+                lineSpacing = toFloat(config.lineSpacing, 4.0f),
                 maxContentWidth = toInt(config.maxContentWidth, 800),
                 contentPadding = toInt(config.contentPadding, 2),
                 toolbarHeight = config.toolbarHeight,

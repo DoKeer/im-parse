@@ -42,7 +42,7 @@ public struct StyleConfig: Codable {
     public var cardPadding: Float
     public var cardBorderRadius: Float
     public var hrColor: String
-    public var lineHeight: Float
+    public var lineSpacing: Float
     public var maxContentWidth: Float
     public var contentPadding: Float
     public var toolbarHeight: Float
@@ -88,7 +88,7 @@ public struct StyleConfig: Codable {
                 cardPadding: Float,
                 cardBorderRadius: Float,
                 hrColor: String,
-                lineHeight: Float,
+                lineSpacing: Float,
                 maxContentWidth: Float,
                 contentPadding: Float,
                 toolbarHeight: Float,
@@ -133,7 +133,7 @@ public struct StyleConfig: Codable {
         self.cardPadding = cardPadding
         self.cardBorderRadius = cardBorderRadius
         self.hrColor = hrColor
-        self.lineHeight = lineHeight
+        self.lineSpacing = lineSpacing
         self.maxContentWidth = maxContentWidth
         self.contentPadding = contentPadding
         self.toolbarHeight = toolbarHeight
@@ -181,7 +181,7 @@ public struct StyleConfig: Codable {
         case cardPadding = "card_padding"
         case cardBorderRadius = "card_border_radius"
         case hrColor = "hr_color"
-        case lineHeight = "line_height"
+        case lineSpacing = "line_spacing"
         case maxContentWidth = "max_content_width"
         case contentPadding = "content_padding"
         case toolbarHeight = "toolbar_height"

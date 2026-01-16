@@ -217,7 +217,7 @@ hr {{
 }}
 "#,
             config.font_size,
-            config.line_height,
+            config.font_size + config.line_spacing, // line-height = font-size + line-spacing
             config.text_color,
             config.background_color,
             config.content_padding,

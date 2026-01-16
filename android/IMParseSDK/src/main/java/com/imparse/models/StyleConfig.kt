@@ -39,7 +39,7 @@ data class StyleConfig(
     val cardPadding: Int? = null,
     val cardBorderRadius: Int? = null,
     val hrColor: String? = null,
-    val lineHeight: Double? = null,
+    val lineSpacing: Double? = null,
     val maxContentWidth: Int? = null,
     val contentPadding: Int? = null,
     val toolbarHeight: Int? = null,
@@ -95,7 +95,7 @@ data class StyleConfig(
         cardPadding?.let { json.put("cardPadding", it) }
         cardBorderRadius?.let { json.put("cardBorderRadius", it) }
         hrColor?.let { json.put("hrColor", it) }
-        lineHeight?.let { json.put("lineHeight", it) }
+        lineSpacing?.let { json.put("lineSpacing", it) }
         maxContentWidth?.let { json.put("maxContentWidth", it) }
         contentPadding?.let { json.put("contentPadding", it) }
         toolbarHeight?.let { json.put("toolbarHeight", it) }
@@ -246,7 +246,7 @@ data class StyleConfig(
                     cardPadding = getInt("cardPadding", "card_padding"),
                     cardBorderRadius = getInt("cardBorderRadius", "card_border_radius"),
                     hrColor = getString("hrColor", "hr_color"),
-                    lineHeight = getDouble("lineHeight", "line_height"),
+                    lineSpacing = getDouble("lineSpacing", "line_spacing"),
                     maxContentWidth = getInt("maxContentWidth", "max_content_width"),
                     contentPadding = getInt("contentPadding", "content_padding"),
                     toolbarHeight = getInt("toolbarHeight", "toolbar_height"),

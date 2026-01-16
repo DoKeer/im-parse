@@ -39,17 +39,14 @@ class AndroidViewRenderer {
      * 计算工具栏尺寸（缓存计算结果）
      */
     private fun getToolbarDimensions(context: AndroidRenderContext): ToolbarDimensions {
-        val metrics = context.context.resources.displayMetrics
         return ToolbarDimensions(
             height = context.theme.toolbarHeight?.let {
-                TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), metrics).toInt()
-            } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 36f, metrics).toInt(),
+                context.dpToPx(it.toFloat())
+            } ?: context.dpToPx(36f),
             width = context.theme.toolbarWidth?.let {
-                TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), metrics).toInt()
-            } ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 120f, metrics).toInt(),
-            padding = context.theme.contentPadding.let {
-                TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it.toFloat(), metrics).toInt()
-            }
+                context.dpToPx(it.toFloat())
+            } ?: context.dpToPx(120f),
+            padding = context.getContentPaddingPx()
         )
     }
     
@@ -83,11 +80,12 @@ class AndroidViewRenderer {
     fun render(ast: RootNode, renderContext: AndroidRenderContext): View {
         val container = LinearLayout(renderContext.context)
         container.orientation = LinearLayout.VERTICAL
+        val contentPaddingPx = renderContext.getContentPaddingPx()
         container.setPadding(
-            renderContext.theme.contentPadding,
-            renderContext.theme.contentPadding,
-            renderContext.theme.contentPadding,
-            renderContext.theme.contentPadding
+            contentPaddingPx,
+            contentPaddingPx,
+            contentPaddingPx,
+            contentPaddingPx
         )
         
         for ((index, child) in ast.children.withIndex()) {
@@ -98,7 +96,7 @@ class AndroidViewRenderer {
             )
             // 最后一个元素不需要底部间距
             if (index < ast.children.size - 1) {
-                params.bottomMargin = renderContext.theme.paragraphSpacing
+                params.bottomMargin = renderContext.getParagraphSpacingPx()
             }
             container.addView(childView, params)
         }
@@ -141,12 +139,12 @@ class AndroidViewRenderer {
             is TableNode -> renderTable(node, context)
             is TableRowNode -> TextView(context.context).apply {
                 text = "TableRow should be rendered within TableNode"
-                textSize = context.theme.fontSize
+                textSize = context.getFontSizeSp()
                 setTextColor(android.graphics.Color.GRAY)
             }
             is TableCellNode -> TextView(context.context).apply {
                 text = "TableCell should be rendered within TableNode"
-                textSize = context.theme.fontSize
+                textSize = context.getFontSizeSp()
                 setTextColor(android.graphics.Color.GRAY)
             }
             is BlockquoteNode -> renderBlockquote(node, context)
@@ -167,26 +165,12 @@ class AndroidViewRenderer {
      */
     private fun renderParagraph(node: ParagraphNode, context: AndroidRenderContext): View {
         val textView = TextView(context.context)
-        textView.textSize = context.theme.fontSize
+        textView.textSize = context.getFontSizeSp()
         textView.setTextColor(context.theme.textColor)
-        // 设置行高，确保换行时有足够的间距
-        // lineHeight 需要是像素值，fontSize 已经是 sp 单位，需要转换为 px
-        val fontSizePx = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP,
-            context.theme.fontSize,
-            textView.context.resources.displayMetrics
-        )
-        val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
-        // API 28+ 使用 setLineHeight，低版本使用 setLineSpacing 兼容
-        // 注意：不再添加额外的硬编码间距，完全依赖 lineHeight 配置
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            textView.lineHeight = lineHeightPx
-        } else {
-            // 对于低版本，使用 setLineSpacing 实现类似效果
-            // 将行高转换为间距：add = (lineHeightPx - fontSizePx)，mult = 1.0f
-            val addSpacing = (lineHeightPx - fontSizePx).toFloat().coerceAtLeast(0f)
-            textView.setLineSpacing(addSpacing, 1.0f)
-        }
+        // 设置行间距，确保换行时有足够的间距
+        // lineSpacing 是点高度，需要转换为 px
+        val lineSpacingPx = context.dpToPx(context.theme.lineSpacing)
+        textView.setLineSpacing(lineSpacingPx.toFloat(), 1.0f)
         
         val spannable = SpannableStringBuilder()
         // 用于记录行内数学公式的位置（只记录没有缓存的公式）
@@ -228,24 +212,10 @@ class AndroidViewRenderer {
                 context.theme.textColor
             }
         )
-        // 设置行高，确保换行时有足够的间距
-        // lineHeight 需要是像素值，fontSize 已经是 sp 单位，需要转换为 px
-        val fontSizePx = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP,
-            fontSize,
-            textView.context.resources.displayMetrics
-        )
-        val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
-        // API 28+ 使用 setLineHeight，低版本使用 setLineSpacing 兼容
-        // 注意：不再添加额外的硬编码间距，完全依赖 lineHeight 配置
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            textView.lineHeight = lineHeightPx
-        } else {
-            // 对于低版本，使用 setLineSpacing 实现类似效果
-            // 将行高转换为间距：add = (lineHeightPx - fontSizePx)，mult = 1.0f
-            val addSpacing = (lineHeightPx - fontSizePx).toFloat().coerceAtLeast(0f)
-            textView.setLineSpacing(addSpacing, 1.0f)
-        }
+        // 设置行间距，确保换行时有足够的间距
+        // lineSpacing 是点高度，需要转换为 px
+        val lineSpacingPx = context.dpToPx(context.theme.lineSpacing)
+        textView.setLineSpacing(lineSpacingPx.toFloat(), 1.0f)
         
         val spannable = SpannableStringBuilder()
         for (child in node.children) {
@@ -269,11 +239,7 @@ class AndroidViewRenderer {
         val containerView = android.widget.FrameLayout(context.context)
         
         // 设置圆角背景
-        val radius = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP,
-            context.theme.codeBlockBorderRadius.toFloat(),
-            context.context.resources.displayMetrics
-        )
+        val radius = context.getCodeBlockBorderRadiusPx()
         containerView.applyRoundedBackground(context.theme.codeBackgroundColor, radius)
         
         // 获取工具栏尺寸
@@ -329,11 +295,12 @@ class AndroidViewRenderer {
         
         val textView = TextView(context.context)
         textView.text = node.content
-        textView.textSize = context.theme.codeFontSize
+        textView.textSize = context.getCodeFontSizeSp()
         textView.setTypeface(Typeface.MONOSPACE)
         textView.setTextColor(context.theme.codeTextColor)
         textView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-        textView.setPadding(context.theme.codeBlockPadding)
+        val codePaddingPx = context.getCodeBlockPaddingPx()
+        textView.setPadding(codePaddingPx)
         
         // 计算代码内容的实际宽度
         val paint = textView.paint
@@ -344,8 +311,7 @@ class AndroidViewRenderer {
             maxLineWidth = maxOf(maxLineWidth, lineWidth)
         }
         
-        val codePadding = context.theme.codeBlockPadding
-        val minCodeWidth = maxLineWidth.toInt() + codePadding * 2
+        val minCodeWidth = maxLineWidth.toInt() + codePaddingPx * 2
         
         textView.layoutParams = LinearLayout.LayoutParams(
             minCodeWidth,
@@ -414,7 +380,7 @@ class AndroidViewRenderer {
         
         textView.text = spannable
         textView.movementMethod = LinkMovementMethod.getInstance()
-        textView.textSize = context.theme.fontSize
+        textView.textSize = context.getFontSizeSp()
         return textView
     }
     
@@ -434,11 +400,7 @@ class AndroidViewRenderer {
         imageView.adjustViewBounds = true
         
         // 设置圆角
-        val radius = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP,
-            context.theme.codeBlockBorderRadius.toFloat(),
-            context.context.resources.displayMetrics
-        )
+        val radius = context.getImageBorderRadiusPx()
         imageView.clipToOutline = true
         imageView.outlineProvider = object : android.view.ViewOutlineProvider() {
             override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
@@ -492,7 +454,7 @@ class AndroidViewRenderer {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
-            params.bottomMargin = context.theme.listItemSpacing
+            params.bottomMargin = context.getListItemSpacingPx()
             container.addView(itemView, params)
         }
         
@@ -517,14 +479,11 @@ class AndroidViewRenderer {
             ListType.Bullet -> {
                 val marker = TextView(context.context)
                 marker.text = "•"
-                marker.textSize = context.theme.fontSize
+                marker.textSize = context.getFontSizeSp()
                 marker.setTextColor(context.theme.textColor)
                 marker.setPadding(
                     0, 0,
-                    TypedValue.applyDimension(
-                        TypedValue.COMPLEX_UNIT_DIP, 8f,
-                        context.context.resources.displayMetrics
-                    ).toInt(),
+                    context.dpToPx(8f),
                     0
                 )
                 row.addView(marker)
@@ -532,14 +491,11 @@ class AndroidViewRenderer {
             ListType.Ordered -> {
                 val marker = TextView(context.context)
                 marker.text = "${index + 1}." // 显示真正的序号
-                marker.textSize = context.theme.fontSize
+                marker.textSize = context.getFontSizeSp()
                 marker.setTextColor(context.theme.textColor)
                 marker.setPadding(
                     0, 0,
-                    TypedValue.applyDimension(
-                        TypedValue.COMPLEX_UNIT_DIP, 8f,
-                        context.context.resources.displayMetrics
-                    ).toInt(),
+                    context.dpToPx(8f),
                     0
                 )
                 row.addView(marker)
@@ -550,11 +506,7 @@ class AndroidViewRenderer {
                 val checkboxView = TaskCheckBoxView(context.context, node.checked ?: false, context.theme.textColor)
                 
                 // 根据字体大小计算复选框尺寸，参考iOS实现
-                val fontSizePx = TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_SP,
-                    context.theme.fontSize,
-                    context.context.resources.displayMetrics
-                )
+                val fontSizePx = context.spToPx(context.theme.fontSize)
                 // 复选框尺寸设为字体大小的1.2倍，与iOS保持一致
                 val checkboxSize = (fontSizePx * 1.2f).toInt()
                 
@@ -564,10 +516,7 @@ class AndroidViewRenderer {
                 checkboxParams.gravity = Gravity.START or Gravity.CENTER_VERTICAL
                 checkboxParams.setMargins(
                     0, 0,
-                    TypedValue.applyDimension(
-                        TypedValue.COMPLEX_UNIT_DIP, 8f,
-                        context.context.resources.displayMetrics
-                    ).toInt(),
+                    context.dpToPx(8f),
                     0
                 )
                 
@@ -587,7 +536,7 @@ class AndroidViewRenderer {
             )
             // 为段落等块级元素添加底部间距，避免换行时拥挤
             if (child is ParagraphNode || child is HeadingNode) {
-                params.bottomMargin = (context.theme.paragraphSpacing * 0.5f).toInt()
+                params.bottomMargin = (context.getParagraphSpacingPx() * 0.5f).toInt()
             }
             contentContainer.addView(childView, params)
         }
@@ -608,15 +557,8 @@ class AndroidViewRenderer {
         val containerView = android.widget.FrameLayout(context.context)
         
         // 设置表格整体圆角和边框（与 iOS 保持一致）
-        val radius = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP,
-            context.theme.codeBlockBorderRadius.toFloat(),
-            context.context.resources.displayMetrics
-        )
-        val borderWidth = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP, 1f,
-            context.context.resources.displayMetrics
-        ).toInt()
+        val radius = context.getCodeBlockBorderRadiusPx()
+        val borderWidth = context.dpToPx(1f)
         
         containerView.applyRoundedBackground(
             android.graphics.Color.TRANSPARENT,
@@ -656,7 +598,7 @@ class AndroidViewRenderer {
             headerBar.layoutParams = headerBarParams
             
             // 添加"表格"标题文字（左侧）
-            val titleLeftPadding = context.theme.tableCellPadding
+            val titleLeftPadding = context.getTableCellPaddingPx()
             val tableTitle = context.theme.tableTitle ?: "表格"
             val titleLabel = TextView(context.context)
             titleLabel.text = tableTitle
@@ -783,7 +725,7 @@ class AndroidViewRenderer {
         val border = View(context.context)
         border.setBackgroundColor(context.theme.blockquoteBorderColor)
         border.layoutParams = LinearLayout.LayoutParams(
-            context.theme.blockquoteBorderWidth,
+            context.getBlockquoteBorderWidthPx(),
             ViewGroup.LayoutParams.MATCH_PARENT
         )
         container.addView(border)
@@ -792,10 +734,7 @@ class AndroidViewRenderer {
         val contentContainer = LinearLayout(context.context)
         contentContainer.orientation = LinearLayout.VERTICAL
         contentContainer.setPadding(
-            TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 8f,
-                context.context.resources.displayMetrics
-            ).toInt(),
+            context.dpToPx(8f),
             0, 0, 0
         )
         
@@ -823,10 +762,7 @@ class AndroidViewRenderer {
         view.setBackgroundColor(context.theme.hrColor)
         view.layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 1f,
-                context.context.resources.displayMetrics
-            ).toInt()
+            context.dpToPx(1f)
         )
         return view
     }
@@ -836,17 +772,14 @@ class AndroidViewRenderer {
      */
     private fun renderMermaid(node: MermaidNode, context: AndroidRenderContext): View {
         val containerView = android.widget.FrameLayout(context.context)
-        containerView.setPadding(context.theme.codeBlockPadding)
+        val codeBlockPaddingPx = context.getCodeBlockPaddingPx()
+        containerView.setPadding(codeBlockPaddingPx)
         
         // 设置圆角背景
-        val radius = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP,
-            context.theme.codeBlockBorderRadius.toFloat(),
-            context.context.resources.displayMetrics
-        )
+        val radius = context.getCodeBlockBorderRadiusPx()
         containerView.applyRoundedBackground(context.theme.codeBackgroundColor, radius)
         
-        val padding = context.theme.codeBlockPadding
+        val padding = codeBlockPaddingPx
         val cacheKey = AndroidMermaidHTMLRenderer.generateCacheKey(node.content, "#000000", "#ffffff")
         
         // 获取工具栏尺寸
@@ -924,7 +857,7 @@ class AndroidViewRenderer {
         // 代码文本视图
         val codeTextView = android.widget.TextView(context.context)
         codeTextView.text = node.content
-        codeTextView.textSize = context.theme.codeFontSize
+        codeTextView.textSize = context.getCodeFontSizeSp()
         codeTextView.setTextColor(context.theme.codeTextColor)
         codeTextView.setTypeface(Typeface.MONOSPACE)
         codeTextView.maxLines = Int.MAX_VALUE
@@ -1006,7 +939,7 @@ class AndroidViewRenderer {
             // 原始内容标签
             val contentLabel = TextView(context.context)
             contentLabel.text = node.content
-            contentLabel.textSize = context.theme.codeFontSize
+            contentLabel.textSize = context.getCodeFontSizeSp()
             contentLabel.setTextColor(context.theme.codeTextColor)
             contentLabel.alpha = 0.6f
             contentLabel.maxLines = Int.MAX_VALUE
@@ -1073,7 +1006,7 @@ class AndroidViewRenderer {
                     
                     val label = TextView(context.context)
                     label.text = node.content
-                    label.textSize = context.theme.codeFontSize
+                    label.textSize = context.getCodeFontSizeSp()
                     label.setTextColor(context.theme.codeTextColor)
                     label.maxLines = Int.MAX_VALUE
                     val labelParams = android.widget.FrameLayout.LayoutParams(
@@ -1104,11 +1037,7 @@ class AndroidViewRenderer {
         // 如果有delegate，尝试加载图片
         val delegate = context.inlineImageLoaderDelegate
         if (delegate != null) {
-            val fontSizePx = TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_SP,
-                context.theme.fontSize,
-                context.context.resources.displayMetrics
-            )
+            val fontSizePx = context.spToPx(context.theme.fontSize)
             
             // 使用emoji的content字段（如"[加油]"）
             val emojiContent = node.content
@@ -1135,13 +1064,13 @@ class AndroidViewRenderer {
             // 先显示文本作为占位符
             val textView = TextView(context.context)
             textView.text = node.content
-            textView.textSize = context.theme.fontSize
+            textView.textSize = context.getFontSizeSp()
             container.addView(textView)
         } else {
             // 没有delegate，直接显示文本
             val textView = TextView(context.context)
             textView.text = node.content
-            textView.textSize = context.theme.fontSize
+            textView.textSize = context.getFontSizeSp()
             container.addView(textView)
         }
         
@@ -1159,7 +1088,7 @@ class AndroidViewRenderer {
         // 文本视图
         val textView = TextView(context.context)
         textView.text = "@${node.name}"
-        textView.textSize = context.theme.fontSize
+        textView.textSize = context.getFontSizeSp()
         textView.setTextColor(context.theme.mentionTextColor)
         // 不设置背景色，只设置字体颜色
         textView.setOnClickListener {
@@ -1170,11 +1099,7 @@ class AndroidViewRenderer {
         // 如果有delegate，尝试加载状态图片
         val delegate = context.inlineImageLoaderDelegate
         if (delegate != null) {
-            val fontSizePx = TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_SP,
-                context.theme.fontSize,
-                context.context.resources.displayMetrics
-            )
+            val fontSizePx = context.spToPx(context.theme.fontSize)
             
             delegate.loadMentionStatusImage(node) { bitmap ->
                 // completion 回调已经在主线程
@@ -1193,10 +1118,7 @@ class AndroidViewRenderer {
                     val imageSize = (fontSizePx * 0.8f).toInt() // 状态图片稍小一些
                     val params = LinearLayout.LayoutParams(imageSize, imageSize)
                     params.setMargins(
-                        TypedValue.applyDimension(
-                            TypedValue.COMPLEX_UNIT_DIP, 4f,
-                            context.context.resources.displayMetrics
-                        ).toInt(),
+                        context.dpToPx(4f),
                         0, 0, 0
                     )
                     container.addView(imageView, params)
@@ -1259,22 +1181,12 @@ class AndroidViewRenderer {
         context: AndroidRenderContext
     ): TextView {
         val textView = TextView(context.context)
-        textView.textSize = context.theme.fontSize
+        textView.textSize = context.getFontSizeSp()
         textView.setTextColor(context.theme.textColor)
         
-        // 设置行高
-        val fontSizePx = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP,
-            context.theme.fontSize,
-            textView.context.resources.displayMetrics
-        )
-        val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            textView.lineHeight = lineHeightPx
-        } else {
-            val addSpacing = (lineHeightPx - fontSizePx).toFloat().coerceAtLeast(0f)
-            textView.setLineSpacing(addSpacing, 1.0f)
-        }
+        // 设置行间距
+        val lineSpacingPx = context.dpToPx(context.theme.lineSpacing)
+        textView.setLineSpacing(lineSpacingPx.toFloat(), 1.0f)
         
         val spannable = SpannableStringBuilder()
         val displayMetrics = textView.context.resources.displayMetrics
@@ -1296,11 +1208,7 @@ class AndroidViewRenderer {
         start: Int,
         end: Int
     ) {
-        val fontSizePx = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP,
-            context.theme.fontSize,
-            displayMetrics
-        )
+        val fontSizePx = context.spToPx(context.theme.fontSize)
 
         // 使用 imageLoader 直接下载图片（imageView 为 null）
         context.imageLoader?.loadImage(node.url, null) { result ->
@@ -1572,7 +1480,7 @@ class AndroidViewRenderer {
      */
     private fun renderTextRun(node: TextRunNode, context: AndroidRenderContext): View {
         val textView = TextView(context.context)
-        textView.textSize = context.theme.fontSize
+        textView.textSize = context.getFontSizeSp()
         textView.setTextColor(context.theme.textColor)
         
         // 构建带样式的文本
@@ -1805,7 +1713,7 @@ class AndroidViewRenderer {
         // 行内数学公式通常在SpannableString中处理，这里作为后备
         val textView = TextView(context.context)
         textView.text = "$${node.content}$"
-        textView.textSize = context.theme.fontSize
+        textView.textSize = context.getFontSizeSp()
         textView.setTextColor(context.theme.textColor)
         return textView
     }
@@ -1816,13 +1724,14 @@ class AndroidViewRenderer {
     private fun renderHtmlBlock(node: HtmlBlockNode, context: AndroidRenderContext): View {
         val textView = TextView(context.context)
         textView.text = stripHtmlTags(node.content)
-        textView.textSize = context.theme.fontSize
+        textView.textSize = context.getFontSizeSp()
         textView.setTextColor(context.theme.textColor)
+        val contentPaddingPx = context.getContentPaddingPx()
         textView.setPadding(
-            context.theme.contentPadding,
-            context.theme.contentPadding,
-            context.theme.contentPadding,
-            context.theme.contentPadding
+            contentPaddingPx,
+            contentPaddingPx,
+            contentPaddingPx,
+            contentPaddingPx
         )
         return textView
     }
@@ -1833,7 +1742,7 @@ class AndroidViewRenderer {
     private fun renderInlineHtml(node: InlineHtmlNode, context: AndroidRenderContext): View {
         val textView = TextView(context.context)
         textView.text = stripHtmlTags(node.content)
-        textView.textSize = context.theme.fontSize
+        textView.textSize = context.getFontSizeSp()
         textView.setTextColor(context.theme.textColor)
         return textView
     }
@@ -1846,10 +1755,7 @@ class AndroidViewRenderer {
         view.layoutParams = ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             if (node.hard) {
-                TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_DIP, 16f,
-                    context.context.resources.displayMetrics
-                ).toInt()
+                context.dpToPx(16f)
             } else {
                 1
             }
@@ -2015,15 +1921,13 @@ class AndroidViewRenderer {
             if (fm != null) {
                 val pfm = paint.fontMetricsInt
                 val imageHeight = rect.height()
-                // 增加上下间距（呼吸感）：上下各 10% 的图片高度
-                val extraSpacing = (imageHeight * 0.1f).toInt()
 
                 // 图片顶部对齐字体顶部（参考 iOS：font.ascender - targetHeight）
                 // pfm.ascent 是从基线到字体顶部的距离（负数，在基线上方）
                 // 图片顶部应该对齐字体顶部，所以图片顶部位置 = pfm.ascent
                 // 图片底部位置 = pfm.ascent + imageHeight
-                fm.ascent = pfm.ascent-extraSpacing
-                fm.descent = pfm.ascent + imageHeight+extraSpacing
+                fm.ascent = pfm.ascent
+                fm.descent = pfm.ascent + imageHeight
                 fm.top = fm.ascent
                 fm.bottom = fm.descent
             }

@@ -128,9 +128,9 @@ pub struct StyleConfig {
     #[serde(default = "default_hr_color")]
     pub hr_color: String,
     
-    /// 行高倍数
-    #[serde(default = "default_line_height")]
-    pub line_height: f32,
+    /// 行间距（px）
+    #[serde(default = "default_line_spacing")]
+    pub line_spacing: f32,
     
     /// 内容最大宽度（px，0 表示不限制）
     #[serde(default = "default_max_content_width")]
@@ -220,7 +220,7 @@ impl Default for StyleConfig {
             card_padding: default_card_padding(),
             card_border_radius: default_card_border_radius(),
             hr_color: default_hr_color(),
-            line_height: default_line_height(),
+            line_spacing: default_line_spacing(),
             max_content_width: default_max_content_width(),
             content_padding: default_content_padding(),
             toolbar_height: default_toolbar_height(),
@@ -256,8 +256,8 @@ fn default_heading_colors() -> Vec<String> {
         "#333333".to_string(),
     ]
 }
-fn default_paragraph_spacing() -> f32 { 16.0 }
-fn default_list_item_spacing() -> f32 { 8.0 }
+fn default_paragraph_spacing() -> f32 { 4.0 }
+fn default_list_item_spacing() -> f32 { 4.0 }
 fn default_code_block_padding() -> f32 { 16.0 }
 fn default_code_block_border_radius() -> f32 { 8.0 }
 fn default_code_block_max_width() -> f32 { 1366.0 }
@@ -279,7 +279,7 @@ fn default_card_border_color() -> String { "#dddddd".to_string() }
 fn default_card_padding() -> f32 { 16.0 }
 fn default_card_border_radius() -> f32 { 8.0 }
 fn default_hr_color() -> String { "#dddddd".to_string() }
-fn default_line_height() -> f32 { 1.0 }
+fn default_line_spacing() -> f32 { 4.0 }
 fn default_max_content_width() -> f32 { 1366.0 }
 fn default_content_padding() -> f32 { 2.0 }
 fn default_toolbar_height() -> f32 { 36.0 }

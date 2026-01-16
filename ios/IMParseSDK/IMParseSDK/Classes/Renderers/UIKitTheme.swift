@@ -37,8 +37,8 @@ public struct UIKitTheme {
     public var paragraphSpacing: CGFloat
     /// 列表项间距
     public var listItemSpacing: CGFloat
-    /// 行高倍数
-    public var lineHeight: CGFloat
+    /// 行间距（点）
+    public var lineSpacing: CGFloat
     /// 最大内容宽度
     public var maxContentWidth: CGFloat
     /// 内容内边距
@@ -160,7 +160,7 @@ public struct UIKitTheme {
         self.cardPadding = CGFloat(config.cardPadding)
         self.cardBorderRadius = CGFloat(config.cardBorderRadius)
         self.hrColor = UIColor(hex: config.hrColor) ?? .separator
-        self.lineHeight = CGFloat(config.lineHeight)
+        self.lineSpacing = CGFloat(config.lineSpacing)
         self.maxContentWidth = CGFloat(config.maxContentWidth)
         self.contentPadding = CGFloat(config.contentPadding)
         
@@ -217,7 +217,7 @@ public struct UIKitTheme {
             cardPadding: 2,
             cardBorderRadius: 8,
             hrColor: "#C6C6C8",
-            lineHeight: 1.0,
+            lineSpacing: 4.0,
             maxContentWidth: 800,
             contentPadding: 0,
             toolbarHeight: 36,

@@ -74,14 +74,10 @@ object MathFormulaRenderer {
         )
         
         val fontSize = context.theme.fontSize
-        val fontSizePx = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP,
-            fontSize,
-            textView.context.resources.displayMetrics
-        )
-        val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
+        val fontSizePx = context.spToPx(fontSize)
+        val lineSpacingPx = context.dpToPx(context.theme.lineSpacing)
         
-        // 生成缓存键（包含 lineHeight）
+        // 生成缓存键（包含 fontSize）
         val inlineCacheKey = AndroidMathHTMLRenderer.generateInlineMathCacheKey(
             mathNode.content,
             fontSize
@@ -95,7 +91,7 @@ object MathFormulaRenderer {
             val imageSpan = createInlineImageSpan(
                 cachedImage,
                 fontSizePx,
-                lineHeightPx,
+                lineSpacingPx,
                 textView.context,
                 textView = textView,
                 contentWidth = context.contentWidth,
@@ -154,7 +150,7 @@ object MathFormulaRenderer {
                     val imageSpan = createInlineImageSpan(
                         image,
                         fontSizePx,
-                        lineHeightPx,
+                        lineSpacingPx,
                         textView.context,
                         textView = textView,
                         contentWidth = context.contentWidth,
@@ -223,7 +219,7 @@ object MathFormulaRenderer {
             display = mathNode.display
         )
         
-        val contentPadding = context.theme.codeBlockPadding
+        val contentPadding = context.getCodeBlockPaddingPx()
         
         // 先尝试从缓存获取图片
         val cachedImage = context.formulaSizeCacheDelegate?.getFormulaImage(cacheKey)
@@ -285,7 +281,7 @@ object MathFormulaRenderer {
         // 缓存未命中，先显示原文
         val originalTextView = TextView(context.context)
         originalTextView.text = mathNode.content
-        originalTextView.textSize = context.theme.codeFontSize
+        originalTextView.textSize = context.getCodeFontSizeSp()
         originalTextView.setTextColor(context.theme.codeTextColor)
         originalTextView.maxLines = Int.MAX_VALUE
         val originalParams = FrameLayout.LayoutParams(
@@ -435,14 +431,10 @@ object MathFormulaRenderer {
         )
         
         val fontSize = context.theme.fontSize
-        val fontSizePx = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP,
-            fontSize,
-            displayMetrics
-        )
-        val lineHeightPx = (fontSizePx * context.theme.lineHeight).toInt()
+        val fontSizePx = context.spToPx(fontSize)
+        val lineSpacingPx = context.dpToPx(context.theme.lineSpacing)
         
-        // 生成缓存键（包含 lineHeight）
+        // 生成缓存键（包含 fontSize）
         val inlineCacheKey = AndroidMathHTMLRenderer.generateInlineMathCacheKey(
             mathNode.content,
             fontSize
@@ -456,7 +448,7 @@ object MathFormulaRenderer {
             val imageSpan = createInlineImageSpan(
                 cachedImage,
                 fontSizePx,
-                lineHeightPx,
+                lineSpacingPx,
                 context.context,
                 textView = textView,
                 contentWidth = context.contentWidth,
@@ -481,7 +473,7 @@ object MathFormulaRenderer {
      * 创建行内数学公式的 DrawableSpan
      * @param image 原始图片
      * @param fontSizePx 字体大小（像素）
-     * @param lineHeightPadding 行高padding
+     * @param lineSpacingPx 行间距（像素）
      * @param context Context
      * @param textView TextView 引用（用于获取可用宽度）
      * @param contentWidth 内容最大宽度（如果 TextView 未布局，使用此值）
@@ -490,7 +482,7 @@ object MathFormulaRenderer {
     fun createInlineImageSpan(
         image: Bitmap,
         fontSizePx: Float,
-        lineHeightPadding: Int,
+        lineSpacingPx: Int,
         context: Context,
         textView: TextView? = null,
         contentWidth: Int = 0,
@@ -502,7 +494,7 @@ object MathFormulaRenderer {
         } else {
             null
         }
-        return AutoWrapImageSpan(context, image, fontSizePx, lineHeightPadding, textViewRef, contentWidth, widthProvider)
+        return AutoWrapImageSpan(context, image, fontSizePx, lineSpacingPx, textViewRef, contentWidth, widthProvider)
     }
     
     /**
@@ -529,7 +521,7 @@ object MathFormulaRenderer {
         content: String,
         context: AndroidRenderContext
     ) {
-        val padding = context.theme.codeBlockPadding
+        val padding = context.getCodeBlockPaddingPx()
         
         // 错误提示标签
         val errorLabel = TextView(context.context)
@@ -548,8 +540,8 @@ object MathFormulaRenderer {
         // 原始内容标签
         val contentLabel = TextView(context.context)
         contentLabel.text = content
-        contentLabel.textSize = context.theme.codeFontSize
-        contentLabel.setTextColor(context.theme.codeTextColor)
+            contentLabel.textSize = context.getCodeFontSizeSp()
+            contentLabel.setTextColor(context.theme.codeTextColor)
         contentLabel.alpha = 0.6f
         contentLabel.maxLines = Int.MAX_VALUE
         val contentParams = FrameLayout.LayoutParams(
@@ -569,7 +561,7 @@ private class AutoWrapImageSpan(
     ctx: Context,
     private val originalBitmap: Bitmap,
     private val fontSizePx: Float,
-    private val lineHeightPadding: Int,
+    private val lineSpacingPx: Int,
     private val textViewRef: WeakReference<TextView>?,
     private val contentWidth: Int,
     private val widthProvider: (() -> Int?)? = null
@@ -695,15 +687,12 @@ private class AutoWrapImageSpan(
             // pfm.ascent 是负数（基线以上），pfm.descent 是正数（基线以下）
             val textCenter = (pfm.descent + pfm.ascent) / 2
             val imageCenter = imageHeight / 2
-            
-            // 增加上下间距（呼吸感）：上下各 10% 的图片高度
-            val extraSpacing = (imageHeight * 0.1f).toInt()
-            
+
             // 设置图片的垂直范围，使图片中心与文本中心对齐，并增加上下间距
             // fm.ascent 是图片顶部相对于基线的位置（负数，在基线上方）
             // fm.descent 是图片底部相对于基线的位置（正数，在基线下方）
-            fm.ascent = textCenter - imageCenter - extraSpacing
-            fm.descent = textCenter + imageCenter + extraSpacing
+            fm.ascent = textCenter - imageCenter
+            fm.descent = textCenter + imageCenter
             fm.top = fm.ascent
             fm.bottom = fm.descent
         }
