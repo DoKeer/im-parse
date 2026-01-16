@@ -606,7 +606,7 @@ public class UIKitFrameRender {
             let newImageHeight = containerWidth / imageAspectRatio
             let newContainerHeight = newImageHeight + imageMargin * 2
             
-            if abs(newContainerHeight - containerView.frame.height) > 0.5 {
+            if abs(newContainerHeight - containerView.frame.height) > 1 {
                 context.onNodeLayoutChanged?(node)
             }
         }
@@ -1132,7 +1132,7 @@ public class UIKitFrameRender {
         imageView.frame = imageFrame
         containerView.addSubview(imageView)
         
-        if abs(totalHeight - containerView.frame.height) > 0.5 {
+        if abs(totalHeight - containerView.frame.height) > 1 {
             context.onNodeLayoutChanged?(node)
         }
     }
@@ -1382,7 +1382,7 @@ public class UIKitFrameRender {
 
         // previewView的高度是容器高度减去Toolbar高度
         let currentHeight = previewView.frame.height
-        if abs(actualHeight - currentHeight) > 0.5 {
+        if abs(actualHeight - currentHeight) > 1 {
             context.onNodeLayoutChanged?(node)
         }
     }

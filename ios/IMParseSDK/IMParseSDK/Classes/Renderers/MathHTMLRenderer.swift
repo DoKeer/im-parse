@@ -46,7 +46,7 @@ public func generateMathCacheKey(
     let hashString = hash.compactMap { String(format: "%02x", $0) }.joined()
     // 在 key 中包含 display 类型，区分行内公式和块级公式
     let displayType = display ? "block" : "inline"
-    return ("math:\(displayType):\(hashString)", stringColor)
+    return ("math_\(displayType)_\(hashString)", stringColor)
 }
 
 /// 数学公式 HTML 渲染器
