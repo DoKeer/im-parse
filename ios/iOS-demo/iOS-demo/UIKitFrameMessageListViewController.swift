@@ -117,7 +117,7 @@ class UIKitFrameMessageListViewController: UIViewController {
             guard let self = self else {
                 return
             }
-            let generatedMessages = MessageDataGenerator.generateMessages(count: 15)
+            let generatedMessages = MessageDataGenerator.generateMessages(count: 1)
             
             // 解析消息并计算布局
             var parsedMessages = generatedMessages

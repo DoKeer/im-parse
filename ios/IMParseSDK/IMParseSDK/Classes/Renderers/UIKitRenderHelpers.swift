@@ -293,6 +293,7 @@ internal class ImageTextAttachment: NSTextAttachment {
     
     /// 动态计算 attachment 的 bounds，确保与文本垂直居中
     override func attachmentBounds(for textContainer: NSTextContainer?, proposedLineFragment lineFrag: CGRect, glyphPosition position: CGPoint, characterIndex charIndex: Int) -> CGRect {
+        self.cacheImageBounds.origin.x = position.x
         return self.cacheImageBounds
     }
     

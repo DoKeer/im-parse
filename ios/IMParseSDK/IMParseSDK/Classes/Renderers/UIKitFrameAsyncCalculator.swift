@@ -1114,7 +1114,7 @@ public class UIKitFrameAsyncCalculator {
             
             layoutManager.ensureLayout(for: textContainer)
             let usedRect = layoutManager.usedRect(for: textContainer)
-            return CGSize(width: ceil(usedRect.width), height: ceil(usedRect.height))
+            return CGSize(width: ceil(usedRect.width), height: ceil(usedRect.height)+2)
         } else {
             return calculateTextSize(attrString, width: width)
         }

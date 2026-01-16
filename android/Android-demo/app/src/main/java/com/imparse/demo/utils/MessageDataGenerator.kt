@@ -74,6 +74,68 @@ object MessageDataGenerator {
      */
     private fun generateMarkdownTemplates(): List<String> {
         return listOf(
+            """     
+            # 标题1 
+            ## 标题2 
+            ### 标题3 
+            #### 标题4 
+            ##### 标题5 
+            ###### 标题6 
+            **粗体**  __粗体__  
+            _斜体_ *斜体* 
+            ==高亮== 
+            一段包含[链接](https://im.360teams.com)的文本
+            [链接](https://im.360teams.com)
+            ~~删除线~~ 
+            分割线
+            ***
+            表格
+            |表格头1|表格头2|表格头3|
+            |------|------|------|
+            |单元格1|单元格2|单元格3|
+            |单元格4|单元格5|单元格6|
+            
+            分割线
+            ---
+            
+            1. 有序列表 
+            * 无序列表 
+            - 无序列表 
+            + 无序列表 
+            
+            - [ ] 新建任务 
+            - [x] 已完成 
+            
+            行内公式${'$'}E=MC^2$ 
+            块级公式
+            $${'$'}E=MC^2$$
+            
+            段落内
+            换行  Option/Alt Enter 或者 Shift Enter
+            上标^th^ 
+            下标~2~ 
+            
+            行内 ![图片](https://iph.href.lu/879x200) 行内2:![示例图片](https://iph.href.lu/879x200) 行内3:![示例图片](https://iph.href.lu/879x200) 
+            
+            块级图片
+            
+            ![块级图片](https://p1.360teams.com/t01a51fb907481b5e61.png)
+            
+            ```Hello World```
+            ```mermaid
+            graph TD
+               A[开始] --> B{判断条件}
+               B -->|是| C[执行操作1]
+               B -->|否| D[执行操作2]
+               C --> E[结束]
+               D --> E
+            ```
+            
+            行内code `Code`
+            
+            > 引用段落 
+            
+            """.trimIndent(),
             """
             - [ ] 任务1
             - [X] 任务2

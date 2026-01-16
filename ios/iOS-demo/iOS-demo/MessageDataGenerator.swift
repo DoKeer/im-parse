@@ -24,7 +24,7 @@ class MessageDataGenerator {
         for i in 0..<count {
             let sender = senders[i % senders.count]
             let timestamp = Date().addingTimeInterval(-Double(count - i) * 60)
-        
+            
             let message: Message
             
             if i < markdownTemplates.count {
@@ -74,24 +74,75 @@ class MessageDataGenerator {
     /// 生成 Markdown 模板
     private static func generateMarkdownTemplates() -> [String] {
         return [
-            """
-            - [ ] 任务1
-            - [X] 任务2
-            - [X] 任务3
-            - [ ] 任务4
+            #"""
+            # 标题1 
+            ## 标题2 
+            ### 标题3 
+            #### 标题4 
+            ##### 标题5 
+            ###### 标题6 
+            **粗体**  __粗体__  
+            _斜体_ *斜体* 
+            ==高亮== 
+            一段包含[链接](https://im.360teams.com)的文本
+            [链接](https://im.360teams.com)
+            ~~删除线~~ 
+            分割线
             ***
-            [ ] 任务1
-            [X] 任务2
-            [X] 任务3
-            [ ] 任务4
+            表格
+            |表格头1|表格头2|表格头3|
+            |------|------|------|
+            |单元格1|单元格2|单元格3|
+            |单元格4|单元格5|单元格6|
+            
+            分割线
             ---
-            ==高亮==
-            """,
+            
+            1. 有序列表 
+            * 无序列表 
+            - 无序列表 
+            + 无序列表 
+            
+            - [ ] 新建任务 
+            - [x] 已完成 
+            
+            行内公式$E=MC^2$ 
+            
+            块级公式
+            
+            $$E=MC^2$$
+            
+            段落内
+            换行  Option/Alt Enter 或者 Shift Enter
+            上标^th^ 
+            下标~2~ 
+            
+            行内 ![图片](https://iph.href.lu/879x200) 行内2:![示例图片](https://iph.href.lu/879x200) 行内3:![示例图片](https://iph.href.lu/879x200) 
+            
+            块级图片
+            
+            ![块级图片](https://p1.360teams.com/t01a51fb907481b5e61.png)
+            
+            ```Hello World```
+            ```mermaid
+            graph TD
+               A[开始] --> B{判断条件}
+               B -->|是| C[执行操作1]
+               B -->|否| D[执行操作2]
+               C --> E[结束]
+               D --> E
+            ```
+            
+            行内code `Code`
+            
+            > 引用段落 
+            
+            """#,
             """
             您好，您2025年12月福利餐补已到账，可打开Teams-工作台-智慧食堂查看餐补余额。
-
+            
             **温馨提示：**
-
+            
             1. 该福利仅限员工食堂使用，用餐时点击Teams个人头像，出示二维码即可；
             2. 餐补仅限本月使用，逾期未用自动清零，不结转至下月；
             3. 如有疑问，可联系13212341234,祝您用餐愉快！
@@ -104,7 +155,7 @@ class MessageDataGenerator {
             
             ### 行内多公式
             伽玛函数：$\Gamma(z) = \int_0^\infty t^{z-1} e^{-t} \, dt = (z-1)!, \quad z \in \mathbb{C}, \Re(z) > 0$ 多层嵌套对数 $\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$  这是行内公式：$E = mc^2$，这是另一个行内公式：$\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$。行内公式应该与文本在同一行显示。
-
+            
             ### 图片
             行内 ![示例图片](https://iph.href.lu/879x200) 行内2 ![示例图片](https://iph.href.lu/879x200) 行内3 ![示例图片](https://iph.href.lu/879x200)
             块级
@@ -117,13 +168,13 @@ class MessageDataGenerator {
             并且有适当的边距和圆角。如果图片加载失败，应该显示错误信息。
             """#,
             #"""
-
+            
             伽玛函数：$\Gamma(z) = \int_0^\infty t^{z-1} e^{-t} \, dt = (z-1)!, \quad z \in \mathbb{C}, \Re(z) > 0$ 多层嵌套对数 $\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$
-
+            
             行内多公式测试：$E = mc^2$ $\int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}$ $E = mc^2$ $E = mc^2$ $E = mc^2$ 
             
             $$\displaystyle f(x)=\frac{\ln\!\left(1+e^{-\alpha x^2}\right)}{1+\frac{1}{\sqrt{1+x^2}}}$$
-
+            
             **a $b$ c**
             数据3 $E = mc^2$ 
             
@@ -146,7 +197,7 @@ class MessageDataGenerator {
             $$
             \sum_{n=0}^\infty \left(\sum_{k=0}^n \binom{n}{k}^2 \binom{n+k}{k}^2\right) x^n = \frac{1}{\sqrt{1-14x+x^2}} \cdot {}_3F_2\left(\begin{array}{c} \frac{1}{2},\frac{1}{2},\frac{1}{2} \\ 1,1 \end{array} ; \frac{16x}{(1-14x+x^2)^2}\right) = \prod_{p\equiv 1\pmod{4}} \frac{1}{1-4p^{-s}} \cdot \prod_{p\equiv 3\pmod{4}} \frac{1}{1-p^{-2s}}
             $$
-
+            
             ### 黎曼ζ函数函数方程
             $$
             \zeta(s) = \sum_{n=1}^\infty \frac{1}{n^s} = \prod_{p \text{ prime}} \frac{1}{1-p^{-s}} = 2^s \pi^{s-1} \sin\left(\frac{\pi s}{2}\right) \Gamma(1-s) \zeta(1-s) = \frac{1}{2} + \frac{1}{s-1} + \sum_{n=1}^\infty \frac{B_{2n}}{(2n)!} (s)_{2n-1} + \frac{1}{\Gamma(s)} \int_0^\infty \frac{x^{s-1}}{e^x-1} dx
@@ -216,7 +267,7 @@ class MessageDataGenerator {
               - 嵌套项 2
               - 嵌套项 3
             - 这是第五个列表项
-
+            
             
             1. 第一项：包含**粗体**和*斜体*
             2. 第二项：包含`代码`和[链接](https://example.com)
@@ -515,27 +566,27 @@ class MessageDataGenerator {
             
             """
             段落中有行内数学 $a^2 + b^2 = c^2$，前后还有普通文本。
-
+            
             这一行包含多个公式：$x$, $y + 1$, 和 $z_{i,j}$ 混在一起。
-
+            
             只开不关的行内数学 $a + b$ 和一个正常的 $c + d$。
-
+            
             整段是块级公式：
-
+            
             $$
             \\int_0^1 x^2 \\, dx
             $$
-
+            
             前面有文字但中间嵌入块级 $$a^2$$ 再接文字。
-
+            
             $$a + b$$ 紧挨着其他字符不含空格。
-
+            
             """,
             """
             [链接示例](https://example.com)。
             """
         ]
-//        return []
+        //        return []
     }
     
     /// 生成 Delta 模板

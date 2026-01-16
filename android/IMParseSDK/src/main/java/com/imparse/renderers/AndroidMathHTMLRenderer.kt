@@ -1,5 +1,6 @@
 package com.imparse.renderers
 
+import android.R
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -76,19 +77,22 @@ class AndroidMathHTMLRenderer private constructor() {
          * 生成数学公式缓存键
          * @param mathContent 数学公式内容（LaTeX 格式）
          * @param fontSize 字体大小
+         * @param display 是否为块级显示（true=block, false=inline）
          * @return 缓存键（符合 DiskLruCache 的 key 规范：[a-z0-9_-]{1,64}）
          */
         fun generateMathCacheKey(
             mathContent: String,
             fontSize: Float,
+            display: Boolean
         ): String {
             val contentHash = stableHash(mathContent)
-            return "math_${contentHash}_${fontSize.toInt()}"
+            val displayType = if (display) "block" else "inline"
+            return "math_${displayType}_${contentHash}_${fontSize.toInt()}"
         }
         
         /**
-         * 生成行内数学公式的缓存键（使用 lineHeight）
-         * 行内公式的缓存键格式：math_{contentHash}_{fontSize}
+         * 生成行内数学公式的缓存键（便捷方法）
+         * 行内公式的缓存键格式：math_inline_{contentHash}_{fontSize}
          * @param mathContent 数学公式内容（LaTeX 格式）
          * @param fontSize 字体大小
          * @return 缓存键（符合 DiskLruCache 的 key 规范：[a-z0-9_-]{1,64}）
@@ -97,8 +101,7 @@ class AndroidMathHTMLRenderer private constructor() {
             mathContent: String,
             fontSize: Float,
         ): String {
-            val contentHash = stableHash(mathContent)
-            return "math_${contentHash}_${fontSize.toInt()}"
+            return generateMathCacheKey(mathContent, fontSize, display = false)
         }
     }
     
@@ -136,13 +139,12 @@ class AndroidMathHTMLRenderer private constructor() {
         context: Context,
         html: String,
         display: Boolean,
+        cacheKey: String,
         textColor: String = "#000000",
         fontSize: Float = 16f,
         completion: (Bitmap?) -> Unit
     ) {
-        // 生成缓存键
-        val cacheKey = generateCacheKey(html, display, textColor, fontSize)
-        
+
         // 先检查缓存
         imageCache[cacheKey]?.let {
             completion(it)
@@ -226,8 +228,8 @@ class AndroidMathHTMLRenderer private constructor() {
         // 添加 JavaScript Bridge
         webView.addJavascriptInterface(CaptureBridge(webViewKey), "AndroidBridge")
         
-        // 构建完整的 HTML（包含 KaTeX CSS 和 html2canvas）, 全部按照块级公式处理
-        val fullHTML = buildFullHTML(context, html, false, textColor, fontSize)
+        // 构建完整的 HTML（包含 KaTeX CSS 和 html2canvas）
+        val fullHTML = buildFullHTML(context, html, display, textColor, fontSize)
         
         // 获取屏幕尺寸
         val activity = getActivityFromContext(context)
@@ -235,10 +237,21 @@ class AndroidMathHTMLRenderer private constructor() {
         val screenWidth = displayMetrics.widthPixels
         val screenHeight = displayMetrics.heightPixels
         
-        // 设置 WebView 配置（使用更大的初始尺寸，确保内容能完全渲染）
-        // 增大宽度以确保行内公式不被截断
-        val width = 3000
-        val height = 800
+        // 设置 WebView 配置（根据显示模式优化尺寸）
+        // 行内公式：使用较小的尺寸，减少内存占用和渲染开销
+        // 块级公式：使用较大的尺寸以容纳较长的公式和复杂结构（分数、矩阵等）
+        val width: Int
+        val height: Int
+        if (display) {
+            // 块级公式：使用较大尺寸
+            width = 3000
+            height = 2000
+        } else {
+            // 行内公式：使用较小尺寸，通常行内公式不会很长
+            // 宽度 800px 足够容纳大多数行内公式，高度 200px 足够
+            width = 800
+            height = 200
+        }
         
         // WebView 必须被添加到视图层次结构中才能渲染
         // 使用已创建的容器
@@ -905,29 +918,6 @@ class AndroidMathHTMLRenderer private constructor() {
         }
         
         return null
-    }
-    
-    /**
-     * 生成缓存键（内部使用，兼容旧代码）
-     */
-    private fun generateCacheKey(html: String, display: Boolean, textColor: String, fontSize: Float): String {
-        val hash = AndroidMathHTMLRenderer.stableHash(html)
-        return "${hash}_${display}_${textColor}_${fontSize.toInt()}"
-    }
-    
-    /**
-     * 清除缓存
-     */
-    fun clearCache() {
-        imageCache.clear()
-    }
-    
-    /**
-     * 清除指定缓存
-     */
-    fun clearCache(html: String, display: Boolean, textColor: String, fontSize: Float) {
-        val cacheKey = generateCacheKey(html, display, textColor, fontSize)
-        imageCache.remove(cacheKey)
     }
 }
 

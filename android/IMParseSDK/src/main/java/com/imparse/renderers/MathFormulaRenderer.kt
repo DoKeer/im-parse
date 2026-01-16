@@ -144,6 +144,7 @@ object MathFormulaRenderer {
             context = context.context,
             html = result.astJSON,
             display = false, // 行内公式
+            inlineCacheKey,
             textColor = colorHex,
             fontSize = fontSize
         ) { image ->
@@ -218,6 +219,7 @@ object MathFormulaRenderer {
         val cacheKey = AndroidMathHTMLRenderer.generateMathCacheKey(
             mathNode.content,
             fontSize,
+            display = mathNode.display
         )
         
         val contentPadding = context.theme.codeBlockPadding
@@ -325,6 +327,7 @@ object MathFormulaRenderer {
             context = context.context,
             html = result.astJSON,
             display = mathNode.display,
+            cacheKey,
             textColor = colorHex,
             fontSize = fontSize
         ) { image ->

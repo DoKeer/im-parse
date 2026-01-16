@@ -487,9 +487,19 @@ public class MathHTMLRenderer {
                     text-align: \(textAlign);
                     margin: 0;
                     padding: 0;
+                    /* 确保容器能够容纳完整内容 */
+                    width: fit-content;
+                    height: fit-content;
+                    max-width: none;
+                    max-height: none;
+                    overflow: visible;
+                    white-space: nowrap;
                 }
                 .katex {
                     font-size: 1em !important;
+                    /* 确保 katex 内容不被截断 */
+                    display: inline-block;
+                    white-space: nowrap;
                 }
             </style>
         </head>
