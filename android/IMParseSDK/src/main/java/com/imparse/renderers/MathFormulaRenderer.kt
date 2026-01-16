@@ -614,7 +614,7 @@ private class AutoWrapImageSpan(
         val imageAspect = imageWidth / imageHeight
 
         val capHeight = fontSizePx
-        val minHeight = capHeight * 2f
+        val minHeight = capHeight
         val maxHeight = capHeight * 4f
 
         var targetWidth = imageWidth
