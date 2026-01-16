@@ -234,9 +234,10 @@ public class MathHTMLRenderer {
     static func renderInlineMath(
         mathContent: String,
         textColor: UIColor,
+        fontSize:CGFloat,
         formulaSizeCacheDelegate: UIKitFormulaSizeCacheDelegate? = nil
     ) async -> UIImage? {
-        return await render(mathContent: mathContent, display: false, textColor: textColor, fontSize: 12, formulaSizeCacheDelegate: formulaSizeCacheDelegate)
+        return await render(mathContent: mathContent, display: false, textColor: textColor, fontSize: fontSize, formulaSizeCacheDelegate: formulaSizeCacheDelegate)
     }
     
     /// 实际渲染 HTML（必须在主线程调用）
@@ -476,11 +477,10 @@ public class MathHTMLRenderer {
                     color: \(textColor);
                     background: transparent;
                     margin: 0;
-                    padding: 0;
-                    display: flex;
-                    align-items: center;
-                    justify-content: \(textAlign);
-                    min-height: 100vh;
+                    padding: 5;
+                    /* 移除 flex 布局，避免内容被裁剪 */
+                    width: fit-content;
+                    height: fit-content;
                 }
                 .math-container {
                     display: \(displayStyle);
@@ -526,15 +526,17 @@ public class MathHTMLRenderer {
         // 如果指定了内容区域，只截取该区域；否则截取整个 WebView
         let targetRect: CGRect
         if let rect = contentRect {
-            // 对内容区域做一些容错处理：
-            // 1. 增加一点 padding（上下各 2pt），避免高度裁剪不完整
-            // 2. 确保坐标不为负数
-            let padding: CGFloat = 2.0
+            // 关键修复：getBoundingClientRect() 返回的是 CSS 像素
+            // 在 WKWebView 中，config.rect 需要的是 points（相对于 WebView bounds）
+            // 如果 viewport 设置正确（width=800, initial-scale=1.0），CSS 像素应该直接对应 points（1:1）
+            // 但根据日志分析，WKWebView.takeSnapshot 可能将 config.rect 当作 points 处理
+            // 然后根据 snapshotWidth/snapshotHeight 生成图片
+            // 所以我们需要确保 config.rect 使用 CSS 像素值（应该等于 points）
             targetRect = CGRect(
                 x: max(0, rect.origin.x),
-                y: max(0, rect.origin.y - padding),
+                y: max(0, rect.origin.y),
                 width: rect.width,
-                height: rect.height + padding * 2
+                height: rect.height
             )
         } else {
             targetRect = webView.bounds
@@ -545,7 +547,7 @@ public class MathHTMLRenderer {
         // 设置快照宽度为实际像素宽度（点数 × scale）
         // 这样可以生成高分辨率图片，避免在 Retina 屏幕上模糊
         // snapshotWidth 是生成图片的实际像素宽度
-        config.snapshotWidth = NSNumber(value: Double(targetRect.width * scale))
+        config.snapshotWidth = NSNumber(value: Double(targetRect.width))
         do {
             // 验证生成的图片尺寸（必须在主线程调用）
             let image = try await webView.takeSnapshot(with: config)
@@ -588,6 +590,25 @@ public class MathHTMLRenderer {
             // 验证：image.size 应该是逻辑尺寸，image.scale 应该是 scale
             let actualPixels = "\(image.size.width * image.scale)×\(image.size.height * image.scale)"
             print("MathHTMLRenderer: Image scale is correct - size=\(image.size), scale=\(image.scale), pixels=\(actualPixels)")
+            
+            // 验证尺寸是否正确：如果 CSS 像素是 w=71, h=20，那么：
+            // - 逻辑尺寸应该是 (71, 20)
+            // - 实际像素应该是 (71*3, 20*3) = (213, 60)
+            // 如果实际尺寸不对，说明 WKWebView.takeSnapshot 的处理有问题
+            let expectedLogicalWidth = targetRect.width
+            let expectedLogicalHeight = targetRect.height
+            let expectedPixelWidth = expectedLogicalWidth * scale
+            let expectedPixelHeight = expectedLogicalHeight * scale
+            let actualPixelWidth = image.size.width * image.scale
+            let actualPixelHeight = image.size.height * image.scale
+            
+            if abs(actualPixelWidth - expectedPixelWidth) > 1 || abs(actualPixelHeight - expectedPixelHeight) > 1 {
+                print("⚠️ [MathHTMLRenderer] 尺寸不匹配！期望: \(expectedPixelWidth)×\(expectedPixelHeight)px, 实际: \(actualPixelWidth)×\(actualPixelHeight)px")
+                print("⚠️ [MathHTMLRenderer] 逻辑尺寸期望: \(expectedLogicalWidth)×\(expectedLogicalHeight), 实际: \(image.size)")
+            } else {
+                print("✅ [MathHTMLRenderer] 尺寸匹配正确")
+            }
+            
             return image
         } catch {
             print("MathHTMLRenderer: Snapshot error: \(error.localizedDescription)")

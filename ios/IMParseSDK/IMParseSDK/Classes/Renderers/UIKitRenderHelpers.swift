@@ -129,7 +129,7 @@ internal class MathTextAttachment: NSTextAttachment {
         
         // 计算目标显示尺寸（基于字体行高，考虑屏幕 scale）
         let screenScale = UIScreen.main.scale
-        let minHeight = font.capHeight * 2 // 基础Attachment高度比字体capHeight要放大2倍
+        let minHeight = font.capHeight // 基础Attachment高度比字体capHeight要放大2倍
         let maxHeight = font.capHeight * 4 // 最大Attachment高度比字体capHeight要放大5倍
         let imageAspectRatio = image.size.width / image.size.height
         let availableWidth = context.width*0.7

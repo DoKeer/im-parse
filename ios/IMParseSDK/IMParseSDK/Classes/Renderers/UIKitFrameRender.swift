@@ -198,6 +198,7 @@ public class UIKitFrameRender {
                 if (await MathHTMLRenderer.renderInlineMath(
                     mathContent: mathNode.content,
                     textColor: textColor,
+                    fontSize: context.theme.font.pointSize,
                     formulaSizeCacheDelegate: formulaSizeCacheDelegate
                 )) != nil {
                     // 再次检查是否已取消（渲染完成后）

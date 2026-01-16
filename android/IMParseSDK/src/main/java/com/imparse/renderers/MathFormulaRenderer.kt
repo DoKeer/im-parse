@@ -215,7 +215,8 @@ object MathFormulaRenderer {
             android.graphics.Color.green(textColor),
             android.graphics.Color.blue(textColor)
         )
-        val fontSize = if (mathNode.display) 16.0f else 14.0f
+        // 统一使用主题字体大小，确保行内和块级公式尺寸一致
+        val fontSize = context.theme.fontSize
         val cacheKey = AndroidMathHTMLRenderer.generateMathCacheKey(
             mathNode.content,
             fontSize,

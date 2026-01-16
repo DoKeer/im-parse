@@ -522,7 +522,7 @@ public class MermaidHTMLRenderer {
         
         // 设置快照宽度为实际像素宽度（点数 × scale）
         // 这样可以生成高分辨率图片，避免在 Retina 屏幕上模糊
-        config.snapshotWidth = NSNumber(value: Double(targetRect.width * scale))
+        config.snapshotWidth = NSNumber(value: Double(targetRect.width))
         
         do {
             // 验证生成的图片尺寸（必须在主线程调用）

@@ -590,10 +590,10 @@ class AndroidMathHTMLRenderer private constructor() {
                     
                     val bytes = Base64.decode(base64, Base64.DEFAULT)
                     
-                    // html2canvas 已经根据 scale 生成了高分辨率图片，不需要再次缩放
-                    // 禁用自动缩放，保持原始分辨率以确保清晰度
+                    // html2canvas 已经根据 scale 生成了高分辨率图片
+                    // 设置正确的 density，确保图片按正确的尺寸显示
                     val options = BitmapFactory.Options()
-                    options.inScaled = false // 关键：禁用自动缩放，保持 html2canvas 生成的原始分辨率
+                    options.inScaled = false // 禁用自动缩放，保持 html2canvas 生成的原始分辨率
                     options.inPreferredConfig = Bitmap.Config.ARGB_8888 // 使用高质量配置
                     
                     val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
@@ -603,9 +603,7 @@ class AndroidMathHTMLRenderer private constructor() {
                         cleanupAndComplete(task.webView, task.container, null, task.completion)
                             return@post
                         }
-                    
-                    Log.d(TAG, "Bitmap decoded successfully: ${bitmap.width}x${bitmap.height}, density: ${bitmap.density}")
-                    
+  
                     // 缓存图片
                     imageCache[task.cacheKey] = bitmap
                         

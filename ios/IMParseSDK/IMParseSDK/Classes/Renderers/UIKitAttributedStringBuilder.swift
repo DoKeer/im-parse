@@ -236,11 +236,10 @@ public class UIKitAttributedStringBuilder {
         
         // 生成缓存键
         let textColor = context.currentTextColor ?? context.theme.textColor
-        let fontSize = 12.0 // 行内公式用12号字
         let cacheKey = generateMathCacheKey(
             mathContent: mathNode.content,
             textColor: textColor,
-            fontSize: fontSize,
+            fontSize: font.pointSize,
             display: false // 行内公式
         )
         
@@ -264,7 +263,7 @@ public class UIKitAttributedStringBuilder {
             let renderInfo = InlineMathRenderInfo(
                 mathNode: mathNode,
                 textColor: textColor,
-                fontSize: fontSize
+                fontSize: font.pointSize
             )
             mutableAttrString.addAttribute(
                 .inlineMathRenderInfo,
