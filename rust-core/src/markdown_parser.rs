@@ -34,7 +34,7 @@
 use crate::ast::*;
 use crate::ast_builder::ASTBuilder;
 use crate::event_stream::EventStream;
-use crate::text_span::{TextBuffer, MathParser, SpanBasedBuilder, InlineStyle};
+use crate::text_span::{InlineSyntaxParser, InlineSyntaxSpan};
 use crate::ParseError;
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd, HeadingLevel};
 
@@ -70,15 +70,28 @@ use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd, Heading
 /// 
 /// ## 特性支持
 /// 
+/// ### 块级元素
 /// - ✅ 段落、标题、引用块
 /// - ✅ 列表（有序、无序、任务列表、嵌套）
 /// - ✅ 表格
 /// - ✅ 代码块（普通 + Mermaid）
-/// - ✅ 行内样式（粗体、斜体、删除线、链接）
-/// - ✅ 数学公式（行内 $...$ 和块级 $$...$$）
-/// - ✅ 图片
-/// - ✅ HTML 内联
-/// - ✅ 水平线
+/// - ✅ 水平线/分割线
+/// - ✅ HTML 块
+/// - ✅ 图片 块
+/// 
+/// ### 行内元素（由 pulldown-cmark 原生支持）
+/// - ✅ 粗体 `**text**`
+/// - ✅ 斜体 `*text*`
+/// - ✅ 删除线 `~~text~~`
+/// - ✅ 链接 `[text](url)`
+/// - ✅ 行内代码 `` `code` ``
+/// - ✅ 图片 `![alt](url)`
+/// 
+/// ### 行内扩展语法（由 InlineSyntaxParser 支持）
+/// - ✅ 数学公式：行内 `$...$` 和块级 `$$...$$`
+/// - ✅ 上标 `^text^`（如 x^2^ → x²）
+/// - ✅ 下标 `~text~`（如 H~2~O → H₂O）
+/// - ✅ 高亮 `==text==`
 /// 
 /// ## 性能优化
 /// 
@@ -1101,17 +1114,57 @@ impl MarkdownParser {
                     }
                 }
                 
-                // 检查合并后的文本是否包含块级公式
-                if combined_text.contains("$$") {
-                    // 使用 MathParser 解析合并后的文本
-                    use crate::text_span::{TextBuffer as SpanTextBuffer, MathParser, SpanBasedBuilder, InlineStyle};
+                // 检查合并后的文本是否包含特殊语法（块级公式等）
+                let has_special = combined_text.contains("$$") 
+                    || combined_text.contains('$')
+                    || combined_text.contains("==")
+                    || combined_text.contains('^')
+                    || combined_text.contains('~');
+                
+                if has_special {
+                    // 使用统一的 InlineSyntaxParser 解析
+                    let syntax_spans = InlineSyntaxParser::parse(&combined_text);
                     
-                    let mut text_buffer = SpanTextBuffer::new();
-                    let content_spans = MathParser::parse(&combined_text);
-                    
-                    // 为合并文本创建空的样式span
-                    text_buffer.push(&combined_text, &[]);
-                    let nodes = SpanBasedBuilder::build_nodes(&text_buffer, &content_spans);
+                    // 将解析结果转换为 AST 节点
+                    let mut nodes = Vec::new();
+                    for span in syntax_spans {
+                        match span {
+                            InlineSyntaxSpan::BlockMath { range } => {
+                                nodes.push(ASTNode::MathBlock(MathNode {
+                                    content: combined_text[range].to_string(),
+                                }));
+                            }
+                            InlineSyntaxSpan::InlineMath { range } => {
+                                nodes.push(ASTNode::InlineMath(MathNode {
+                                    content: combined_text[range].to_string(),
+                                }));
+                            }
+                            InlineSyntaxSpan::Superscript { range } => {
+                                nodes.push(ASTNode::Text(TextRun::with_styles(
+                                    combined_text[range].to_string(),
+                                    vec![TextStyle::Superscript],
+                                )));
+                            }
+                            InlineSyntaxSpan::Subscript { range } => {
+                                nodes.push(ASTNode::Text(TextRun::with_styles(
+                                    combined_text[range].to_string(),
+                                    vec![TextStyle::Subscript],
+                                )));
+                            }
+                            InlineSyntaxSpan::Highlight { range } => {
+                                nodes.push(ASTNode::Text(TextRun::with_styles(
+                                    combined_text[range].to_string(),
+                                    vec![TextStyle::BackgroundColor { color: "#FFFF00".to_string() }],
+                                )));
+                            }
+                            InlineSyntaxSpan::Text { range } => {
+                                let text = &combined_text[range];
+                                if !text.is_empty() {
+                                    nodes.push(ASTNode::Text(TextRun::new(text.to_string())));
+                                }
+                            }
+                        }
+                    }
                     
                     // 检查是否有块级公式
                     let has_block_math = nodes.iter().any(|node| matches!(node, ASTNode::MathBlock(_)));
@@ -1225,12 +1278,12 @@ impl MarkdownParser {
         LinkKind::Explicit
     }
     
-    /// 处理累积的文本缓冲区（V2 - 使用扁平化 TextRun）
+    /// 处理累积的文本缓冲区（V3 - 使用统一的 InlineSyntaxParser）
     /// 
-    /// Phase 2 优化：
-    /// - 使用 TextBuffer 避免重复字符串分配
-    /// - 使用 MathParser 一次遍历完成公式解析
-    /// - 直接构造 TextRun 节点，复杂度 O(n)
+    /// Phase 3 优化：
+    /// - 使用 InlineSyntaxParser 统一解析所有行内语法
+    /// - 支持：数学公式、上标、下标、高亮
+    /// - 一次遍历完成所有解析，复杂度 O(n)
     fn flush_text_buffer(
         &self,
         buffer: &mut Vec<TextFragment>,
@@ -1240,38 +1293,106 @@ impl MarkdownParser {
             return;
         }
         
-        // 1. 构建 TextBuffer（Span-based）
-        let mut text_buffer = TextBuffer::new();
+        // 1. 合并所有片段的文本和样式
+        let mut full_text = String::new();
+        let mut style_ranges: Vec<(std::ops::Range<usize>, Vec<TextStyle>)> = Vec::new();
+        
         for fragment in buffer.iter() {
-            // TextStyle 已经是语义化的样式
-            let span_styles: Vec<InlineStyle> = fragment.styles.iter().map(|s| {
-                match s {
-                    TextStyle::Bold => InlineStyle::Strong,
-                    TextStyle::Italic => InlineStyle::Em,
-                    TextStyle::Strikethrough => InlineStyle::Strike,
-                    TextStyle::Underline => InlineStyle::Underline,
-                    TextStyle::Color { color } => InlineStyle::Color(color.clone()),
-                    // 其他样式暂不支持在 SpanBasedBuilder 中
-                    _ => InlineStyle::Strong, // fallback
-                }
-            }).collect();
+            let start = full_text.len();
+            full_text.push_str(&fragment.content);
+            let end = full_text.len();
             
-            text_buffer.push(&fragment.content, &span_styles);
+            if !fragment.styles.is_empty() {
+                style_ranges.push((start..end, fragment.styles.clone()));
+            }
         }
         
-        if text_buffer.is_empty() {
+        if full_text.is_empty() {
             buffer.clear();
             return;
         }
         
-        // 2. 使用 MathParser 解析数学公式（O(n) 复杂度）
-        let content_spans = MathParser::parse(text_buffer.full_text());
+        // 2. 使用 InlineSyntaxParser 解析所有行内语法（O(n) 复杂度）
+        let syntax_spans = InlineSyntaxParser::parse(&full_text);
         
-        // 3. 使用 SpanBasedBuilder 构造 AST 节点
-        let nodes = SpanBasedBuilder::build_nodes(&text_buffer, &content_spans);
+        // 3. 构造 AST 节点
+        for span in syntax_spans {
+            match span {
+                InlineSyntaxSpan::BlockMath { range } => {
+                    children.push(ASTNode::MathBlock(MathNode {
+                        content: full_text[range].to_string(),
+                    }));
+                }
+                
+                InlineSyntaxSpan::InlineMath { range } => {
+                    children.push(ASTNode::InlineMath(MathNode {
+                        content: full_text[range].to_string(),
+                    }));
+                }
+                
+                InlineSyntaxSpan::Superscript { range } => {
+                    let base_styles = Self::find_styles_for_range(&style_ranges, &range);
+                    let mut styles = base_styles;
+                    styles.push(TextStyle::Superscript);
+                    children.push(ASTNode::Text(TextRun::with_styles(
+                        full_text[range].to_string(),
+                        styles,
+                    )));
+                }
+                
+                InlineSyntaxSpan::Subscript { range } => {
+                    let base_styles = Self::find_styles_for_range(&style_ranges, &range);
+                    let mut styles = base_styles;
+                    styles.push(TextStyle::Subscript);
+                    children.push(ASTNode::Text(TextRun::with_styles(
+                        full_text[range].to_string(),
+                        styles,
+                    )));
+                }
+                
+                InlineSyntaxSpan::Highlight { range } => {
+                    let base_styles = Self::find_styles_for_range(&style_ranges, &range);
+                    let mut styles = base_styles;
+                    styles.push(TextStyle::BackgroundColor { color: "#FFFF00".to_string() });
+                    children.push(ASTNode::Text(TextRun::with_styles(
+                        full_text[range].to_string(),
+                        styles,
+                    )));
+                }
+                
+                InlineSyntaxSpan::Text { range } => {
+                    let text_content = &full_text[range.clone()];
+                    if !text_content.is_empty() {
+                        let styles = Self::find_styles_for_range(&style_ranges, &range);
+                        let text_run = if styles.is_empty() {
+                            TextRun::new(text_content.to_string())
+                        } else {
+                            TextRun::with_styles(text_content.to_string(), styles)
+                        };
+                        children.push(ASTNode::Text(text_run));
+                    }
+                }
+            }
+        }
         
-        children.extend(nodes);
         buffer.clear();
+    }
+    
+    /// 查找与指定范围重叠的样式
+    fn find_styles_for_range(
+        style_ranges: &[(std::ops::Range<usize>, Vec<TextStyle>)],
+        target_range: &std::ops::Range<usize>,
+    ) -> Vec<TextStyle> {
+        let mut result = Vec::new();
+        
+        for (range, styles) in style_ranges {
+            // 检查范围是否重叠
+            if range.start < target_range.end && range.end > target_range.start {
+                result.extend(styles.clone());
+            }
+        }
+        
+        result
     }
 }
 

@@ -1,6 +1,6 @@
 // 测试包含多个行内数学公式的文本解析
 
-use im_parse_core::{parse_markdown, MarkdownParser};
+use im_parse_core::MarkdownParser;
 use im_parse_core::ast::*;
 
 #[test]
@@ -31,8 +31,11 @@ fn test_gamma_function_with_condition() {
                 ASTNode::Text(text) => {
                     println!("[{}] Text: {:?}", i, text.content);
                 }
-                ASTNode::Math(math) => {
-                    println!("[{}] Math (display={}): {:?}", i, math.display, math.content);
+                ASTNode::InlineMath(math) => {
+                    println!("[{}] InlineMath: {:?}", i, math.content);
+                }
+                ASTNode::MathBlock(math) => {
+                    println!("[{}] MathBlock: {:?}", i, math.content);
                 }
                 _ => {
                     println!("[{}] Other: {:?}", i, child);
@@ -40,22 +43,21 @@ fn test_gamma_function_with_condition() {
             }
         }
         
-        // 检查数学公式的数量
-        let math_count = para.children.iter().filter(|n| matches!(n, ASTNode::Math(_))).count();
-        println!("\n数学公式数量: {}", math_count);
+        // 检查数学公式的数量（包括行内和块级）
+        let inline_math_count = para.children.iter()
+            .filter(|n| matches!(n, ASTNode::InlineMath(_)))
+            .count();
+        println!("\n行内数学公式数量: {}", inline_math_count);
         
         // 预期应该有 2 个行内数学公式
-        assert_eq!(math_count, 2, "应该解析出 2 个行内数学公式");
+        assert_eq!(inline_math_count, 2, "应该解析出 2 个行内数学公式");
         
-        // 检查第一个数学公式（伽玛函数定义）
+        // 检查数学公式内容
         let math_nodes: Vec<_> = para.children.iter()
-            .filter_map(|n| if let ASTNode::Math(m) = n { Some(m) } else { None })
+            .filter_map(|n| if let ASTNode::InlineMath(m) = n { Some(m) } else { None })
             .collect();
         
-        assert_eq!(math_nodes[0].display, false, "第一个公式应该是行内公式");
         assert!(math_nodes[0].content.contains("\\Gamma"), "第一个公式应该包含 \\Gamma");
-        
-        assert_eq!(math_nodes[1].display, false, "第二个公式应该是行内公式");
         assert!(math_nodes[1].content.contains("mathbb"), "第二个公式应该包含 mathbb");
         
     } else {
@@ -97,7 +99,7 @@ fn test_inline_math_separation() {
         
         if let Some(ASTNode::Paragraph(para)) = ast.children.first() {
             let math_count = para.children.iter()
-                .filter(|n| matches!(n, ASTNode::Math(_)))
+                .filter(|n| matches!(n, ASTNode::InlineMath(_)))
                 .count();
             
             println!("数学公式数量: {}", math_count);
@@ -106,4 +108,3 @@ fn test_inline_math_separation() {
         }
     }
 }
-

@@ -14,13 +14,13 @@ fn test_problematic_gamma_formulas() {
     let ast1 = parser.parse(markdown_input1).expect("Failed to parse markdown 1");
     println!("{}", serde_json::to_string_pretty(&ast1).unwrap());
     
-    // 提取数学公式
+    // 提取数学公式（包括行内和块级）
     if let Some(ASTNode::Paragraph(para)) = ast1.children.first() {
         let math_nodes: Vec<&MathNode> = para.children.iter().filter_map(|node| {
-            if let ASTNode::Math(math) = node {
-                Some(math)
-            } else {
-                None
+            match node {
+                ASTNode::InlineMath(math) => Some(math),
+                ASTNode::MathBlock(math) => Some(math),
+                _ => None,
             }
         }).collect();
         
@@ -28,10 +28,9 @@ fn test_problematic_gamma_formulas() {
         for (i, math) in math_nodes.iter().enumerate() {
             println!("\n公式 {}:", i + 1);
             println!("  内容: {}", math.content);
-            println!("  display: {}", math.display);
             
-            // 测试 KaTeX 渲染
-            match math_to_html(&math.content, math.display) {
+            // 测试 KaTeX 渲染（行内公式用 false）
+            match math_to_html(&math.content, false) {
                 Ok(html) => {
                     println!("  KaTeX 渲染结果: ✅ 成功");
                     println!("  HTML 长度: {} 字符", html.len());
@@ -51,10 +50,10 @@ fn test_problematic_gamma_formulas() {
     // 提取数学公式
     if let Some(ASTNode::Paragraph(para)) = ast2.children.first() {
         let math_nodes: Vec<&MathNode> = para.children.iter().filter_map(|node| {
-            if let ASTNode::Math(math) = node {
-                Some(math)
-            } else {
-                None
+            match node {
+                ASTNode::InlineMath(math) => Some(math),
+                ASTNode::MathBlock(math) => Some(math),
+                _ => None,
             }
         }).collect();
         
@@ -62,10 +61,9 @@ fn test_problematic_gamma_formulas() {
         for (i, math) in math_nodes.iter().enumerate() {
             println!("\n公式 {}:", i + 1);
             println!("  内容: {}", math.content);
-            println!("  display: {}", math.display);
             
             // 测试 KaTeX 渲染
-            match math_to_html(&math.content, math.display) {
+            match math_to_html(&math.content, false) {
                 Ok(html) => {
                     println!("  KaTeX 渲染结果: ✅ 成功");
                     println!("  HTML 长度: {} 字符", html.len());

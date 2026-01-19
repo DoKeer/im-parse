@@ -154,10 +154,13 @@ impl ASTBuilder {
         self.text_buffer.push_str(&text);
     }
     
-    /// 刷新文本缓冲区（生成 TextRun 或数学公式节点）
+    /// 刷新文本缓冲区（生成 TextRun 或特殊语法节点）
     /// 
-    /// 如果文本中包含数学公式（$...$ 或 $$...$$），会使用 MathParser 解析
-    /// 如果文本中包含高亮语法（==text==），会解析并应用高亮样式
+    /// 使用统一的 InlineSyntaxParser 解析：
+    /// - 数学公式（$...$ 和 $$...$$）
+    /// - 上标（^text^）
+    /// - 下标（~text~）
+    /// - 高亮（==text==）
     fn flush_text_buffer(&mut self) {
         if self.text_buffer.is_empty() {
             return;
@@ -166,58 +169,75 @@ impl ASTBuilder {
         let content = std::mem::take(&mut self.text_buffer);
         let styles = self.current_styles();
         
-        // 检查是否包含数学公式或高亮语法
-        let has_math = content.contains('$');
-        let has_highlight = content.contains("==");
+        // 检查是否包含特殊语法
+        let has_special_syntax = content.contains('$') 
+            || content.contains("==") 
+            || content.contains('^') 
+            || content.contains('~');
         
-        if has_math || has_highlight {
-            // 使用 SpanBasedBuilder 解析（支持数学公式和高亮语法）
-            use crate::text_span::{TextBuffer as SpanTextBuffer, MathParser, SpanBasedBuilder, InlineStyle};
+        if has_special_syntax {
+            // 使用统一的 InlineSyntaxParser 解析所有行内语法
+            use crate::text_span::{InlineSyntaxParser, InlineSyntaxSpan};
             
-            // 先解析高亮语法，将==text==转换为带BackgroundColor的文本
-            let processed_content = if has_highlight {
-                Self::parse_highlight_syntax(&content, &styles)
-            } else {
-                vec![(content, styles)]
-            };
+            let syntax_spans = InlineSyntaxParser::parse(&content);
             
-            // 处理每个片段
-            let mut text_buffer = SpanTextBuffer::new();
-            let mut all_nodes = Vec::new();
-            
-            for (fragment_content, fragment_styles) in processed_content {
-                if has_math && fragment_content.contains('$') {
-                    // 包含数学公式，使用MathParser
-                    let span_styles: Vec<InlineStyle> = fragment_styles.iter().map(|s| {
-                        match s {
-                            TextStyle::Bold => InlineStyle::Strong,
-                            TextStyle::Italic => InlineStyle::Em,
-                            TextStyle::Strikethrough => InlineStyle::Strike,
-                            TextStyle::Underline => InlineStyle::Underline,
-                            TextStyle::Color { color } => InlineStyle::Color(color.clone()),
-                            _ => InlineStyle::Strong, // fallback
-                        }
-                    }).collect();
+            // 将解析结果转换为 AST 节点
+            for span in syntax_spans {
+                match span {
+                    InlineSyntaxSpan::BlockMath { range } => {
+                        self.current_paragraph_children.push(ASTNode::MathBlock(MathNode {
+                            content: content[range].to_string(),
+                        }));
+                    }
                     
-                    text_buffer.push(&fragment_content, &span_styles);
-                    let content_spans = MathParser::parse(text_buffer.full_text());
-                    let nodes = SpanBasedBuilder::build_nodes(&text_buffer, &content_spans);
-                    all_nodes.extend(nodes);
-                    text_buffer = SpanTextBuffer::new(); // 重置
-                } else {
-                    // 不包含数学公式，直接构造TextRun
-                    let text_run = if fragment_styles.is_empty() {
-                        TextRun::new(fragment_content)
-                    } else {
-                        TextRun::with_styles(fragment_content, fragment_styles)
-                    };
-                    all_nodes.push(ASTNode::Text(text_run));
+                    InlineSyntaxSpan::InlineMath { range } => {
+                        self.current_paragraph_children.push(ASTNode::InlineMath(MathNode {
+                            content: content[range].to_string(),
+                        }));
+                    }
+                    
+                    InlineSyntaxSpan::Superscript { range } => {
+                        let mut combined_styles = styles.clone();
+                        combined_styles.push(TextStyle::Superscript);
+                        self.current_paragraph_children.push(ASTNode::Text(TextRun::with_styles(
+                            content[range].to_string(),
+                            combined_styles,
+                        )));
+                    }
+                    
+                    InlineSyntaxSpan::Subscript { range } => {
+                        let mut combined_styles = styles.clone();
+                        combined_styles.push(TextStyle::Subscript);
+                        self.current_paragraph_children.push(ASTNode::Text(TextRun::with_styles(
+                            content[range].to_string(),
+                            combined_styles,
+                        )));
+                    }
+                    
+                    InlineSyntaxSpan::Highlight { range } => {
+                        let mut combined_styles = styles.clone();
+                        combined_styles.push(TextStyle::BackgroundColor { color: "#FFFF00".to_string() });
+                        self.current_paragraph_children.push(ASTNode::Text(TextRun::with_styles(
+                            content[range].to_string(),
+                            combined_styles,
+                        )));
+                    }
+                    
+                    InlineSyntaxSpan::Text { range } => {
+                        let text_content = &content[range];
+                        if !text_content.is_empty() {
+                            let text_run = if styles.is_empty() {
+                                TextRun::new(text_content.to_string())
+                            } else {
+                                TextRun::with_styles(text_content.to_string(), styles.clone())
+                            };
+                            self.current_paragraph_children.push(ASTNode::Text(text_run));
+                        }
+                    }
                 }
             }
-            
-            self.current_paragraph_children.extend(all_nodes);
         } else {
-            // 无数学公式和高亮语法，直接构造 TextRun
+            // 无特殊语法，直接构造 TextRun
             let text_run = if styles.is_empty() {
                 TextRun::new(content)
             } else {
@@ -226,64 +246,6 @@ impl ASTBuilder {
             
             self.current_paragraph_children.push(ASTNode::Text(text_run));
         }
-    }
-    
-    /// 解析高亮语法 ==text==，返回(文本内容, 样式列表)的片段列表
-    /// 高亮文本会应用BackgroundColor样式（黄色：#FFFF00）
-    fn parse_highlight_syntax(content: &str, base_styles: &[TextStyle]) -> Vec<(String, Vec<TextStyle>)> {
-        let mut result = Vec::new();
-        let mut current_pos = 0;
-        let chars: Vec<char> = content.chars().collect();
-        
-        while current_pos < chars.len() {
-            // 查找下一个 ==
-            if let Some(start) = chars[current_pos..].windows(2).position(|w| w == &['=', '=']) {
-                let highlight_start = current_pos + start;
-                
-                // 查找匹配的结束 ==
-                if let Some(end) = chars[highlight_start + 2..].windows(2).position(|w| w == &['=', '=']) {
-                    let highlight_end = highlight_start + 2 + end;
-                    
-                    // 添加高亮前的文本
-                    if highlight_start > current_pos {
-                        let before_text: String = chars[current_pos..highlight_start].iter().collect();
-                        if !before_text.is_empty() {
-                            result.push((before_text, base_styles.to_vec()));
-                        }
-                    }
-                    
-                    // 添加高亮文本
-                    let highlight_text: String = chars[highlight_start + 2..highlight_end].iter().collect();
-                    if !highlight_text.is_empty() {
-                        let mut highlight_styles = base_styles.to_vec();
-                        highlight_styles.push(TextStyle::BackgroundColor { color: "#FFFF00".to_string() });
-                        result.push((highlight_text, highlight_styles));
-                    }
-                    
-                    current_pos = highlight_end + 2;
-                } else {
-                    // 没有找到匹配的结束==，将剩余文本作为普通文本
-                    let remaining: String = chars[current_pos..].iter().collect();
-                    if !remaining.is_empty() {
-                        result.push((remaining, base_styles.to_vec()));
-                    }
-                    break;
-                }
-            } else {
-                // 没有找到更多的==，将剩余文本作为普通文本
-                let remaining: String = chars[current_pos..].iter().collect();
-                if !remaining.is_empty() {
-                    result.push((remaining, base_styles.to_vec()));
-                }
-                break;
-            }
-        }
-        
-        if result.is_empty() {
-            result.push((content.to_string(), base_styles.to_vec()));
-        }
-        
-        result
     }
     
     /// 添加行内代码（自动刷新文本缓冲区并应用 Code 样式）
