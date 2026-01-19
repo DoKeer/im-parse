@@ -205,9 +205,15 @@ object InlineNodeRenderer {
                 is TextStyle.FontFamily -> 
                     typeface = android.graphics.Typeface.create(style.family, android.graphics.Typeface.NORMAL)
                 is TextStyle.Superscript -> 
+                {
+                    spans.add(android.text.style.RelativeSizeSpan(0.7f))
                     spans.add(android.text.style.SuperscriptSpan())
-                is TextStyle.Subscript -> 
+                }
+                is TextStyle.Subscript ->
+                {
+                    spans.add(android.text.style.RelativeSizeSpan(0.7f))
                     spans.add(android.text.style.SubscriptSpan())
+                }
                 is TextStyle.Code -> {
                     typeface = android.graphics.Typeface.MONOSPACE
                     textColor = context.theme.codeTextColor

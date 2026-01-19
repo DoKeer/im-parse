@@ -112,7 +112,7 @@ object MessageDataGenerator {
             
             段落内
             换行  Option/Alt Enter 或者 Shift Enter
-            上标^th^ 
+            上标^2^ 
             下标~2~ 
             
             行内 ![图片](https://iph.href.lu/879x200) 行内2:![示例图片](https://iph.href.lu/879x200) 行内3:![示例图片](https://iph.href.lu/879x200) 
