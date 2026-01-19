@@ -178,7 +178,7 @@ class AndroidViewRenderer {
         val displayMetrics = textView.context.resources.displayMetrics
         
         for (child in node.children) {
-            appendInlineNode(spannable, child, context, mathNodes, displayMetrics, textView)
+            InlineNodeRenderer.appendInlineNode(spannable, child, context, mathNodes, displayMetrics, textView)
         }
         
         textView.text = spannable
@@ -186,7 +186,7 @@ class AndroidViewRenderer {
         
         // 异步渲染行内数学公式
         if (mathNodes.isNotEmpty()) {
-            AndroidViewRenderer.renderInlineMathNodes(textView, spannable, mathNodes, context)
+            InlineNodeRenderer.renderInlineMathNodes(textView, spannable, mathNodes, context)
         }
         
         return textView
@@ -219,7 +219,7 @@ class AndroidViewRenderer {
         
         val spannable = SpannableStringBuilder()
         for (child in node.children) {
-            appendInlineNode(spannable, child, context)
+            InlineNodeRenderer.appendInlineNode(spannable, child, context)
         }
         
         textView.text = spannable
@@ -356,7 +356,7 @@ class AndroidViewRenderer {
         val textView = TextView(context.context)
         val spannable = SpannableStringBuilder()
         for (child in node.children) {
-            appendInlineNode(spannable, child, context)
+            InlineNodeRenderer.appendInlineNode(spannable, child, context)
         }
         
         val clickableSpan = object : ClickableSpan() {
@@ -1137,45 +1137,6 @@ class AndroidViewRenderer {
      * 异步加载行内图片并创建 ImageSpan
      */
     /**
-     * 处理行内图片的占位符添加和加载逻辑
-     * 供 appendInlineNode 和 renderInlineImageAsTextView 共用
-     */
-    private fun handleInlineImage(
-        node: ImageNode,
-        context: AndroidRenderContext,
-        displayMetrics: android.util.DisplayMetrics?,
-        textView: TextView?,
-        builder: SpannableStringBuilder
-    ) {
-        val start = builder.length
-        // 先添加占位符文本
-        val placeholder = "\uFFFC" // 使用对象替换字符作为占位符
-        builder.append(placeholder)
-        val end = builder.length
-        
-        // 尝试异步加载图片（如果 imageLoader 支持）
-        if (context.imageLoader != null && displayMetrics != null && textView != null) {
-            // 异步加载图片并创建 ImageSpan
-            loadInlineImage(
-                node,
-                context,
-                displayMetrics,
-                textView,
-                builder,
-                start,
-                end
-            )
-        } else {
-            // 如果没有 imageLoader，显示 alt 文本或占位符
-            if (node.alt == null) {
-                // 如果没有 alt 文本，显示 URL 的简短形式
-                builder.replace(start, end, "[图片]")
-            }
-            // 如果 node.alt 不为 null，保持占位符 \uFFFC
-        }
-    }
-    
-    /**
      * 创建 TextView 并渲染行内图片
      * 用于在 renderNode 中处理行内图片节点
      */
@@ -1195,287 +1156,13 @@ class AndroidViewRenderer {
         val displayMetrics = textView.context.resources.displayMetrics
         
         // 使用公共方法处理行内图片
-        handleInlineImage(node, context, displayMetrics, textView, spannable)
+        InlineNodeRenderer.handleInlineImage(node, context, displayMetrics, textView, spannable)
         
         textView.text = spannable
         textView.movementMethod = LinkMovementMethod.getInstance()
         return textView
     }
-    
-    private fun loadInlineImage(
-        node: ImageNode,
-        context: AndroidRenderContext,
-        displayMetrics: android.util.DisplayMetrics,
-        textView: TextView,
-        builder: SpannableStringBuilder,
-        start: Int,
-        end: Int
-    ) {
-        val fontSizePx = context.spToPx(context.theme.fontSize)
 
-        // 使用 imageLoader 直接下载图片（imageView 为 null）
-        context.imageLoader?.loadImage(node.url, null) { result ->
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                // 当 imageView 为 null 时，回调返回 Bitmap?
-                val bitmap = result as? Bitmap
-                
-                if (bitmap != null) {
-                    // 检查索引是否仍然有效（异步回调时 builder 可能已被修改）
-                    val currentLength = builder.length
-                    if (start < 0 || start >= currentLength) {
-                        // 占位符位置已无效，跳过
-                        return@post
-                    }
-                    
-                    // 确保 end 不超过当前长度
-                    val safeEnd = minOf(end, currentLength)
-                    if (safeEnd <= start) {
-                        // 无效的范围，跳过
-                        return@post
-                    }
-                    
-                    // 创建行内图片 Span（参考 iOS 实现）
-                    val imageSpan = InlineImageSpan(
-                        context.context,
-                        bitmap,
-                        node,
-                        fontSizePx,
-                        context.contentWidth,
-                        context.widthProvider
-                    )
-                    
-                    // 替换占位符为对象替换字符
-                    builder.replace(start, safeEnd, "\uFFFC")
-                    
-                    // 设置 ImageSpan
-                    builder.setSpan(
-                        imageSpan,
-                        start,
-                        start + 1, // \uFFFC 是单个字符
-                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                    
-                    // 添加点击事件
-                    if (context.onImageTap != null) {
-                        val clickableSpan = object : ClickableSpan() {
-                            override fun onClick(widget: View) {
-                                context.onImageTap?.invoke(node)
-                            }
-                        }
-                        builder.setSpan(
-                            clickableSpan,
-                            start,
-                            start + 1,
-                            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                        )
-                    }
-                    
-                    // 更新 TextView
-                    textView.text = builder
-                }
-            }
-        }
-    }
-    
-    /**
-     * 追加行内节点到 SpannableStringBuilder
-     */
-    private fun appendInlineNode(
-        builder: SpannableStringBuilder,
-        node: ASTNode,
-        context: AndroidRenderContext,
-        mathNodes: MutableList<Pair<Int, MathNode>> = mutableListOf(),
-        displayMetrics: android.util.DisplayMetrics? = null,
-        textView: TextView? = null
-    ) {
-        when (node) {
-            // V2: TextRun with flattened styles
-            is TextRunNode -> {
-                val start = builder.length
-                builder.append(node.textRun.content)
-                // 应用所有样式到这段文本
-                applyTextStylesToSpan(builder, start, builder.length, node.textRun.styles, context)
-            }
-            
-            // V2: InlineMath
-            is InlineMathNode -> {
-                val start = builder.length
-                
-                if (displayMetrics != null) {
-                    // 转换为MathNode用于现有渲染器（临时转换）
-                    val mathNode = MathNode(node.content, false)
-                    val cachedSpan = MathFormulaRenderer.checkAndCreateInlineMathSpan(
-                        mathNode,
-                        context,
-                        displayMetrics,
-                        textView
-                    )
-                    
-                    if (cachedSpan != null) {
-                        builder.append("\uFFFC")
-                        val end = builder.length
-                        builder.setSpan(
-                            cachedSpan.imageSpan,
-                            start, end,
-                            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                        )
-                        cachedSpan.clickableSpan?.let {
-                            builder.setSpan(it, start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                        }
-                    } else {
-                        builder.append(node.content)
-                        mathNodes.add(Pair(start, mathNode))
-                    }
-                } else {
-                    builder.append(node.content)
-                }
-            }
-            
-            // V2: Link
-            is LinkNode -> {
-                val start = builder.length
-                for (child in node.children) {
-                    appendInlineNode(builder, child, context, mathNodes, displayMetrics, textView)
-                }
-                val clickableSpan = object : ClickableSpan() {
-                    override fun onClick(widget: View) {
-                        context.onLinkTap?.invoke(node.url)
-                    }
-                    
-                    override fun updateDrawState(ds: TextPaint) {
-                        super.updateDrawState(ds)
-                        ds.color = context.theme.linkColor
-                        ds.isUnderlineText = true
-                    }
-                }
-                builder.setSpan(
-                    clickableSpan,
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            // V2: 行内图片（display == ImageDisplay.Inline）
-            is ImageNode -> {
-                if (node.display == ImageDisplay.Inline) {
-                    // 使用公共方法处理行内图片
-                    handleInlineImage(node, context, displayMetrics, textView, builder)
-                } else {
-                    // 块级图片不应该在这里处理，但为了兼容性，显示占位符
-                    builder.append(node.alt ?: "[图片]")
-                }
-            }
-            is EmojiNode -> builder.append(node.content)
-            is MentionNode -> {
-                val start = builder.length
-                builder.append("@${node.name}")
-                builder.setSpan(
-                    ForegroundColorSpan(context.theme.mentionTextColor),
-                    start,
-                    builder.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            else -> {
-                // 其他节点类型，尝试提取文本
-                builder.append(node.toString())
-            }
-        }
-    }
-
-    object AndroidViewRenderer {
-
-        /**
-         * 异步渲染行内数学公式（只处理没有缓存的公式）
-         * 等待所有公式渲染完成后一次性替换原文为 ImageSpan
-         */
-        fun renderInlineMathNodes(
-            textView: TextView,
-            spannable: SpannableStringBuilder,
-            mathNodes: List<Pair<Int, MathNode>>,
-            context: AndroidRenderContext
-        ) {
-            if (mathNodes.isEmpty()) return
-
-            // 用于收集所有渲染结果
-            val renderResults = mutableMapOf<Int, MathFormulaRenderer.InlineMathRenderResult>()
-            var completedCount = 0
-            val totalCount = mathNodes.size
-
-            // 为每个数学公式使用统一的渲染方法
-            mathNodes.forEach { (position, mathNode) ->
-                MathFormulaRenderer.renderInlineMath(
-                    textView = textView,
-                    spannable = spannable,
-                    position = position,
-                    placeholderLength = 1, // 占位符长度（\uFFFC 是单个字符）
-                    mathNode = mathNode,
-                    context = context,
-                    onResult = { result ->
-                        // 收集渲染结果
-                        renderResults[position] = result
-                    },
-                    onComplete = {
-                        completedCount++
-                        if (completedCount == totalCount) {
-                            // 所有公式渲染完成，一次性替换所有公式
-                            applyMathRenderResults(textView, spannable, renderResults.values.toList())
-                            textView.text = spannable
-                        }
-                    }
-                )
-            }
-        }
-        
-        /**
-         * 应用所有数学公式的渲染结果到 SpannableStringBuilder
-         */
-        private fun applyMathRenderResults(
-            textView: TextView,
-            spannable: SpannableStringBuilder,
-            results: List<MathFormulaRenderer.InlineMathRenderResult>
-        ) {
-            // 按位置从后往前排序，避免替换时位置偏移
-            val sortedResults = results.sortedByDescending { it.position }
-            
-            for (result in sortedResults) {
-                try {
-                    if (result.imageSpan != null) {
-                        // 有渲染结果，替换原文为 ImageSpan
-                        val originalTextStart = result.position
-                        val originalTextEnd = originalTextStart + result.originalText.length
-                        
-                        if (originalTextEnd <= spannable.length) {
-                            // 移除原文，添加占位符 \uFFFC (对象替换字符)
-                            spannable.replace(originalTextStart, originalTextEnd, "\uFFFC")
-                            
-                            // 设置 ImageSpan（绑定在占位符上）
-                            spannable.setSpan(
-                                result.imageSpan,
-                                result.position,
-                                result.position + 1, // \uFFFC 是单个字符
-                                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                            )
-                            
-                            // 添加点击事件
-                            if (result.clickableSpan != null) {
-                                spannable.setSpan(
-                                    result.clickableSpan,
-                                    result.position,
-                                    result.position + 1, // \uFFFC 是单个字符
-                                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                                )
-                            }
-                        }
-                    }
-                    // 如果 imageSpan 为 null，保持原文显示，不需要处理
-                } catch (e: Exception) {
-                    android.util.Log.e("AndroidViewRenderer", "Error applying math render result", e)
-                }
-            }
-        }
-    }
-    
     // ==================== V2 AST Support ====================
     
     /**
@@ -1491,107 +1178,6 @@ class AndroidViewRenderer {
         textView.text = spannable
         
         return textView
-    }
-    
-    /**
-     * V2: 应用TextStyle数组到SpannableStringBuilder的指定范围
-     */
-    private fun applyTextStylesToSpan(
-        builder: SpannableStringBuilder,
-        start: Int,
-        end: Int,
-        styles: List<TextStyle>,
-        context: AndroidRenderContext
-    ) {
-        if (start >= end || styles.isEmpty()) return
-        
-        var typeface = Typeface.DEFAULT
-        var isBold = false
-        var isItalic = false
-        var textColor: Int? = null
-        var backgroundColor: Int? = null
-        val spans = mutableListOf<Any>()
-        
-        // 应用所有样式
-        styles.forEach { style ->
-            when (style) {
-                is TextStyle.Bold -> isBold = true
-                is TextStyle.Italic -> isItalic = true
-                is TextStyle.Underline -> 
-                    spans.add(UnderlineSpan())
-                is TextStyle.Strikethrough -> 
-                    spans.add(StrikethroughSpan())
-                is TextStyle.Color -> {
-                    try {
-                        textColor = Color.parseColor(style.color)
-                    } catch (e: Exception) {
-                        android.util.Log.w("AndroidViewRenderer", "Invalid color: ${style.color}")
-                    }
-                }
-                is TextStyle.BackgroundColor -> {
-                    try {
-                        backgroundColor = Color.parseColor(style.color)
-                    } catch (e: Exception) {
-                        android.util.Log.w("AndroidViewRenderer", "Invalid background color: ${style.color}")
-                    }
-                }
-                is TextStyle.FontSize -> 
-                    spans.add(RelativeSizeSpan(style.scale))
-                is TextStyle.FontFamily -> 
-                    typeface = Typeface.create(style.family, Typeface.NORMAL)
-                is TextStyle.Superscript -> 
-                    spans.add(SuperscriptSpan())
-                is TextStyle.Subscript -> 
-                    spans.add(SubscriptSpan())
-                is TextStyle.Code -> {
-                    typeface = Typeface.MONOSPACE
-                    textColor = context.theme.codeTextColor
-                    backgroundColor = context.theme.codeBackgroundColor
-                }
-            }
-        }
-        
-        // 应用字体样式
-        if (isBold && isItalic) {
-            typeface = Typeface.create(typeface, Typeface.BOLD_ITALIC)
-        } else if (isBold) {
-            typeface = Typeface.create(typeface, Typeface.BOLD)
-        } else if (isItalic) {
-            typeface = Typeface.create(typeface, Typeface.ITALIC)
-        }
-        
-        // 设置spans
-        if (typeface != Typeface.DEFAULT) {
-            builder.setSpan(
-                StyleSpan(typeface.style),
-                start, end,
-                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-            )
-        }
-        
-        textColor?.let {
-            builder.setSpan(
-                ForegroundColorSpan(it),
-                start, end,
-                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-            )
-        }
-        
-        backgroundColor?.let {
-            builder.setSpan(
-                BackgroundColorSpan(it),
-                start, end,
-                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-            )
-        }
-        
-        spans.forEach {
-            builder.setSpan(
-                it,
-                start, end,
-                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-            )
-        }
     }
     
     /**
