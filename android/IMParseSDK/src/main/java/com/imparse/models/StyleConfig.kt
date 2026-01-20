@@ -121,7 +121,10 @@ data class StyleConfig(
         /**
          * 获取默认样式配置
          * 从 Rust 层读取标准配置，与 iOS 实现对齐
+         * 
+         * 注意：在 Java 中请使用 getDefault() 方法，因为 default 是 Java 关键字
          */
+        @JvmName("getDefault")
         fun default(): StyleConfig? {
             val jsonString = IMParseCore.getDefaultStyleConfig()
             if (jsonString == null) {

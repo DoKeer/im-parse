@@ -261,56 +261,56 @@ data class AndroidRenderContext(
  * Android 主题配置
  */
 data class AndroidTheme(
-    val fontSize: Float = 16f,
-    val codeFontSize: Float = 14f,
-    val textColor: Int = "#333333".toColorInt(),
-    val backgroundColor: Int = "#ffffff".toColorInt(),
-    val linkColor: Int = "#007AFF".toColorInt(),
-    val codeBackgroundColor: Int = "#f4f4f4".toColorInt(),
-    val codeTextColor: Int = "#333333".toColorInt(),
-    val headingColors: List<Int> = listOf(
+    var fontSize: Float = 16f,
+    var codeFontSize: Float = 14f,
+    var textColor: Int = "#333333".toColorInt(),
+    var backgroundColor: Int = "#ffffff".toColorInt(),
+    var linkColor: Int = "#007AFF".toColorInt(),
+    var codeBackgroundColor: Int = "#f4f4f4".toColorInt(),
+    var codeTextColor: Int = "#333333".toColorInt(),
+    var headingColors: List<Int> = listOf(
         "#333333".toColorInt(), "#333333".toColorInt(), "#333333".toColorInt(),
         "#333333".toColorInt(), "#333333".toColorInt(), "#333333".toColorInt()
     ),
-    val paragraphSpacing: Int = 16,
-    val listItemSpacing: Int = 8,
-    val listMarkerSpacing: Int = 8,
-    val codeBlockPadding: Int = 16,
-    val codeBlockBorderRadius: Int = 8,
-    val codeBlockMaxWidth: Int? = null,
-    val codeBlockMinWidth: Int? = null,
-    val tableCellPadding: Int = 8,
-    val tableBorderColor: Int = "#dddddd".toColorInt(),
-    val tableHeaderBackground: Int = "#f4f4f4".toColorInt(),
-    val tableMaxCellWidth: Int? = null,
-    val tableMinCellWidth: Int? = null,
-    val blockquoteBorderWidth: Int = 4,
-    val blockquoteBorderColor: Int = "#dddddd".toColorInt(),
-    val blockquoteTextColor: Int = "#666666".toColorInt(),
-    val blockquotePadding: Int = 16,
-    val imageBorderRadius: Int = 8,
-    val imageMargin: Int = 0,
-    val mentionBackground: Int = "#E3F2FD".toColorInt(),
-    val mentionTextColor: Int = "#1976D2".toColorInt(),
-    val cardBackground: Int = "#f9f9f9".toColorInt(),
-    val cardBorderColor: Int = "#dddddd".toColorInt(),
-    val cardPadding: Int = 16,
-    val cardBorderRadius: Int = 8,
-    val hrColor: Int = "#dddddd".toColorInt(),
-    val lineSpacing: Float = 4.0f,
-    val maxContentWidth: Int = 800,
-    val contentPadding: Int = 2,
-    val toolbarHeight: Int? = null,
-    val toolbarWidth: Int? = null,
-    val toolbarPadding: Int? = null,
-    val toolbarButtonSize: Int? = null,
-    val toolbarButtonSpacing: Int? = null,
-    val toolbarSwitcherHeight: Int? = null,
-    val toolbarSwitcherButtonWidth: Int? = null,
-    val toolbarSwitcherButtonSpacing: Int? = null,
-    val tableTitle: String? = null,
-    val toolbarPreviewText: String? = null,
-    val toolbarCodeText: String? = null
+    var paragraphSpacing: Int = 16,
+    var listItemSpacing: Int = 8,
+    var listMarkerSpacing: Int = 8,
+    var codeBlockPadding: Int = 16,
+    var codeBlockBorderRadius: Int = 8,
+    var codeBlockMaxWidth: Int? = null,
+    var codeBlockMinWidth: Int? = null,
+    var tableCellPadding: Int = 8,
+    var tableBorderColor: Int = "#dddddd".toColorInt(),
+    var tableHeaderBackground: Int = "#f4f4f4".toColorInt(),
+    var tableMaxCellWidth: Int? = null,
+    var tableMinCellWidth: Int? = null,
+    var blockquoteBorderWidth: Int = 4,
+    var blockquoteBorderColor: Int = "#dddddd".toColorInt(),
+    var blockquoteTextColor: Int = "#666666".toColorInt(),
+    var blockquotePadding: Int = 16,
+    var imageBorderRadius: Int = 8,
+    var imageMargin: Int = 0,
+    var mentionBackground: Int = "#E3F2FD".toColorInt(),
+    var mentionTextColor: Int = "#1976D2".toColorInt(),
+    var cardBackground: Int = "#f9f9f9".toColorInt(),
+    var cardBorderColor: Int = "#dddddd".toColorInt(),
+    var cardPadding: Int = 16,
+    var cardBorderRadius: Int = 8,
+    var hrColor: Int = "#dddddd".toColorInt(),
+    var lineSpacing: Float = 4.0f,
+    var maxContentWidth: Int = 800,
+    var contentPadding: Int = 2,
+    var toolbarHeight: Int? = null,
+    var toolbarWidth: Int? = null,
+    var toolbarPadding: Int? = null,
+    var toolbarButtonSize: Int? = null,
+    var toolbarButtonSpacing: Int? = null,
+    var toolbarSwitcherHeight: Int? = null,
+    var toolbarSwitcherButtonWidth: Int? = null,
+    var toolbarSwitcherButtonSpacing: Int? = null,
+    var tableTitle: String? = null,
+    var toolbarPreviewText: String? = null,
+    var toolbarCodeText: String? = null
 ) {
     companion object {
         /**
@@ -393,7 +393,10 @@ data class AndroidTheme(
         /**
          * 默认主题
          * 从 Rust 层读取标准配置，与 iOS 实现对齐
+         * 
+         * 注意：在 Java 中请使用 getDefault() 方法，因为 default 是 Java 关键字
          */
+        @JvmName("getDefault")
         fun default(): AndroidTheme {
             val config = StyleConfig.default()
             return if (config != null) {
