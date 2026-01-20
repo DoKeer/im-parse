@@ -209,7 +209,6 @@ class MermaidViewModeSwitcher: UIView {
 
         // 指示器
         indicatorView.backgroundColor = UIColor.systemBlue
-        indicatorView.layer.cornerRadius = 3
         
         addSubview(previewButton)
         addSubview(codeButton)
@@ -258,6 +257,8 @@ class MermaidViewModeSwitcher: UIView {
                 height: indicatorHeight
             )
         }
+        
+        indicatorView.layer.cornerRadius = indicatorHeight/2
     }
     
     @objc private func previewTapped() {

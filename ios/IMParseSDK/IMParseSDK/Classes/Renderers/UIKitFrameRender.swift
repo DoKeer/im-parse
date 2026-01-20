@@ -1169,7 +1169,7 @@ public class UIKitFrameRender {
             codeText: context.getToolbarCodeText()
         )
         modeSwitcher.frame = CGRect(
-            x: context.theme.codeBlockPadding,
+            x: context.theme.toolbarButtonSpacing,
             y: (toolbarHeight - switcherHeight) / 2,
             width: switcherWidth,
             height: switcherHeight
