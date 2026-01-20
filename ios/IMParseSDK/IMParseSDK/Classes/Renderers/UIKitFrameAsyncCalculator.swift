@@ -797,7 +797,7 @@ public class UIKitFrameAsyncCalculator {
             }
         }
         
-        let compressedWidths = applyCompressionAlgorithm(idealCellWidths, maxWidth: maxCellWidth, minWidth: minCellWidth)
+        let compressedWidths = applyCompressionAlgorithm(idealCellWidths, containerWidth: availableWidth, maxWidth: maxCellWidth, minWidth: minCellWidth)
         let totalIdealWidth = compressedWidths.reduce(0, +)
         
         if totalIdealWidth < availableWidth {
@@ -884,15 +884,32 @@ public class UIKitFrameAsyncCalculator {
     }
     
     /// 智能压缩算法
-    private static func applyCompressionAlgorithm(_ widths: [CGFloat], maxWidth: CGFloat, minWidth: CGFloat) -> [CGFloat] {
+    /// 统一 iOS 和 Android 的压缩逻辑，确保两端渲染效果一致
+    /// - Parameters:
+    ///   - widths: 理想列宽数组
+    ///   - containerWidth: 容器可用宽度（用于计算超长列的限制）
+    ///   - maxWidth: 单元格最大宽度
+    ///   - minWidth: 单元格最小宽度
+    private static func applyCompressionAlgorithm(_ widths: [CGFloat], containerWidth: CGFloat, maxWidth: CGFloat, minWidth: CGFloat) -> [CGFloat] {
+        guard !widths.isEmpty else { return widths }
+        
         var result = widths
         let totalWidth = widths.reduce(0, +)
         let averageWidth = totalWidth / CGFloat(widths.count)
-        let compressionThreshold = min(averageWidth * 1.5, maxWidth)
+        
+        // 统一压缩阈值：容器宽度的40%
+        // 对于260pt容器，阈值为104pt，这是一个适中的值
+        // 只有超过 min(avg*1.5, container*0.40) 的列才会被压缩
+        let containerBasedThreshold = containerWidth * 0.40
+        let compressionThreshold = min(averageWidth * 1.5, containerBasedThreshold, maxWidth)
+        
+        // 超长列压缩到容器宽度的40%
+        let longColumnMaxWidth = min(containerBasedThreshold, maxWidth)
         
         for (index, width) in widths.enumerated() {
             if width > compressionThreshold {
-                result[index] = max(compressionThreshold, minWidth)
+                // 压缩到 longColumnMaxWidth，但确保不低于最小宽度
+                result[index] = max(longColumnMaxWidth, minWidth)
             }
         }
         
