@@ -288,7 +288,6 @@ object MathFormulaRenderer {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
-        originalParams.setMargins(contentPadding, contentPadding, contentPadding, contentPadding)
         containerView.addView(originalTextView, originalParams)
         
         // 验证语法
@@ -296,7 +295,6 @@ object MathFormulaRenderer {
         
         if (!result.success || result.astJSON == null) {
             // 语法错误，显示错误信息
-            showMathError(containerView, mathNode.content, context)
             return containerView
         }
         
