@@ -1097,28 +1097,28 @@ public class UIKitFrameAsyncCalculator {
     
     /// 计算富文本尺寸（考虑附件）
     private static func calculateAttributedStringSize(_ attrString: NSAttributedString, width: CGFloat) -> CGSize {
-        var hasAttachment = false
-        attrString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attrString.length), options: []) { value, _, stop in
-            if value != nil {
-                hasAttachment = true
-                stop.pointee = true
-            }
-        }
-        
-        if hasAttachment {
-            let textStorage = NSTextStorage(attributedString: attrString)
-            let layoutManager = NSLayoutManager()
-            let textContainer = NSTextContainer(size: CGSize(width: width, height: .greatestFiniteMagnitude))
-            textContainer.lineFragmentPadding = 0
-            layoutManager.addTextContainer(textContainer)
-            textStorage.addLayoutManager(layoutManager)
-            
-            layoutManager.ensureLayout(for: textContainer)
-            let usedRect = layoutManager.usedRect(for: textContainer)
-            return CGSize(width: ceil(usedRect.width), height: ceil(usedRect.height)+2)
-        } else {
-            return calculateTextSize(attrString, width: width)
-        }
+//        var hasAttachment = false
+//        attrString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attrString.length), options: []) { value, _, stop in
+//            if value != nil {
+//                hasAttachment = true
+//                stop.pointee = true
+//            }
+//        }
+        //
+//        if hasAttachment {
+//            let textStorage = NSTextStorage(attributedString: attrString)
+//            let layoutManager = NSLayoutManager()
+//            let textContainer = NSTextContainer(size: CGSize(width: width, height: .greatestFiniteMagnitude))
+//            textContainer.lineFragmentPadding = 0
+//            layoutManager.addTextContainer(textContainer)
+//            textStorage.addLayoutManager(layoutManager)
+//            
+//            layoutManager.ensureLayout(for: textContainer)
+//            let usedRect = layoutManager.usedRect(for: textContainer)
+//            return CGSize(width: ceil(usedRect.width), height: ceil(usedRect.height)+2)
+//        } else {
+//        }
+        return calculateTextSize(attrString, width: width)
     }
     
     /// 获取标题字体

@@ -526,17 +526,16 @@ public class MathHTMLRenderer {
         // 如果指定了内容区域，只截取该区域；否则截取整个 WebView
         let targetRect: CGRect
         if let rect = contentRect {
-            // 关键修复：getBoundingClientRect() 返回的是 CSS 像素
-            // 在 WKWebView 中，config.rect 需要的是 points（相对于 WebView bounds）
-            // 如果 viewport 设置正确（width=800, initial-scale=1.0），CSS 像素应该直接对应 points（1:1）
-            // 但根据日志分析，WKWebView.takeSnapshot 可能将 config.rect 当作 points 处理
-            // 然后根据 snapshotWidth/snapshotHeight 生成图片
-            // 所以我们需要确保 config.rect 使用 CSS 像素值（应该等于 points）
+            // 对内容区域做一些容错处理：
+            // 1. 增加一点 padding（上下各 2pt），避免高度裁剪不完整
+            // 2. 确保坐标不为负数
+            let padding: CGFloat = 2.0
+            
             targetRect = CGRect(
                 x: max(0, rect.origin.x),
-                y: max(0, rect.origin.y),
+                y: max(0, rect.origin.y - padding),
                 width: rect.width,
-                height: rect.height
+                height: rect.height + padding * 2
             )
         } else {
             targetRect = webView.bounds

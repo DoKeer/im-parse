@@ -75,6 +75,13 @@ class MessageDataGenerator {
     private static func generateMarkdownTemplates() -> [String] {
         return [
             #"""
+            段落中有行内数学 $a^2 + b^2 = c^2$，前后还有普通文本。
+            这一行包含多个公式：$x$, $y + 1$, 和 $z_{i,j}$ 混在一起。
+            只开不关的行内数学 $a + b$ 和一个正常的 $c + d$。
+            整段是块级公式：
+            """#,
+            
+            #"""
             # 标题1 
             ## 标题2 
             ### 标题3 
