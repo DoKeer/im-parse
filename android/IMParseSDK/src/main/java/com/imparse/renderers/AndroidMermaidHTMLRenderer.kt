@@ -78,7 +78,7 @@ class AndroidMermaidHTMLRenderer private constructor() {
          */
         fun generateCacheKey(mermaidCode: String, textColor: String, backgroundColor: String): String {
             val hash = stableHash(mermaidCode)
-            return "mermaid_${hash}_${textColor}_${backgroundColor}"
+            return "mermaid_${hash}"
         }
     }
     
