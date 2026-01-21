@@ -90,10 +90,20 @@ class AndroidViewRenderer {
 
         for ((index, child) in ast.children.withIndex()) {
             val childView = renderNode(child, renderContext)
-            val params = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
+            
+            // 对于 HorizontalRuleNode，需要使用固定高度而不是 WRAP_CONTENT
+            val params = if (child is HorizontalRuleNode) {
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    renderContext.dpToPx(1f)
+                )
+            } else {
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            }
+            
             // 最后一个元素不需要底部间距
             if (index < ast.children.size - 1) {
                 params.bottomMargin = renderContext.getParagraphSpacingPx()
@@ -759,14 +769,11 @@ class AndroidViewRenderer {
 
     /**
      * 渲染水平分割线
+     * 注意：LayoutParams 由调用方（render 方法）统一设置
      */
     private fun renderHorizontalRule(context: AndroidRenderContext): View {
         val view = View(context.context)
         view.setBackgroundColor(context.theme.hrColor)
-        view.layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            context.dpToPx(1f)
-        )
         return view
     }
 
@@ -810,7 +817,8 @@ class AndroidViewRenderer {
             switcherHeight
         )
         switcherParams.gravity = android.view.Gravity.TOP or android.view.Gravity.START
-        switcherParams.setMargins(0, (topAreaHeight - switcherHeight) / 2, 0, 0)
+        val left = context.theme.toolbarButtonSpacing?.toInt() ?: 0
+        switcherParams.setMargins(left, (topAreaHeight - switcherHeight) / 2, 0, 0)
         containerView.addView(modeSwitcher, switcherParams)
 
         // 添加工具栏（右侧，如果有代理）- Mermaid 使用默认配置（显示所有按钮）
