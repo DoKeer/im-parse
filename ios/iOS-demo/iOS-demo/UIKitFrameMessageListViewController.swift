@@ -8,6 +8,8 @@
 import UIKit
 import IMParseSDK
 import Kingfisher
+import YYImage
+import CryptoKit
 
 class UIKitFrameMessageListViewController: UIViewController {
     
@@ -49,6 +51,12 @@ class UIKitFrameMessageListViewController: UIViewController {
         var theme = UIKitTheme.default
         theme.toolbarCodeText = "xxx"
         theme.toolbarPreviewText = "ppp"
+        // 行内动图默认显示首帧，避免内存爆炸
+        theme.inlineAnimatedImageBehavior = .staticFirstFrame
+
+        // 动图视图提供者：使用 SDK 内置的轻量级实现，降低多张大动图时的内存和 CPU 占用
+        let animatedProvider = DefaultAnimatedImageProvider()
+        animatedProvider.downsampleSize = CGSize(width: 600, height: 600) // 大图降采样
 
         sharedRenderContext = UIKitRenderContext(
             theme: theme,
@@ -74,7 +82,8 @@ class UIKitFrameMessageListViewController: UIViewController {
             formulaSizeCacheDelegate: self,
             inlineImageLoader: self,
             toolbarActionDelegate: self,
-            linkHandler:linkHandler
+            linkHandler: linkHandler,
+            animatedImageViewProvider: animatedProvider
         )
     }
     
@@ -500,53 +509,33 @@ extension UIKitFrameMessageListViewController: UIKitInlineImageLoader {
 // MARK: - UIKitImageLoaderDelegate
 
 extension UIKitFrameMessageListViewController: UIKitImageLoaderDelegate {
-    func loadImage(url: URL, into imageView: UIImageView?, completion: @escaping (UIImage?, Error?) -> Void) {
-        if let imageView = imageView {
-            // 使用 Kingfisher 加载图片到 imageView
-            imageView.kf.setImage(
-                with: url,
-                placeholder: nil,
-                options: [
-                    .transition(.fade(0.2)),
-                    .cacheOriginalImage
-                ],
-                completionHandler: { result in
-                    switch result {
-                    case .success(let value):
-                        completion(value.image, nil)
-                    case .failure(let error):
-                        completion(nil, error)
-                    }
-                }
-            )
-        } else {
-            // 如果 imageView 为空，直接从 Kingfisher 缓存读取图片
-            ImageCache.default.retrieveImage(forKey: url.absoluteString) { result in
-                switch result {
-                case .success(let value):
-                    if let image = value.image {
-                        // 缓存命中，直接返回
-                        completion(image, nil)
-                    } else {
-                        // 缓存未命中，从网络下载
-                        KingfisherManager.shared.retrieveImage(with: url, options: [.cacheOriginalImage]) { result in
-                            switch result {
-                            case .success(let value):
-                                completion(value.image, nil)
-                            case .failure(let error):
-                                completion(nil, error)
-                            }
-                        }
-                    }
-                case .failure:
-                    // 缓存读取失败，从网络下载
-                    KingfisherManager.shared.retrieveImage(with: url, options: [.cacheOriginalImage]) { result in
+    func loadImage(url: URL, for node: IMParseSDK.ImageNode, completion: @escaping (UIImage?, (any Error)?) -> Void) {
+        // 如果 imageView 为空，直接从 Kingfisher 缓存读取图片
+        ImageCache.default.retrieveImage(forKey: url.absoluteString) { result in
+            switch result {
+            case .success(let value):
+                if let image = value.image {
+                    // 缓存命中，直接返回
+                    completion(image, nil)
+                } else {
+                    // 缓存未命中，从网络下载
+                    KingfisherManager.shared.retrieveImage(with: url, options: [.cacheOriginalImage, .onlyLoadFirstFrame]) { result in
                         switch result {
                         case .success(let value):
                             completion(value.image, nil)
                         case .failure(let error):
                             completion(nil, error)
                         }
+                    }
+                }
+            case .failure:
+                // 缓存读取失败，从网络下载
+                KingfisherManager.shared.retrieveImage(with: url, options: [.cacheOriginalImage, .onlyLoadFirstFrame]) { result in
+                    switch result {
+                    case .success(let value):
+                        completion(value.image, nil)
+                    case .failure(let error):
+                        completion(nil, error)
                     }
                 }
             }
@@ -735,6 +724,113 @@ extension UIKitFrameMessageListViewController: UIKitToolbarActionDelegate {
             present(alert, animated: true)
         }
     }
+}
+
+class SKAnimatedImageProvider: UIKitAnimatedImageViewProvider {
+    /// 动图原始 Data 内存缓存（避免重复解码）
+    private static let dataMemoryCache = NSCache<NSString, NSData>()
+    /// 动图 Data 磁盘缓存目录
+    private static var animatedDataCacheDir: URL? = {
+        guard let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
+        let dir = base.appendingPathComponent("AnimatedImageData", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    static func cacheKey(for url: URL) -> String {
+        let data = Data(url.absoluteString.utf8)
+        let hash = SHA256.hash(data: data)
+        return hash.map { String(format: "%02x", $0) }.joined()
+    }
+
+    func createAnimatedImageView() -> UIView {
+        return YYAnimatedImageView()
+    }
+
+    func loadAnimatedImage(data: Data, into imageView: UIView, completion: @escaping (Bool) -> Void) {
+        guard let animatedView = imageView as? YYAnimatedImageView else { return }
+        let yyImage = YYImage(data: data, scale: UIScreen.main.scale)
+        animatedView.image = yyImage
+        completion(yyImage != nil)
+    }
+
+    func loadAnimatedImage(url: URL, into imageView: UIView, completion: @escaping (Bool, UIImage?) -> Void) {
+        guard let animatedView = imageView as? YYAnimatedImageView else { return }
+        let key = Self.cacheKey(for: url)
+        // 1) 先拿原始 Data：内存 -> 磁盘 -> 网络。Kingfisher 是图片缓存只存 UIImage，没有 Data 接口，所以用自建 Data 缓存。
+        func applyData(_ data: Data?) {
+            guard let data = data, let yyImage = YYImage(data: data, scale: UIScreen.main.scale) else {
+                completion(false, nil)
+                return
+            }
+            animatedView.image = yyImage
+            completion(true, yyImage)
+        }
+        // 内存缓存
+        if let cached = Self.dataMemoryCache.object(forKey: key as NSString) as Data? {
+            DispatchQueue.main.async { applyData(cached) }
+            return
+        }
+        // 磁盘缓存（异步读）
+        if let dir = Self.animatedDataCacheDir {
+            let fileURL = dir.appendingPathComponent(key)
+            DispatchQueue.global(qos: .userInitiated).async {
+                let data = try? Data(contentsOf: fileURL)
+                DispatchQueue.main.async {
+                    if let data = data {
+                        Self.dataMemoryCache.setObject(data as NSData, forKey: key as NSString)
+                        applyData(data)
+                        return
+                    }
+                    self.downloadAndCache(url: url, key: key, into: animatedView, completion: completion)
+                }
+            }
+            return
+        }
+        downloadAndCache(url: url, key: key, into: animatedView, completion: completion)
+    }
+
+    private func downloadAndCache(url: URL, key: String, into animatedView: YYAnimatedImageView, completion: @escaping (Bool, UIImage?) -> Void) {
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
+            guard let self = self, let data = data, error == nil else {
+                DispatchQueue.main.async { completion(false, nil) }
+                return
+            }
+            // 写入内存 + 磁盘（原始 Data），便于下次直接 Data -> YYImage
+            Self.dataMemoryCache.setObject(data as NSData, forKey: key as NSString)
+            if let dir = Self.animatedDataCacheDir {
+                let fileURL = dir.appendingPathComponent(key)
+                try? data.write(to: fileURL)
+            }
+            DispatchQueue.main.async {
+                guard let yyImage = YYImage(data: data, scale: UIScreen.main.scale) else {
+                    completion(false, nil)
+                    return
+                }
+                animatedView.image = yyImage
+                completion(true, yyImage)
+            }
+        }.resume()
+    }
+    
+    func isAnimatedImage(data: Data) -> Bool {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            return false
+        }
+        return CGImageSourceGetCount(source) > 1
+    }
+    
+    func stopAnimation(in imageView: UIView) {
+        guard let animatedView = imageView as? YYAnimatedImageView else { return }
+        animatedView.stopAnimating()
+    }
+    
+    func startAnimation(in imageView: UIView) {
+        guard let animatedView = imageView as? YYAnimatedImageView else { return }
+        animatedView.startAnimating()
+    }
+    
+    
 }
 
 // MARK: - Fullscreen Image View Controller

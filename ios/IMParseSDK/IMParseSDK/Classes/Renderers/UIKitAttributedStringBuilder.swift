@@ -276,6 +276,7 @@ public class UIKitAttributedStringBuilder {
     }
     
     /// 构建行内图片 AttributedString
+    /// 对于动图，根据 theme.inlineAnimatedImageBehavior 配置决定显示行为
     private func buildImageAttributedString(imageNode: ImageNode, context: UIKitRenderContext) -> NSAttributedString {
         let font = context.currentFont ?? context.theme.font
         // 缓存未命中，返回原文富文本，并添加标记以便在渲染时处理
@@ -289,7 +290,7 @@ public class UIKitAttributedStringBuilder {
             let semaphore = DispatchSemaphore(value: 0)
             var loadedImage: UIImage?
             
-            imageLoaderDelegate.loadImage(url: imageURL, into: nil) { image, _ in
+            imageLoaderDelegate.loadImage(url: imageURL, for: imageNode) { image, _ in
                 loadedImage = image
                 semaphore.signal()
             }

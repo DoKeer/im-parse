@@ -204,6 +204,9 @@ internal class MathTextAttachment: NSTextAttachment {
 
 /// 行内图片文本附件，用于在 NSAttributedString 中嵌入行内图片
 /// 注意：此附件只接受已加载的图片，不负责异步加载
+/// 
+/// 对于动图（GIF/APNG/WebP），应在上层使用 AnimatedImageUtils.extractFirstFrame 
+/// 提取首帧后传入，以避免内存爆炸问题
 internal class ImageTextAttachment: NSTextAttachment {
     let imageNode: ImageNode
     private let font: UIFont // 保存字体，用于计算 attachmentBounds

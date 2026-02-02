@@ -5,10 +5,14 @@ PODS:
   - LookinServer (1.2.8):
     - LookinServer/Core (= 1.2.8)
   - LookinServer/Core (1.2.8)
+  - YYImage (1.0.4):
+    - YYImage/Core (= 1.0.4)
+  - YYImage/Core (1.0.4)
 
 DEPENDENCIES:
   - IMParseSDK/Frame (from `../IMParseSDK`)
   - LookinServer
+  - YYImage (from `../YYImage`)
 
 SPEC REPOS:
   trunk:
@@ -17,11 +21,14 @@ SPEC REPOS:
 EXTERNAL SOURCES:
   IMParseSDK:
     :path: "../IMParseSDK"
+  YYImage:
+    :path: "../YYImage"
 
 SPEC CHECKSUMS:
-  IMParseSDK: 7e0c6f71c1d631ad77c575cdfd0110bb7e09113a
+  IMParseSDK: 9dfeecadf17754fe8b311e659e621ef164998c66
   LookinServer: 1b2b61c6402ae29fa22182d48f5cd067b4e99e80
+  YYImage: 063c27467d07cbe2bd1444e7e77f653006e1bbb5
 
-PODFILE CHECKSUM: 4360ffeff2680ae8b5a4860f980b947a3322ad62
+PODFILE CHECKSUM: 81288ba55591880c10cf2ea61c21976a7c053b90
 
 COCOAPODS: 1.16.2

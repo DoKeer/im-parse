@@ -7,6 +7,18 @@
 
 import UIKit
 
+/// 行内动图显示行为
+/// 用于配置行内图片（NSTextAttachment）遇到动图时的处理方式
+public enum InlineAnimatedImageBehavior {
+    /// 显示静态首帧（默认，性能最优）
+    /// 适用于聊天列表等对性能要求较高的场景
+    case staticFirstFrame
+    
+    /// 显示占位符
+    /// 适用于需要明确提示用户这是动图的场景
+    case placeholder
+}
+
 /// UIKit 主题配置
 /// 定义了渲染器使用的所有颜色、字体和尺寸样式
 public struct UIKitTheme {
@@ -85,6 +97,8 @@ public struct UIKitTheme {
     public var imageBorderRadius: CGFloat
     /// 图片边距
     public var imageMargin: CGFloat
+    /// 行内动图显示行为（默认显示静态首帧，性能最优）
+    public var inlineAnimatedImageBehavior: InlineAnimatedImageBehavior
     
     // 提及 (Mention)
     /// 提及背景色
@@ -159,6 +173,7 @@ public struct UIKitTheme {
         self.blockquotePadding = CGFloat(config.blockquotePadding)
         self.imageBorderRadius = CGFloat(config.imageBorderRadius)
         self.imageMargin = CGFloat(config.imageMargin)
+        self.inlineAnimatedImageBehavior = .staticFirstFrame // 默认显示静态首帧
         self.mentionBackground = UIColor(hex: config.mentionBackground) ?? UIColor.systemBlue.withAlphaComponent(0.1)
         self.mentionTextColor = UIColor(hex: config.mentionTextColor) ?? .systemBlue
         self.cardBackground = UIColor(hex: config.cardBackground) ?? UIColor.systemGray6

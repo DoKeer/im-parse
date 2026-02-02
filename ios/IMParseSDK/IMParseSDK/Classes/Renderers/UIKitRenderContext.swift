@@ -14,7 +14,7 @@ public protocol UIKitImageLoaderDelegate: AnyObject {
     ///   - url: 图片 URL
     ///   - imageView: 目标图片视图
     ///   - completion: 加载完成回调，参数为加载的图片和错误信息
-    func loadImage(url: URL, into imageView: UIImageView?, completion: @escaping (UIImage?, Error?) -> Void)
+    func loadImage(url: URL, for node: ImageNode, completion: @escaping (UIImage?, Error?) -> Void)
 }
 
 /// 数学公式和Mermaid图表尺寸缓存代理协议
@@ -99,6 +99,42 @@ public protocol UIKitTextLocalizationDelegate: AnyObject {
     func toolbarCodeText(defaultText: String) -> String?
 }
 
+/// 动图视图提供者协议
+/// 用于注入高性能的动图渲染实现（如 FLAnimatedImage、SDAnimatedImageView 等）
+/// 通过实现此协议，可以替换默认的 UIImageView 动图渲染，显著降低内存和 CPU 占用
+public protocol UIKitAnimatedImageViewProvider: AnyObject {
+    /// 创建动图视图
+    /// - Returns: 用于显示动图的视图实例
+    func createAnimatedImageView() -> UIView
+    
+    /// 加载动图数据到视图
+    /// - Parameters:
+    ///   - data: 图片数据（GIF/APNG/WebP 等）
+    ///   - imageView: 目标视图（由 createAnimatedImageView 创建）
+    ///   - completion: 加载完成回调，参数为是否成功
+    func loadAnimatedImage(data: Data, into imageView: UIView, completion: @escaping (Bool) -> Void)
+    
+    /// 加载动图 URL 到视图
+    /// - Parameters:
+    ///   - url: 图片 URL
+    ///   - imageView: 目标视图（由 createAnimatedImageView 创建）
+    ///   - completion: 加载完成回调，参数为是否成功和加载的静态图片（用于获取尺寸等）
+    func loadAnimatedImage(url: URL, into imageView: UIView, completion: @escaping (Bool, UIImage?) -> Void)
+    
+    /// 检测数据是否为动图
+    /// - Parameter data: 图片数据
+    /// - Returns: 如果是动图返回 true
+    func isAnimatedImage(data: Data) -> Bool
+    
+    /// 停止动画播放（用于视图复用或离屏时节省资源）
+    /// - Parameter imageView: 目标视图
+    func stopAnimation(in imageView: UIView)
+    
+    /// 开始动画播放（用于视图重新显示时）
+    /// - Parameter imageView: 目标视图
+    func startAnimation(in imageView: UIView)
+}
+
 /// UIKit 渲染上下文
 /// 包含渲染过程中的所有状态和回调
 public struct UIKitRenderContext {
@@ -132,6 +168,10 @@ public struct UIKitRenderContext {
     
     public weak var linkHandler: LinkHandler?
     
+    // 动图视图提供者（可选，用于高性能动图渲染）
+    // 如果设置，将使用此 provider 创建的视图来渲染动图，而不是默认的 UIImageView
+    public var animatedImageViewProvider: UIKitAnimatedImageViewProvider?
+    
     // 布局高度变化回调（用于通知 cell 高度变化）
     // 回调参数：新的 NodeLayout（包含更新后的节点布局信息）
     public var onNodeLayoutChanged: ((any Codable) -> Void)?
@@ -154,6 +194,7 @@ public struct UIKitRenderContext {
                 toolbarActionDelegate: UIKitToolbarActionDelegate? = nil,
                 textLocalizationDelegate: UIKitTextLocalizationDelegate? = nil,
                 linkHandler: LinkHandler? = nil,
+                animatedImageViewProvider: UIKitAnimatedImageViewProvider? = nil,
                 onNodeLayoutChanged: ((any Codable) -> Void)? = nil,
                 onRenderTaskCreated: ((Task<Void, Never>) -> Void)? = nil) {
         self.theme = theme
@@ -170,6 +211,7 @@ public struct UIKitRenderContext {
         self.toolbarActionDelegate = toolbarActionDelegate
         self.textLocalizationDelegate = textLocalizationDelegate
         self.linkHandler = linkHandler
+        self.animatedImageViewProvider = animatedImageViewProvider
         self.onNodeLayoutChanged = onNodeLayoutChanged
         self.onRenderTaskCreated = onRenderTaskCreated
     }

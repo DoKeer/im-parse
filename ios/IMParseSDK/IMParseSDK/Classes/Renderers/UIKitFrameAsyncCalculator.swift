@@ -529,7 +529,7 @@ public class UIKitFrameAsyncCalculator {
             let semaphore = DispatchSemaphore(value: 0)
             var loadedImage: UIImage?
             
-            imageLoaderDelegate.loadImage(url: imageURL, into: nil) { image, _ in
+            imageLoaderDelegate.loadImage(url: imageURL, for: node) { image, _ in
                 loadedImage = image
                 semaphore.signal()
             }

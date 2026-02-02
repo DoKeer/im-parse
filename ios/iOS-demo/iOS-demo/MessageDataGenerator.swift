@@ -125,11 +125,18 @@ class MessageDataGenerator {
             上标^th^ 
             下标~2~ 
             
-            行内 ![图片](https://iph.href.lu/879x200) 行内2:![示例图片](https://iph.href.lu/879x200) 行内3:![示例图片](https://iph.href.lu/879x200) 
+            行内 ![图片](https://file.360teams.com/v4/cG9ydHJhaXQ7Q1MxTVJGUkdMNDYyR1U0VjszMDY5OTExO2dyb3VwMi9NMDAvNkEvQzYvQ3pVeDJHbDhWODZBQnI5c0FDN1gxX0ZDc0tRMTk1LnBuZw/base64.png) 行内2:![示例图片](https://file.360teams.com/v4/cG9ydHJhaXQ7Q1MxTVJUQkM1OTIyR1U0Vjs0MTkxMjU0O2dyb3VwMi9NMDMvNkEvQzYvQ3pVeDJHbDhXQVdBR0JvSkFEXzBGbjdrWXY4MjIxLnBuZw/base64.png) 行内3:![示例图片](https://file.360teams.com/v4/cG9ydHJhaXQ7Q1MxTVJSNk0xNU8wNUpSTDs0NTk1Nzk0O2dyb3VwMi9NMDIvNkEvQzYvQ3lzQXFtbDhWX3lBWnE0WEFFWWdVaS12OGtJMDI4LnBuZw/base64.png) 
             
             块级图片
             
-            ![块级图片](https://p1.360teams.com/t01a51fb907481b5e61.png)
+            ![块级图片](https://file.360teams.com/v4/cG9ydHJhaXQ7Q1MxTVJWSkdMQTAyR1U0Vjs1Njc1OTc4O2dyb3VwMi9NMDIvNkEvQzYvQ3pVeDJHbDhXQTZBWE5DZ0FGYWJ5dnFNTmhvMDk0LnBuZw/base64.png)
+            
+            ![块级图片](https://file.360teams.com/v4/cG9ydHJhaXQ7Q1MxTVJUQkM1OTIyR1U0Vjs0MTkxMjU0O2dyb3VwMi9NMDMvNkEvQzYvQ3pVeDJHbDhXQVdBR0JvSkFEXzBGbjdrWXY4MjIxLnBuZw/base64.png)
+            
+            ![块级图片](https://file.360teams.com/v4/cG9ydHJhaXQ7Q1MxTVJSNk0xNU8wNUpSTDs0NTk1Nzk0O2dyb3VwMi9NMDIvNkEvQzYvQ3lzQXFtbDhWX3lBWnE0WEFFWWdVaS12OGtJMDI4LnBuZw/base64.png)
+
+            ![块级图片](https://file.360teams.com/v4/cG9ydHJhaXQ7Q1MxTVJGUkdMNDYyR1U0VjszMDY5OTExO2dyb3VwMi9NMDAvNkEvQzYvQ3pVeDJHbDhWODZBQnI5c0FDN1gxX0ZDc0tRMTk1LnBuZw/base64.png)
+
             
             ```Hello World```
             ```mermaid

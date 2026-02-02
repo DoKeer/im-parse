@@ -236,7 +236,7 @@ public class UIKitFrameRender {
                 
                 // 异步加载图片
                 await withCheckedContinuation { continuation in
-                    imageLoaderDelegate.loadImage(url: imageURL, into: nil) { image, error in
+                    imageLoaderDelegate.loadImage(url: imageURL, for: imageNode) { image, error in
                         // 再次检查是否已取消（加载完成后）
                         guard !Task.isCancelled else {
                             continuation.resume()
@@ -505,21 +505,38 @@ public class UIKitFrameRender {
     // MARK: - Image Rendering
     
     /// 渲染图片
+    /// 支持动图视图注入：如果设置了 animatedImageViewProvider，将使用高性能动图视图
     static func renderImage(_ node: ImageNode, frame: CGRect, context: UIKitRenderContext) -> UIView {
         let containerView = createEmptyView(size: frame.size)
         let imageMargin = context.theme.imageMargin
         
-        let imageView = UIImageView()
-        imageView.layer.cornerRadius = context.theme.codeBlockBorderRadius
-        imageView.layer.masksToBounds = true
-        imageView.contentMode = .scaleAspectFit
-        imageView.backgroundColor = .clear
-        imageView.frame = CGRect(
+        let imageFrame = CGRect(
             x: 0,
             y: imageMargin,
             width: frame.size.width,
             height: frame.size.height - imageMargin * 2
         )
+        
+        // 根据是否有动图视图提供者创建不同的视图
+        let imageView: UIView
+        let isAnimatedImageView: Bool
+        
+        if let animatedProvider = context.animatedImageViewProvider {
+            // 使用动图视图提供者创建视图
+            imageView = animatedProvider.createAnimatedImageView()
+            isAnimatedImageView = true
+        } else {
+            // 使用默认的 UIImageView
+            let uiImageView = UIImageView()
+            uiImageView.contentMode = .scaleAspectFit
+            imageView = uiImageView
+            isAnimatedImageView = false
+        }
+        
+        imageView.layer.cornerRadius = context.theme.codeBlockBorderRadius
+        imageView.layer.masksToBounds = true
+        imageView.backgroundColor = .clear
+        imageView.frame = imageFrame
         
         let activityIndicator = UIActivityIndicatorView(style: .medium)
         activityIndicator.startAnimating()
@@ -546,19 +563,57 @@ public class UIKitFrameRender {
             return containerView
         }
         
-        loadImage(url: url, into: imageView, containerView: containerView, activityIndicator: activityIndicator, node: node, context: context)
+        // 根据视图类型选择加载方式
+        if isAnimatedImageView {
+            loadAnimatedImage(url: url, into: imageView, containerView: containerView, activityIndicator: activityIndicator, node: node, context: context)
+        } else if let uiImageView = imageView as? UIImageView {
+            loadImage(url: url, into: uiImageView, containerView: containerView, activityIndicator: activityIndicator, node: node, context: context)
+        }
+        
         return containerView
     }
     
-    /// 加载图片
+    /// 加载动图（使用 AnimatedImageViewProvider）
+    static func loadAnimatedImage(url: URL, into imageView: UIView, containerView: UIView, activityIndicator: UIActivityIndicatorView, node: ImageNode, context: UIKitRenderContext) {
+        guard let animatedProvider = context.animatedImageViewProvider else { return }
+        
+        animatedProvider.loadAnimatedImage(url: url, into: imageView) { success, staticImage in
+            DispatchQueue.main.async {
+                activityIndicator.stopAnimating()
+                activityIndicator.removeFromSuperview()
+                
+                if !success {
+                    showImageError(in: containerView, message: "加载失败")
+                    return
+                }
+                
+                // 使用静态图片更新宽高比
+                if let image = staticImage {
+                    updateImageAspectRatio(image: image, node: node, imageView: imageView, containerView: containerView, context: context)
+                }
+            }
+        }
+    }
+    
+    /// 加载图片（使用 UIImageView）
     static func loadImage(url: URL, into imageView: UIImageView, containerView: UIView, activityIndicator: UIActivityIndicatorView, node: ImageNode, context: UIKitRenderContext) {
         if let delegate = context.imageLoaderDelegate {
-            delegate.loadImage(url: url, into: imageView) { image, error in
+            delegate.loadImage(url: url, for: node) { image, error in
                 handleImageLoadResult(image: image, error: error, imageView: imageView, containerView: containerView, activityIndicator: activityIndicator, node: node, context: context)
             }
         } else {
             let task = URLSession.shared.dataTask(with: url) { data, _, error in
-                let image = data.flatMap { UIImage(data: $0) }
+                // 检测是否为动图，如果是则尝试使用默认动图处理
+                var image: UIImage?
+                if let data = data {
+                    if AnimatedImageUtils.isAnimatedImage(data: data) {
+                        // 动图：提取首帧显示（避免内存爆炸）
+                        image = AnimatedImageUtils.extractFirstFrame(from: data)
+                    } else {
+                        image = UIImage(data: data)
+                    }
+                }
+                
                 DispatchQueue.main.async {
                     handleImageLoadResult(image: image, error: error, imageView: imageView, containerView: containerView, activityIndicator: activityIndicator, node: node, context: context)
                 }
@@ -595,7 +650,14 @@ public class UIKitFrameRender {
         }
     }
     
-    static func updateImageAspectRatio(image: UIImage, node: ImageNode, imageView: UIImageView, containerView: UIView, context: UIKitRenderContext) {
+    /// 更新图片宽高比
+    /// - Parameters:
+    ///   - image: 图片
+    ///   - node: 图片节点
+    ///   - imageView: 图片视图（UIImageView 或动图视图）
+    ///   - containerView: 容器视图
+    ///   - context: 渲染上下文
+    static func updateImageAspectRatio(image: UIImage, node: ImageNode, imageView: UIView, containerView: UIView, context: UIKitRenderContext) {
         if node.width == nil || node.height == nil {
             let imageAspectRatio = image.size.width / image.size.height
             guard imageAspectRatio > 0 && imageAspectRatio.isFinite else { return }

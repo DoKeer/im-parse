@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'IMParseSDK'
-  s.version          = '1.1.0'
+  s.version          = '1.1.1'
   s.summary          = 'iOS SDK for parsing and rendering Markdown and Delta format messages'
   s.description      = <<-DESC
 IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS SDK。
@@ -85,9 +85,10 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
                               'IMParseSDK/Classes/Renderers/UIKitGestureHandler.swift',
                               'IMParseSDK/Classes/Renderers/UIKitRenderHelpers.swift',
                               'IMParseSDK/Classes/Renderers/UIKitAutoLayoutAsyncCalculator.swift',
-                              'IMParseSDK/Classes/Renderers/UIKitToolbar.swift'
+                              'IMParseSDK/Classes/Renderers/UIKitToolbar.swift',
+                              'IMParseSDK/Classes/Renderers/DefaultAnimatedImageView.swift'
     
-    autolayout.frameworks = 'UIKit', 'WebKit'
+    autolayout.frameworks = 'UIKit', 'WebKit', 'ImageIO'
   end
 
   # ==================== Frame Subspec ====================
@@ -104,8 +105,10 @@ IMParseSDK 是一个用于解析和渲染 Markdown 和 Delta 格式消息的 iOS
                          'IMParseSDK/Classes/Renderers/UIKitGestureHandler.swift',
                          'IMParseSDK/Classes/Renderers/UIKitRenderHelpers.swift',
                          'IMParseSDK/Classes/Renderers/UIKitToolbar.swift',
-                         'IMParseSDK/Classes/Renderers/RichLabel.swift'
+                         'IMParseSDK/Classes/Renderers/RichLabel.swift',
+                         'IMParseSDK/Classes/Renderers/DefaultAnimatedImageView.swift'
     
+    frame.frameworks = 'UIKit', 'WebKit', 'ImageIO'
   end
 
   # ==================== SwiftUI Subspec ====================

@@ -10,6 +10,8 @@ target 'iOS-demo' do
   # 使用 Full 版本（包含 UIKit 和 SwiftUI），需要 iOS 15.0+
   # 如果只需要 UIKit，可以使用: pod 'IMParseSDK/UIKit', :path => '../IMParseSDK' (支持 iOS 13.0+)
   pod 'IMParseSDK/Frame', :path => '../IMParseSDK'
+  pod 'YYImage', :path => '../YYImage'
+
   pod 'LookinServer', :configurations => ['Debug'],:modular_headers => true
 
   # 其他依赖（如果有）
